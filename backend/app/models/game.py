@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Integer, Enum
+from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Integer, Enum, Boolean
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 import enum
 
@@ -44,6 +44,6 @@ class GamePlayer(Base):
     game_id = Column(UUID(as_uuid=True), ForeignKey("games.id", ondelete="CASCADE"), nullable=False)
     agent_id = Column(UUID(as_uuid=True), ForeignKey("agents.id"), nullable=False)
     role = Column(String(50), nullable=True)
-    is_alive = Column(String(1), default="1")
+    is_alive = Column(Boolean, default=True)
     config = Column(JSONB, default=dict)
     joined_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

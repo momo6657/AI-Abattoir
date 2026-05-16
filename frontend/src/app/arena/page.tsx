@@ -55,13 +55,14 @@ export default function ArenaPage() {
   const [prompt, setPrompt] = useState("");
   const [viewingMatch, setViewingMatch] = useState<ArenaMatch | null>(null);
   const [votedMatches, setVotedMatches] = useState<Set<string>>(new Set());
+  const [error, setError] = useState<string | null>(null);
 
   const loadAgents = useCallback(async () => {
     try {
       const r = await agentsApi.list();
       setAgents(r.data);
     } catch {
-      // API not available
+      // Agent list failure is non-critical
     }
   }, []);
 
@@ -69,8 +70,9 @@ export default function ArenaPage() {
     try {
       const r = await arenaApi.listMatches();
       setMatches(r.data);
+      setError(null);
     } catch {
-      // API not available
+      setError("竞技场 API 即将上线，敬请期待");
     }
   }, []);
 
@@ -224,6 +226,16 @@ export default function ArenaPage() {
           {showCreate ? "取消" : "发起 PK"}
         </button>
       </div>
+
+      {/* Error / Coming Soon Banner */}
+      {error && (
+        <div className="bg-yellow-900/40 border border-yellow-700 rounded-xl px-4 py-3 mb-6 flex items-center justify-between">
+          <span className="text-yellow-300 text-sm">{error}</span>
+          <button onClick={() => setError(null)} className="text-yellow-400 hover:text-yellow-200 text-sm">
+            关闭
+          </button>
+        </div>
+      )}
 
       {/* Create Match Form */}
       {showCreate && (

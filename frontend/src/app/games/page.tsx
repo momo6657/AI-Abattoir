@@ -87,14 +87,16 @@ export default function GamesPage() {
   const [gameState, setGameState] = useState<Record<string, unknown> | null>(null);
   const [filter, setFilter] = useState<"all" | "waiting" | "active" | "finished">("all");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   const loadGames = useCallback(async () => {
     try {
       const r = await gamesApi.list();
       setGames(r.data);
+      setError(null);
     } catch {
-      // API not available
+      setError("无法加载游戏列表，请检查后端服务是否运行");
     }
   }, []);
 
@@ -103,7 +105,7 @@ export default function GamesPage() {
       const r = await agentsApi.list();
       setAgents(r.data);
     } catch {
-      // API not available
+      // Agent list failure is non-critical
     }
   }, []);
 
@@ -213,6 +215,16 @@ export default function GamesPage() {
           {showCreate ? "取消" : "创建游戏"}
         </button>
       </div>
+
+      {/* Error Banner */}
+      {error && (
+        <div className="bg-red-900/40 border border-red-700 rounded-xl px-4 py-3 mb-6 flex items-center justify-between">
+          <span className="text-red-300 text-sm">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-200 text-sm">
+            关闭
+          </button>
+        </div>
+      )}
 
       {/* Create Game Form */}
       {showCreate && (

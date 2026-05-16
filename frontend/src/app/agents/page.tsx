@@ -17,15 +17,15 @@ interface Agent {
   description: string;
   model_id: string;
   model_name?: string;
-  persona: string;
-  personality: string;
-  speaking_style: string;
-  backstory: string;
-  specialties: string[];
-  system_prompt: string;
-  level: number;
-  experience_points: number;
-  max_experience: number;
+  persona?: string;
+  personality?: string;
+  speaking_style?: string;
+  backstory?: string;
+  specialties?: string[];
+  system_prompt?: string;
+  level?: number;
+  experience_points?: number;
+  max_experience?: number;
   avatar_url?: string;
   created_at: string;
 }
@@ -140,13 +140,15 @@ export default function AgentsPage() {
   const [detailAgent, setDetailAgent] = useState<Agent | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   const loadAgents = useCallback(async () => {
     try {
       const r = await agentsApi.list();
       setAgents(r.data);
-    } catch {
-      // API not available yet
+      setError(null);
+    } catch (err) {
+      setError("无法加载智能体列表，请检查后端服务是否运行");
     }
   }, []);
 
@@ -155,7 +157,7 @@ export default function AgentsPage() {
       const r = await modelsApi.list();
       setModels(r.data);
     } catch {
-      // API not available yet
+      // Models list failure is non-critical
     }
   }, []);
 
@@ -275,6 +277,16 @@ export default function AgentsPage() {
           </button>
         </div>
       </div>
+
+      {/* Error Banner */}
+      {error && (
+        <div className="bg-red-900/40 border border-red-700 rounded-xl px-4 py-3 mb-6 flex items-center justify-between">
+          <span className="text-red-300 text-sm">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-200 text-sm">
+            关闭
+          </button>
+        </div>
+      )}
 
       {/* Templates */}
       {showTemplates && (

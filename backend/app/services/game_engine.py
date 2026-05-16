@@ -1,3 +1,4 @@
+import logging
 import uuid
 import random
 from typing import Dict, List, Any, Optional
@@ -9,6 +10,8 @@ from app.models.game import Game, GamePlayer, GameType, GameStatus
 from app.models.agent import Agent
 from app.models.model import Model
 from app.services.llm_adapter import llm_adapter
+
+logger = logging.getLogger(__name__)
 
 
 class GameEngine:
@@ -94,7 +97,7 @@ class GameEngine:
                 "agent_id": str(p.agent_id),
                 "agent_name": agent.name if agent else "Unknown",
                 "role": p.role,
-                "is_alive": p.is_alive == "1",
+                "is_alive": bool(p.is_alive),
                 "config": p.config or {},
             })
 
@@ -142,7 +145,7 @@ class GameEngine:
 
         for player, role in zip(players, roles):
             player.role = role
-            player.is_alive = "1"
+            player.is_alive = True
 
         game.state = {
             "round": 1,
@@ -183,7 +186,7 @@ class GameEngine:
         )
         players = players_result.scalars().all()
 
-        alive_players = [p for p in players if p.is_alive == "1"]
+        alive_players = [p for p in players if p.is_alive]
         alive_by_role = {}
         for p in alive_players:
             alive_by_role.setdefault(p.role, []).append(p)
@@ -286,7 +289,7 @@ class GameEngine:
                 (p for p in players if str(p.agent_id) == death_id), None
             )
             if player:
-                player.is_alive = "0"
+                player.is_alive = False
                 agent = await db.get(Agent, player.agent_id)
                 state["dead_players"].append({
                     "agent_id": death_id,
@@ -313,7 +316,7 @@ class GameEngine:
             select(GamePlayer).where(GamePlayer.game_id == game.id)
         )
         players = players_result.scalars().all()
-        alive_players = [p for p in players if p.is_alive == "1"]
+        alive_players = [p for p in players if p.is_alive]
 
         # 讨论阶段：每个存活玩家发言
         discussion_messages = []
@@ -376,7 +379,7 @@ class GameEngine:
                     (p for p in players if str(p.agent_id) == exiled_id), None
                 )
                 if player:
-                    player.is_alive = "0"
+                    player.is_alive = False
                     agent = await db.get(Agent, player.agent_id)
                     state["dead_players"].append({
                         "agent_id": exiled_id,
@@ -413,7 +416,7 @@ class GameEngine:
         )
         players = result.scalars().all()
 
-        alive = [p for p in players if p.is_alive == "1"]
+        alive = [p for p in players if p.is_alive]
         alive_werewolves = [p for p in alive if p.role == "werewolf"]
         alive_villagers = [p for p in alive if p.role != "werewolf"]
 
@@ -517,6 +520,11 @@ class GameEngine:
             )
             return response.get("content", "").strip()
         except Exception:
+            logger.exception(
+                "LLM call failed for model=%s prompt_preview=%s",
+                model.model_id,
+                prompt[:100],
+            )
             return ""
 
     def _extract_target_id(

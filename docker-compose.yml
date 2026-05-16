@@ -11,6 +11,8 @@ services:
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
+      - SECRET_KEY=docker-dev-secret-key-change-in-production
+      - ALLOWED_ORIGINS=http://localhost:3000
     depends_on:
       db:
         condition: service_healthy

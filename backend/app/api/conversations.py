@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from uuid import UUID
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
@@ -6,14 +7,19 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.core.database import get_db
+from app.core.database import get_db, async_session
 from app.models.conversation import Conversation, Message
 from app.schemas.conversation import ConversationCreate, ConversationResponse, MessageResponse
 from app.services.conversation_engine import ConversationEngine
 from app.services.message_router import MessageRouter
 from app.websocket.manager import ws_manager
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/conversations", tags=["conversations"])
+
+# Module-level singleton: all pause/resume/start operations share the same engine instance
+_engine = ConversationEngine._create_singleton()
 
 
 class StartConversationRequest(BaseModel):
@@ -72,8 +78,14 @@ async def start_conversation(
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    engine = ConversationEngine(db)
-    asyncio.create_task(engine.start_conversation(conversation_id, body.agent_ids))
+    async def _run_and_log():
+        try:
+            async with async_session() as session:
+                await _engine.start_conversation(session, conversation_id, body.agent_ids)
+        except Exception:
+            logger.exception("Conversation %s failed to start", conversation_id)
+
+    asyncio.create_task(_run_and_log())
     return {"status": "started", "conversation_id": str(conversation_id)}
 
 
@@ -100,8 +112,7 @@ async def pause_conversation(conversation_id: UUID, db: AsyncSession = Depends(g
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    engine = ConversationEngine(db)
-    engine.pause(conversation_id)
+    _engine.pause(conversation_id)
 
     conversation.status = "paused"
     await db.commit()
@@ -115,10 +126,23 @@ async def resume_conversation(conversation_id: UUID, db: AsyncSession = Depends(
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    engine = ConversationEngine(db)
-    engine.resume(conversation_id)
+    _engine.resume(conversation_id)
 
     conversation.status = "active"
     await db.commit()
     await ws_manager.broadcast(conversation_id, {"type": "conversation_resumed"})
     return {"status": "resumed", "conversation_id": str(conversation_id)}
+
+
+@router.post("/{conversation_id}/end")
+async def end_conversation(conversation_id: UUID, db: AsyncSession = Depends(get_db)):
+    conversation = await db.get(Conversation, conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    _engine.pause(conversation_id)
+
+    conversation.status = "ended"
+    await db.commit()
+    await ws_manager.broadcast(conversation_id, {"type": "conversation_ended"})
+    return {"status": "ended", "conversation_id": str(conversation_id)}

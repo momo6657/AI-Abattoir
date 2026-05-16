@@ -2,6 +2,7 @@ from typing import Dict, List, Any, Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.models.agent import Agent, AgentHierarchy
 
@@ -54,36 +55,35 @@ class HierarchyService:
         self, db: AsyncSession, agent_id: UUID
     ) -> List[Dict[str, Any]]:
         result = await db.execute(
-            select(AgentHierarchy).where(AgentHierarchy.parent_agent_id == agent_id)
+            select(AgentHierarchy, Agent)
+            .join(Agent, AgentHierarchy.child_agent_id == Agent.id)
+            .where(AgentHierarchy.parent_agent_id == agent_id)
         )
-        relations = result.scalars().all()
+        rows = result.all()
 
         subordinates = []
-        for rel in relations:
-            agent = await db.get(Agent, rel.child_agent_id)
-            if agent:
-                subordinates.append({
-                    "agent_id": str(agent.id),
-                    "agent_name": agent.name,
-                    "relation_type": rel.relation_type,
-                    "context_id": str(rel.context_id) if rel.context_id else None,
-                })
+        for rel, agent in rows:
+            subordinates.append({
+                "agent_id": str(agent.id),
+                "agent_name": agent.name,
+                "relation_type": rel.relation_type,
+                "context_id": str(rel.context_id) if rel.context_id else None,
+            })
         return subordinates
 
     async def get_superior(
         self, db: AsyncSession, agent_id: UUID
     ) -> Optional[Dict[str, Any]]:
         result = await db.execute(
-            select(AgentHierarchy).where(AgentHierarchy.child_agent_id == agent_id)
+            select(AgentHierarchy, Agent)
+            .join(Agent, AgentHierarchy.parent_agent_id == Agent.id)
+            .where(AgentHierarchy.child_agent_id == agent_id)
         )
-        relation = result.scalar_one_or_none()
-        if not relation:
+        row = result.one_or_none()
+        if not row:
             return None
 
-        agent = await db.get(Agent, relation.parent_agent_id)
-        if not agent:
-            return None
-
+        relation, agent = row
         return {
             "agent_id": str(agent.id),
             "agent_name": agent.name,

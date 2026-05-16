@@ -49,14 +49,17 @@ export default function LeaderboardPage() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [detailEntry, setDetailEntry] = useState<LeaderboardEntry | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const loadRankings = useCallback(async (category: TabKey) => {
     setLoading(true);
     try {
       const r = await leaderboardApi.getRankings(category);
       setEntries(r.data);
+      setError(null);
     } catch {
       setEntries([]);
+      setError("排行榜 API 即将上线，敬请期待");
     } finally {
       setLoading(false);
     }
@@ -89,6 +92,16 @@ export default function LeaderboardPage() {
           </button>
         ))}
       </div>
+
+      {/* Error / Coming Soon Banner */}
+      {error && (
+        <div className="bg-yellow-900/40 border border-yellow-700 rounded-xl px-4 py-3 mb-6 flex items-center justify-between">
+          <span className="text-yellow-300 text-sm">{error}</span>
+          <button onClick={() => setError(null)} className="text-yellow-400 hover:text-yellow-200 text-sm">
+            关闭
+          </button>
+        </div>
+      )}
 
       {/* Top 3 Podium */}
       {top3.length > 0 && (

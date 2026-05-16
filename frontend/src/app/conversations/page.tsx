@@ -25,7 +25,7 @@ interface Message {
   agent_id?: string;
   agent_name?: string;
   role: "agent" | "user" | "system";
-  content: string;
+  content: string | Record<string, unknown>;
   content_type: "text" | "image" | "audio";
   image_url?: string;
   audio_url?: string;
@@ -81,14 +81,16 @@ export default function ConversationsPage() {
   const [inputText, setInputText] = useState("");
   const [convStatus, setConvStatus] = useState<string>("idle");
   const [thinkingAgent, setThinkingAgent] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const loadConversations = useCallback(async () => {
     try {
       const r = await conversationsApi.list();
       setConversations(r.data);
+      setError(null);
     } catch {
-      // API not available
+      setError("无法加载对话列表，请检查后端服务是否运行");
     }
   }, []);
 
@@ -97,7 +99,7 @@ export default function ConversationsPage() {
       const r = await agentsApi.list();
       setAgents(r.data);
     } catch {
-      // API not available
+      // Agent list failure is non-critical
     }
   }, []);
 
@@ -112,6 +114,7 @@ export default function ConversationsPage() {
       setMessages(r.data);
     } catch {
       setMessages([]);
+      setError("无法加载消息，请检查后端服务是否运行");
     }
   }, []);
 
@@ -219,6 +222,16 @@ export default function ConversationsPage() {
 
   return (
     <div className="flex gap-4" style={{ height: "calc(100vh - 180px)" }}>
+      {/* Error Banner */}
+      {error && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-40 bg-red-900/90 border border-red-700 rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg">
+          <span className="text-red-300 text-sm">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-200 text-sm">
+            关闭
+          </button>
+        </div>
+      )}
+
       {/* Left Sidebar - Conversation List */}
       <div className="w-80 flex-shrink-0 flex flex-col">
         <div className="flex justify-between items-center mb-4">
@@ -375,11 +388,17 @@ export default function ConversationsPage() {
                 const agentName = msg.agent_name || (msg.agent_id ? getAgentName(msg.agent_id, agents) : "用户");
                 const agentColor = msg.agent_id ? getAgentColor(msg.agent_id, agents) : "bg-gray-600";
 
+                const displayContent = typeof msg.content === 'string'
+                  ? msg.content
+                  : (msg.content as Record<string, unknown>)?.text
+                    ? String((msg.content as Record<string, unknown>).text)
+                    : JSON.stringify(msg.content);
+
                 if (isSystem) {
                   return (
                     <div key={msg.id} className="text-center">
                       <span className="text-xs text-gray-500 bg-gray-800 px-3 py-1 rounded-full">
-                        {msg.content}
+                        {displayContent}
                       </span>
                     </div>
                   );
@@ -404,7 +423,7 @@ export default function ConversationsPage() {
                           isUser ? "bg-blue-600 text-white" : "bg-gray-800"
                         }`}
                       >
-                        {msg.content_type === "text" && <p className="whitespace-pre-wrap">{msg.content}</p>}
+                        {msg.content_type === "text" && <p className="whitespace-pre-wrap">{displayContent}</p>}
                         {msg.content_type === "image" && msg.image_url && (
                           <div>
                             <img
@@ -412,7 +431,7 @@ export default function ConversationsPage() {
                               alt="shared image"
                               className="rounded-lg max-w-full max-h-64 object-contain"
                             />
-                            {msg.content && <p className="mt-2 text-sm">{msg.content}</p>}
+                            {msg.content && <p className="mt-2 text-sm">{displayContent}</p>}
                           </div>
                         )}
                         {msg.content_type === "audio" && msg.audio_url && (
@@ -420,7 +439,7 @@ export default function ConversationsPage() {
                             <audio controls className="max-w-full">
                               <source src={msg.audio_url} />
                             </audio>
-                            {msg.content && <p className="mt-2 text-sm">{msg.content}</p>}
+                            {msg.content && <p className="mt-2 text-sm">{displayContent}</p>}
                           </div>
                         )}
                       </div>

@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from typing import Optional
 from minio import Minio
@@ -26,7 +27,8 @@ class MediaStorage:
         object_name = f"{prefix}/{uuid.uuid4()}"
         from io import BytesIO
 
-        self.client.put_object(
+        await asyncio.to_thread(
+            self.client.put_object,
             settings.MINIO_BUCKET,
             object_name,
             BytesIO(data),
@@ -36,8 +38,10 @@ class MediaStorage:
         return object_name
 
     async def get_url(self, object_name: str) -> str:
-        return self.client.presigned_get_object(
-            settings.MINIO_BUCKET, object_name
+        return await asyncio.to_thread(
+            self.client.presigned_get_object,
+            settings.MINIO_BUCKET,
+            object_name,
         )
 
 

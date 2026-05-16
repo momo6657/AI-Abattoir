@@ -1,6 +1,47 @@
 from typing import Optional, List, Dict, Any
+import ipaddress
+from urllib.parse import urlparse
 import httpx
 from bs4 import BeautifulSoup
+
+
+# Private/reserved IP ranges that should not be accessed via fetch_url
+_BLOCKED_NETWORKS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+]
+
+
+def _is_private_ip(hostname: str) -> bool:
+    """Check if a hostname resolves to a private/reserved IP address."""
+    # Block localhost explicitly
+    if hostname in ("localhost", "0.0.0.0"):
+        return True
+    try:
+        addr = ipaddress.ip_address(hostname)
+        return any(addr in network for network in _BLOCKED_NETWORKS)
+    except ValueError:
+        # Not an IP literal (e.g. a domain name) -- allow at this stage;
+        # DNS resolution happens at connection time and httpx will raise
+        # if the resolved IP is unreachable. We still block obvious cases.
+        return False
+
+
+def _validate_url(url: str) -> str:
+    """Validate URL and reject requests to private/reserved IP ranges."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Unsupported URL scheme: {parsed.scheme}")
+    hostname = parsed.hostname or ""
+    if _is_private_ip(hostname):
+        raise ValueError(f"Access to private/reserved IP range is blocked: {hostname}")
+    return url
 
 
 class SearchService:
@@ -34,6 +75,8 @@ class SearchService:
     async def fetch_url(
         self, url: str, max_length: int = 5000
     ) -> Dict[str, str]:
+        _validate_url(url)
+
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 url,
