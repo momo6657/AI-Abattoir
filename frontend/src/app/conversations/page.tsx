@@ -138,23 +138,32 @@ export default function ConversationsPage() {
   // Merge REST-loaded messages with real-time WS messages (deduplicate by id)
   const allMessages = useMemo(() => {
     const seen = new Set<string>();
-    const merged: Record<string, unknown>[] = [];
+    const merged: Message[] = [];
     for (const msg of messages) {
-      const id = (msg as Record<string, unknown>).id as string;
-      if (id && !seen.has(id)) {
-        seen.add(id);
-        merged.push(msg as Record<string, unknown>);
-      }
-    }
-    for (const msg of wsMessages) {
-      const id = msg.id as string;
-      if (id && !seen.has(id)) {
-        seen.add(id);
+      if (msg.id && !seen.has(msg.id)) {
+        seen.add(msg.id);
         merged.push(msg);
       }
     }
+    for (const msg of wsMessages) {
+      const id = msg.id as string | undefined;
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        // WS messages have a subset of Message fields; fill defaults for missing fields
+        merged.push({
+          id,
+          conversation_id: selectedConvId || "",
+          agent_id: msg.agent_id as string | undefined,
+          agent_name: msg.agent_name as string | undefined,
+          role: "agent" as const,
+          content: (msg.content as string | Record<string, unknown>) || "",
+          content_type: "text" as const,
+          created_at: (msg.created_at as string) || new Date().toISOString(),
+        });
+      }
+    }
     return merged;
-  }, [messages, wsMessages]);
+  }, [messages, wsMessages, selectedConvId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
