@@ -7,6 +7,8 @@ from sqlalchemy import select
 from app.core.database import get_db
 from app.models.game import Game, GamePlayer
 from app.models.agent import Agent, AgentExperience
+from app.models.user import User
+from app.api.auth import get_current_user
 from app.schemas.game import (
     GameCreate, GameResponse, GameStateResponse, GameTurnResponse,
     EndGameRequest, HierarchyCreate, HierarchyResponse,
@@ -26,7 +28,7 @@ async def list_games(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/games", response_model=GameResponse)
-async def create_game(data: GameCreate, db: AsyncSession = Depends(get_db)):
+async def create_game(data: GameCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     game = await game_engine.create_game(
         db, data.game_type, data.config, [str(a) for a in data.agent_ids]
     )
@@ -42,7 +44,7 @@ async def get_game(game_id: UUID, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/games/{game_id}/start", response_model=GameResponse)
-async def start_game(game_id: UUID, db: AsyncSession = Depends(get_db)):
+async def start_game(game_id: UUID, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     try:
         game = await game_engine.start_game(db, game_id)
         return game
@@ -51,7 +53,7 @@ async def start_game(game_id: UUID, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/games/{game_id}/turn", response_model=GameTurnResponse)
-async def process_turn(game_id: UUID, db: AsyncSession = Depends(get_db)):
+async def process_turn(game_id: UUID, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     try:
         result = await game_engine.process_turn(db, game_id)
         return result
@@ -70,7 +72,8 @@ async def get_game_state(game_id: UUID, db: AsyncSession = Depends(get_db)):
 
 @router.post("/games/{game_id}/end", response_model=GameResponse)
 async def end_game(
-    game_id: UUID, data: EndGameRequest, db: AsyncSession = Depends(get_db)
+    game_id: UUID, data: EndGameRequest, db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     try:
         game = await game_engine.end_game(
@@ -84,7 +87,7 @@ async def end_game(
 # ========== 层级指挥系统 ==========
 
 @router.post("/hierarchy")
-async def create_hierarchy(data: HierarchyCreate, db: AsyncSession = Depends(get_db)):
+async def create_hierarchy(data: HierarchyCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     try:
         relation = await hierarchy_service.create_hierarchy(
             db, data.parent_agent_id, data.child_agent_id,

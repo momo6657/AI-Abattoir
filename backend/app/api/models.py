@@ -6,7 +6,9 @@ from sqlalchemy import select
 
 from app.core.database import get_db
 from app.models.model import Model, ModelCapability
+from app.models.user import User
 from app.schemas.model import ModelCreate, ModelUpdate, ModelResponse
+from app.api.auth import get_current_user
 
 router = APIRouter(prefix="/models", tags=["models"])
 
@@ -18,7 +20,7 @@ async def list_models(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/", response_model=ModelResponse)
-async def create_model(data: ModelCreate, db: AsyncSession = Depends(get_db)):
+async def create_model(data: ModelCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     model = Model(**data.model_dump())
     db.add(model)
     await db.commit()
@@ -35,7 +37,7 @@ async def get_model(model_id: UUID, db: AsyncSession = Depends(get_db)):
 
 
 @router.put("/{model_id}", response_model=ModelResponse)
-async def update_model(model_id: UUID, data: ModelUpdate, db: AsyncSession = Depends(get_db)):
+async def update_model(model_id: UUID, data: ModelUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     model = await db.get(Model, model_id)
     if not model:
         raise HTTPException(status_code=404, detail="Model not found")
@@ -47,7 +49,7 @@ async def update_model(model_id: UUID, data: ModelUpdate, db: AsyncSession = Dep
 
 
 @router.delete("/{model_id}")
-async def delete_model(model_id: UUID, db: AsyncSession = Depends(get_db)):
+async def delete_model(model_id: UUID, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     model = await db.get(Model, model_id)
     if not model:
         raise HTTPException(status_code=404, detail="Model not found")

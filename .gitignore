@@ -10,6 +10,8 @@ venv/
 node_modules/
 .next/
 out/
+*.tsbuildinfo
+build/
 
 # IDE
 .vscode/

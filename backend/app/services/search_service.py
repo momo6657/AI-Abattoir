@@ -1,5 +1,6 @@
 from typing import Optional, List, Dict, Any
 import ipaddress
+import socket
 from urllib.parse import urlparse
 import httpx
 from bs4 import BeautifulSoup
@@ -27,9 +28,15 @@ def _is_private_ip(hostname: str) -> bool:
         addr = ipaddress.ip_address(hostname)
         return any(addr in network for network in _BLOCKED_NETWORKS)
     except ValueError:
-        # Not an IP literal (e.g. a domain name) -- allow at this stage;
-        # DNS resolution happens at connection time and httpx will raise
-        # if the resolved IP is unreachable. We still block obvious cases.
+        # Not an IP literal -- resolve via DNS and check the actual IP
+        try:
+            resolved = socket.getaddrinfo(hostname, None)
+            for family, _, _, _, sockaddr in resolved:
+                ip = ipaddress.ip_address(sockaddr[0])
+                if any(ip in network for network in _BLOCKED_NETWORKS):
+                    return True
+        except (socket.gaierror, OSError):
+            return True  # fail closed
         return False
 
 
@@ -82,9 +89,14 @@ class SearchService:
                 url,
                 headers={"User-Agent": "Mozilla/5.0"},
                 timeout=15,
-                follow_redirects=True,
+                follow_redirects=False,
             )
             response.raise_for_status()
+
+        # Only parse text/html responses
+        content_type = response.headers.get("content-type", "")
+        if "text/html" not in content_type:
+            return {"title": url, "content": "", "url": url}
 
         soup = BeautifulSoup(response.text, "html.parser")
         for tag in soup(["script", "style", "nav", "footer", "header"]):

@@ -4,6 +4,7 @@ from app.models.agent import Agent, AgentProfile, AgentHierarchy, AgentExperienc
 from app.models.conversation import Conversation, Message
 from app.models.game import Game, GamePlayer
 from app.models.media import MediaAsset
+from app.models.arena import ArenaMatch, ArenaParticipant, ArenaVote
 
 __all__ = [
     "User",
@@ -18,4 +19,7 @@ __all__ = [
     "Game",
     "GamePlayer",
     "MediaAsset",
+    "ArenaMatch",
+    "ArenaParticipant",
+    "ArenaVote",
 ]

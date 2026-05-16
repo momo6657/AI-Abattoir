@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7
 
+    GITHUB_CLIENT_ID: str = ""
+    GITHUB_CLIENT_SECRET: str = ""
+
     ALLOWED_ORIGINS: str = ""  # Comma-separated list of allowed origins, e.g. "https://example.com,https://app.example.com"
 
     class Config:

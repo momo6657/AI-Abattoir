@@ -4,6 +4,7 @@ from jose import JWTError, jwt
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+import httpx
 
 from app.core.config import settings
 from app.core.database import get_db
@@ -28,8 +29,7 @@ class LoginRequest(BaseModel):
 
 
 class GitHubLoginRequest(BaseModel):
-    github_id: str
-    username: str
+    code: str
 
 
 class TokenResponse(BaseModel):
@@ -117,16 +117,51 @@ async def me(current_user: User = Depends(get_current_user)):
 
 @router.post("/github", response_model=TokenResponse)
 async def github_login(data: GitHubLoginRequest, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.github_id == data.github_id))
+    # Exchange the OAuth code for an access token
+    async with httpx.AsyncClient() as client:
+        token_resp = await client.post(
+            "https://github.com/login/oauth/access_token",
+            json={
+                "client_id": settings.GITHUB_CLIENT_ID,
+                "client_secret": settings.GITHUB_CLIENT_SECRET,
+                "code": data.code,
+            },
+            headers={"Accept": "application/json"},
+            timeout=15,
+        )
+        token_resp.raise_for_status()
+        token_data = token_resp.json()
+
+    access_token = token_data.get("access_token")
+    if not access_token:
+        raise HTTPException(status_code=400, detail="Failed to obtain GitHub access token")
+
+    # Use the access token to fetch the real GitHub user profile
+    async with httpx.AsyncClient() as client:
+        user_resp = await client.get(
+            "https://api.github.com/user",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/json",
+            },
+            timeout=15,
+        )
+        user_resp.raise_for_status()
+        gh_user = user_resp.json()
+
+    github_id = str(gh_user["id"])
+    username = gh_user["login"]
+
+    result = await db.execute(select(User).where(User.github_id == github_id))
     user = result.scalar_one_or_none()
 
     if user:
         return TokenResponse(access_token=create_access_token(str(user.id)))
 
-    # Create new user from GitHub profile
+    # Create new user from verified GitHub profile
     user = User(
-        username=data.username,
-        github_id=data.github_id,
+        username=username,
+        github_id=github_id,
     )
     db.add(user)
     await db.commit()

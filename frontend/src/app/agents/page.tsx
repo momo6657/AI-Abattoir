@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { api, agentsApi, modelsApi } from "@/lib/api";
+import { agentsApi, modelsApi } from "@/lib/api";
 
 // ---- Types ----
 interface Model {

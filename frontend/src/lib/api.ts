@@ -37,6 +37,8 @@ export const arenaApi = {
   vote: (matchId: string, data: Record<string, unknown>) =>
     api.post(`/arena/matches/${matchId}/vote`, data),
   getResults: (matchId: string) => api.get(`/arena/matches/${matchId}/results`),
+  start: (matchId: string) => api.post(`/arena/matches/${matchId}/start`),
+  finish: (matchId: string) => api.post(`/arena/matches/${matchId}/finish`),
 };
 
 // ---- Games ----

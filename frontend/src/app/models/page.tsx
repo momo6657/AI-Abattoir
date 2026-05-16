@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { modelsApi } from "@/lib/api";
 
 interface Model {
   id: string;
@@ -14,20 +14,57 @@ interface Model {
 
 export default function ModelsPage() {
   const [models, setModels] = useState<Model[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: "", provider: "openai", model_id: "", api_key: "" });
+  const [editingId, setEditingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    api.get("/models").then((r) => setModels(r.data));
-  }, []);
+  const loadModels = async () => {
+    try {
+      setLoading(true);
+      const r = await modelsApi.list();
+      setModels(r.data);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "加载失败");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadModels(); }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await api.post("/models", form);
-    const r = await api.get("/models");
-    setModels(r.data);
-    setShowForm(false);
-    setForm({ name: "", provider: "openai", model_id: "", api_key: "" });
+    try {
+      if (editingId) {
+        await modelsApi.update(editingId, form);
+      } else {
+        await modelsApi.create(form);
+      }
+      await loadModels();
+      setShowForm(false);
+      setEditingId(null);
+      setForm({ name: "", provider: "openai", model_id: "", api_key: "" });
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "操作失败");
+    }
+  };
+
+  const handleEdit = (model: Model) => {
+    setForm({ name: model.name, provider: model.provider, model_id: model.model_id, api_key: "" });
+    setEditingId(model.id);
+    setShowForm(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("确定删除此模型？")) return;
+    try {
+      await modelsApi.delete(id);
+      await loadModels();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "删除失败");
+    }
   };
 
   return (
@@ -35,12 +72,19 @@ export default function ModelsPage() {
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold">模型管理</h2>
         <button
-          onClick={() => setShowForm(!showForm)}
+          onClick={() => { setShowForm(!showForm); setEditingId(null); setForm({ name: "", provider: "openai", model_id: "", api_key: "" }); }}
           className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg"
         >
           添加模型
         </button>
       </div>
+
+      {error && (
+        <div className="bg-red-900/50 border border-red-700 text-red-200 px-4 py-3 rounded-lg mb-4">
+          {error}
+          <button onClick={() => setError("")} className="float-right text-red-400 hover:text-red-200">&times;</button>
+        </div>
+      )}
 
       {showForm && (
         <form onSubmit={handleSubmit} className="bg-gray-900 p-6 rounded-xl mb-6 space-y-4">
@@ -69,31 +113,47 @@ export default function ModelsPage() {
             required
           />
           <input
-            placeholder="API Key"
+            placeholder={editingId ? "留空则不更新 API Key" : "API Key"}
             type="password"
             value={form.api_key}
             onChange={(e) => setForm({ ...form, api_key: e.target.value })}
             className="w-full bg-gray-800 rounded-lg px-4 py-2"
           />
-          <button type="submit" className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg">
-            保存
-          </button>
+          <div className="flex gap-2">
+            <button type="submit" className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg">
+              {editingId ? "更新" : "保存"}
+            </button>
+            <button type="button" onClick={() => { setShowForm(false); setEditingId(null); }} className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg">
+              取消
+            </button>
+          </div>
         </form>
       )}
 
-      <div className="grid gap-4">
-        {models.map((model) => (
-          <div key={model.id} className="bg-gray-900 p-4 rounded-xl flex justify-between items-center">
-            <div>
-              <h3 className="font-semibold">{model.name}</h3>
-              <p className="text-sm text-gray-400">{model.provider} / {model.model_id}</p>
+      {loading ? (
+        <div className="text-center text-gray-400 py-12">加载中...</div>
+      ) : (
+        <div className="grid gap-4">
+          {models.map((model) => (
+            <div key={model.id} className="bg-gray-900 p-4 rounded-xl flex justify-between items-center">
+              <div>
+                <h3 className="font-semibold">{model.name}</h3>
+                <p className="text-sm text-gray-400">{model.provider} / {model.model_id}</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className={`px-3 py-1 rounded-full text-sm ${model.status === "online" ? "bg-green-900 text-green-300" : "bg-gray-800 text-gray-400"}`}>
+                  {model.status}
+                </span>
+                <button onClick={() => handleEdit(model)} className="text-gray-400 hover:text-blue-400 text-sm">编辑</button>
+                <button onClick={() => handleDelete(model.id)} className="text-gray-400 hover:text-red-400 text-sm">删除</button>
+              </div>
             </div>
-            <span className={`px-3 py-1 rounded-full text-sm ${model.status === "online" ? "bg-green-900 text-green-300" : "bg-gray-800 text-gray-400"}`}>
-              {model.status}
-            </span>
-          </div>
-        ))}
-      </div>
+          ))}
+          {models.length === 0 && (
+            <div className="text-center text-gray-500 py-12">暂无模型，点击"添加模型"开始</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -13,5 +13,3 @@ python-multipart==0.0.12
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 minio==7.2.9
-python-socketio==5.11.4
-aiofiles==24.1.0

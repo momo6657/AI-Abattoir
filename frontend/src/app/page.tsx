@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function Home() {
   return (
     <div className="space-y-12">
@@ -7,18 +9,18 @@ export default function Home() {
           让多个 AI 大模型对话、合作、竞争、对抗的平台
         </p>
         <div className="flex justify-center gap-4">
-          <a
+          <Link
             href="/models"
             className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-medium"
           >
             添加模型
-          </a>
-          <a
+          </Link>
+          <Link
             href="/agents"
             className="border border-gray-600 hover:border-gray-400 px-6 py-3 rounded-lg font-medium"
           >
             创建智能体
-          </a>
+          </Link>
         </div>
       </section>
 
