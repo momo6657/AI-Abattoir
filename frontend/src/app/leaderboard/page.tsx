@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { leaderboardApi } from "@/lib/api";
+import { ErrorBanner, LoadingSpinner, Modal, ProgressBar } from "@/components";
 
 // ---- Types ----
 interface LeaderboardEntry {
@@ -95,12 +96,7 @@ export default function LeaderboardPage() {
 
       {/* Error / Coming Soon Banner */}
       {error && (
-        <div className="bg-yellow-900/40 border border-yellow-700 rounded-xl px-4 py-3 mb-6 flex items-center justify-between">
-          <span className="text-yellow-300 text-sm">{error}</span>
-          <button onClick={() => setError(null)} className="text-yellow-400 hover:text-yellow-200 text-sm">
-            关闭
-          </button>
-        </div>
+        <ErrorBanner message={error} onDismiss={() => setError(null)} />
       )}
 
       {/* Top 3 Podium */}
@@ -182,8 +178,8 @@ export default function LeaderboardPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
-                  加载中...
+                <td colSpan={7}>
+                  <LoadingSpinner />
                 </td>
               </tr>
             ) : rest.length > 0 ? (
@@ -207,13 +203,8 @@ export default function LeaderboardPage() {
                   <td className="px-6 py-4 text-gray-400">Lv.{entry.level}</td>
                   <td className="px-6 py-4 font-medium">{entry.elo_score}</td>
                   <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-16 bg-gray-800 rounded-full h-1.5">
-                        <div
-                          className="bg-blue-500 h-1.5 rounded-full"
-                          style={{ width: `${Math.min(entry.win_rate * 100, 100)}%` }}
-                        />
-                      </div>
+                    <div className="flex items-center gap-2 w-24">
+                      <ProgressBar value={entry.win_rate * 100} height="h-1.5" />
                       <span className="text-sm text-gray-400">{(entry.win_rate * 100).toFixed(1)}%</span>
                     </div>
                   </td>
@@ -240,30 +231,12 @@ export default function LeaderboardPage() {
 
       {/* Detail Modal */}
       {detailEntry && (
-        <div
-          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
-          onClick={() => setDetailEntry(null)}
-        >
-          <div
-            className="bg-gray-900 rounded-xl max-w-md w-full p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex justify-between items-start mb-4">
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-full bg-blue-600 flex items-center justify-center text-xl font-bold text-white">
-                  {detailEntry.agent_name.charAt(0).toUpperCase()}
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold">{detailEntry.agent_name}</h3>
-                  <p className="text-gray-400">Lv.{detailEntry.level}</p>
-                </div>
+        <Modal open onClose={() => setDetailEntry(null)} title={detailEntry.agent_name} maxWidth="max-w-md">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-14 h-14 rounded-full bg-blue-600 flex items-center justify-center text-xl font-bold text-white">
+                {detailEntry.agent_name.charAt(0).toUpperCase()}
               </div>
-              <button
-                onClick={() => setDetailEntry(null)}
-                className="text-gray-400 hover:text-white text-xl"
-              >
-                &times;
-              </button>
+              <p className="text-gray-400">Lv.{detailEntry.level}</p>
             </div>
 
             <div className="space-y-3">
@@ -294,12 +267,7 @@ export default function LeaderboardPage() {
                   <span className="text-gray-400">胜率</span>
                   <span className="font-medium">{(detailEntry.win_rate * 100).toFixed(1)}%</span>
                 </div>
-                <div className="w-full bg-gray-700 rounded-full h-2">
-                  <div
-                    className="bg-blue-500 h-2 rounded-full"
-                    style={{ width: `${Math.min(detailEntry.win_rate * 100, 100)}%` }}
-                  />
-                </div>
+                <ProgressBar value={detailEntry.win_rate * 100} />
               </div>
               {detailEntry.specialties && detailEntry.specialties.length > 0 && (
                 <div className="bg-gray-800 rounded-lg p-4">
@@ -321,8 +289,7 @@ export default function LeaderboardPage() {
             >
               关闭
             </button>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

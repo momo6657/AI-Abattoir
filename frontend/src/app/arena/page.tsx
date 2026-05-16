@@ -205,10 +205,7 @@ export default function ArenaPage() {
               <span>{match.votes_a} 票</span>
               <span>{match.votes_b} 票</span>
             </div>
-            <div className="flex h-2 rounded-full overflow-hidden bg-gray-800">
-              <div className="bg-blue-500" style={{ width: `${pctA}%` }} />
-              <div className="bg-red-500" style={{ width: `${pctB}%` }} />
-            </div>
+            <ProgressBar value={pctA} color="bg-blue-500" />
           </div>
         )}
       </div>
@@ -373,9 +370,12 @@ export default function ArenaPage() {
                 <span className="text-sm">{getAgentName(match.agent_b_id)}</span>
               </div>
               {(match.votes_a > 0 || match.votes_b > 0) && (
-                <div className="mt-2 flex h-1.5 rounded-full overflow-hidden bg-gray-800">
-                  <div className="bg-blue-500" style={{ width: `${match.votes_a + match.votes_b > 0 ? (match.votes_a / (match.votes_a + match.votes_b)) * 100 : 50}%` }} />
-                  <div className="bg-red-500" style={{ width: `${match.votes_a + match.votes_b > 0 ? (match.votes_b / (match.votes_a + match.votes_b)) * 100 : 50}%` }} />
+                <div className="mt-2">
+                  <ProgressBar
+                    value={match.votes_a + match.votes_b > 0 ? (match.votes_a / (match.votes_a + match.votes_b)) * 100 : 50}
+                    color="bg-blue-500"
+                    height="h-1.5"
+                  />
                 </div>
               )}
             </div>
@@ -390,28 +390,15 @@ export default function ArenaPage() {
 
       {/* Match Detail Modal */}
       {viewingMatch && (
-        <div
-          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
-          onClick={() => setViewingMatch(null)}
+        <Modal
+          open
+          onClose={() => setViewingMatch(null)}
+          title={getMatchTypeInfo(viewingMatch.match_type).label}
+          maxWidth="max-w-4xl"
         >
-          <div
-            className="bg-gray-900 rounded-xl max-w-4xl w-full max-h-[85vh] overflow-y-auto p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <h3 className="text-xl font-bold">{getMatchTypeInfo(viewingMatch.match_type).label}</h3>
-                <p className="text-sm text-gray-400">
-                  {getAgentName(viewingMatch.agent_a_id)} vs {getAgentName(viewingMatch.agent_b_id)}
-                </p>
-              </div>
-              <button
-                onClick={() => setViewingMatch(null)}
-                className="text-gray-400 hover:text-white text-xl"
-              >
-                &times;
-              </button>
-            </div>
+            <p className="text-sm text-gray-400 mb-4">
+              {getAgentName(viewingMatch.agent_a_id)} vs {getAgentName(viewingMatch.agent_b_id)}
+            </p>
             {renderMatchContent(viewingMatch)}
             <div className="mt-4 flex justify-end">
               <button
@@ -421,8 +408,7 @@ export default function ArenaPage() {
                 关闭
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

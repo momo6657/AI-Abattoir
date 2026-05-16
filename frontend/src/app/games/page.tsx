@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { gamesApi, agentsApi } from "@/lib/api";
+import { ErrorBanner, Badge } from "@/components";
 
 // ---- Types ----
 interface Agent {
@@ -62,15 +63,6 @@ function getStatusLabel(status: string): string {
   return map[status] || status;
 }
 
-function getStatusColor(status: string): string {
-  const map: Record<string, string> = {
-    waiting: "bg-yellow-900 text-yellow-300",
-    active: "bg-green-900 text-green-300",
-    finished: "bg-gray-800 text-gray-400",
-    paused: "bg-orange-900 text-orange-300",
-  };
-  return map[status] || "bg-gray-800 text-gray-400";
-}
 
 // ---- Page Component ----
 export default function GamesPage() {
@@ -218,12 +210,7 @@ export default function GamesPage() {
 
       {/* Error Banner */}
       {error && (
-        <div className="bg-red-900/40 border border-red-700 rounded-xl px-4 py-3 mb-6 flex items-center justify-between">
-          <span className="text-red-300 text-sm">{error}</span>
-          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-200 text-sm">
-            关闭
-          </button>
-        </div>
+        <ErrorBanner message={error} onDismiss={() => setError(null)} />
       )}
 
       {/* Create Game Form */}
@@ -354,9 +341,11 @@ export default function GamesPage() {
                       </span>
                       <h3 className="font-semibold">{game.title}</h3>
                     </div>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusColor(game.status)}`}>
-                      {getStatusLabel(game.status)}
-                    </span>
+                    <Badge
+                      text={getStatusLabel(game.status)}
+                      variant={game.status === "active" ? "success" : game.status === "waiting" || game.status === "paused" ? "warning" : "default"}
+                      size="sm"
+                    />
                   </div>
                   <p className="text-xs text-gray-400">
                     {typeInfo.label} · {game.players?.length || 0} 人 · 回合 {game.current_turn}/{game.max_turns}
@@ -403,9 +392,11 @@ export default function GamesPage() {
                     {getGameTypeInfo(activeGame.game_type).label} · 回合 {activeGame.current_turn}/{activeGame.max_turns}
                   </p>
                 </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusColor(activeGame.status)}`}>
-                  {getStatusLabel(activeGame.status)}
-                </span>
+                <Badge
+                  text={getStatusLabel(activeGame.status)}
+                  variant={activeGame.status === "active" ? "success" : activeGame.status === "waiting" || activeGame.status === "paused" ? "warning" : "default"}
+                  size="sm"
+                />
               </div>
 
               {/* Controls */}

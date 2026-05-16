@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { conversationsApi, agentsApi } from "@/lib/api";
 import { useWebSocket } from "@/hooks/useWebSocket";
+import { ErrorBanner } from "@/components";
 
 // ---- Types ----
 interface Agent {
@@ -256,11 +257,8 @@ export default function ConversationsPage() {
     <div className="flex gap-4" style={{ height: "calc(100vh - 180px)" }}>
       {/* Error Banner */}
       {error && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-40 bg-red-900/90 border border-red-700 rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg">
-          <span className="text-red-300 text-sm">{error}</span>
-          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-200 text-sm">
-            关闭
-          </button>
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-40 shadow-lg">
+          <ErrorBanner message={error} onDismiss={() => setError(null)} />
         </div>
       )}
 
