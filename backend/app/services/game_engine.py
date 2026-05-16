@@ -53,6 +53,10 @@ class GameEngine:
             await self._setup_debate(db, game)
         elif game.game_type == GameType.NEGOTIATION:
             await self._setup_negotiation(db, game)
+        elif game.game_type == GameType.CHESS:
+            await self._setup_chess(db, game)
+        elif game.game_type == GameType.TEXT_ADVENTURE:
+            await self._setup_text_adventure(db, game)
         else:
             raise ValueError(f"Unsupported game type: {game.game_type}")
 
@@ -79,6 +83,10 @@ class GameEngine:
             result = await self._process_debate_turn(db, game)
         elif game.game_type == GameType.NEGOTIATION:
             result = await self._process_negotiation_turn(db, game)
+        elif game.game_type == GameType.CHESS:
+            result = await self._process_chess_turn(db, game)
+        elif game.game_type == GameType.TEXT_ADVENTURE:
+            result = await self._process_adventure_turn(db, game)
         else:
             raise ValueError(f"Unsupported game type: {game.game_type}")
 
@@ -526,6 +534,14 @@ class GameEngine:
                 return game.state.get("winner", "undetermined")
             return None
         if game.game_type == GameType.NEGOTIATION:
+            if game.state.get("finished"):
+                return game.state.get("winner", "completed")
+            return None
+        if game.game_type == GameType.CHESS:
+            if game.state.get("finished"):
+                return game.state.get("winner", "draw")
+            return None
+        if game.game_type == GameType.TEXT_ADVENTURE:
             if game.state.get("finished"):
                 return game.state.get("winner", "completed")
             return None
@@ -1142,6 +1158,800 @@ class GameEngine:
             game.winner_id = best_agent_id
 
         return scores
+
+    # ========== 国际象棋实现 ==========
+
+    # Unicode chess pieces
+    CHESS_PIECES = {
+        "wK": "♔", "wQ": "♕", "wR": "♖", "wB": "♗", "wN": "♘", "wP": "♙",
+        "bK": "♚", "bQ": "♛", "bR": "♜", "bB": "♝", "bN": "♞", "bP": "♟",
+    }
+
+    @staticmethod
+    def _initial_board() -> List[List[str]]:
+        """Return an 8x8 board in standard starting position."""
+        return [
+            ["bR", "bN", "bB", "bQ", "bK", "bB", "bN", "bR"],
+            ["bP", "bP", "bP", "bP", "bP", "bP", "bP", "bP"],
+            ["", "", "", "", "", "", "", ""],
+            ["", "", "", "", "", "", "", ""],
+            ["", "", "", "", "", "", "", ""],
+            ["", "", "", "", "", "", "", ""],
+            ["wP", "wP", "wP", "wP", "wP", "wP", "wP", "wP"],
+            ["wR", "wN", "wB", "wQ", "wK", "wB", "wN", "wR"],
+        ]
+
+    def _board_to_ascii(self, board: List[List[str]]) -> str:
+        """Convert board state to an ASCII art representation."""
+        lines = ["  a b c d e f g h"]
+        for row in range(8):
+            rank = 8 - row
+            cells = []
+            for col in range(8):
+                piece = board[row][col]
+                if piece:
+                    cells.append(self.CHESS_PIECES.get(piece, "?"))
+                else:
+                    cells.append(".")
+            lines.append(f"{rank} {' '.join(cells)} {rank}")
+        lines.append("  a b c d e f g h")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _parse_square(text: str) -> Optional[tuple]:
+        """Parse a square like 'e2' into (row, col). Returns None if invalid."""
+        text = text.strip().lower()
+        if len(text) < 2:
+            return None
+        file_char = text[0]
+        rank_char = text[1]
+        if file_char < 'a' or file_char > 'h':
+            return None
+        if rank_char < '1' or rank_char > '8':
+            return None
+        col = ord(file_char) - ord('a')
+        row = 8 - int(rank_char)
+        return (row, col)
+
+    @staticmethod
+    def _square_name(row: int, col: int) -> str:
+        """Convert (row, col) to algebraic notation like 'e4'."""
+        return f"{chr(ord('a') + col)}{8 - row}"
+
+    async def _setup_chess(self, db: AsyncSession, game: Game):
+        result = await db.execute(
+            select(GamePlayer).where(GamePlayer.game_id == game.id)
+        )
+        players = result.scalars().all()
+
+        if len(players) < 2:
+            raise ValueError("Chess requires exactly 2 agents")
+
+        players[0].role = "white"
+        players[1].role = "black"
+
+        game.state = {
+            "round": 1,
+            "phase": "chess",
+            "board": self._initial_board(),
+            "current_turn": "white",
+            "move_history": [],
+            "white_agent_id": str(players[0].agent_id),
+            "black_agent_id": str(players[1].agent_id),
+            "captured_pieces": {"white": [], "black": []},
+            "finished": False,
+            "winner": None,
+        }
+
+    def _parse_move_response(
+        self, response: str, board: List[List[str]], color: str
+    ) -> Optional[Dict[str, Any]]:
+        """Parse an LLM move response into source/target squares.
+
+        Supports formats like: e2e4, e2-e4, Nf3, Nf3e5, O-O, O-O-O, etc.
+        Returns {"from": (r,c), "to": (r,c), "piece": str, "capture": bool} or None.
+        """
+        import re
+        text = response.strip().upper()
+
+        # Handle castling
+        if "O-O-O" in text or "OOO" in text:
+            row = 7 if color == "white" else 0
+            king = board[row][4]
+            rook = board[row][0]
+            if (color == "white" and king == "wK" and rook == "wR") or \
+               (color == "black" and king == "bK" and rook == "bR"):
+                return {"from": (row, 4), "to": (row, 2), "piece": king, "capture": False,
+                        "castle_rook_from": (row, 0), "castle_rook_to": (row, 3)}
+        if "O-O" in text or "OO" in text:
+            row = 7 if color == "white" else 0
+            king = board[row][4]
+            rook = board[row][7]
+            if (color == "white" and king == "wK" and rook == "wR") or \
+               (color == "black" and king == "bK" and rook == "bR"):
+                return {"from": (row, 4), "to": (row, 6), "piece": king, "capture": False,
+                        "castle_rook_from": (row, 7), "castle_rook_to": (row, 5)}
+
+        prefix = color[0]  # 'w' or 'b'
+
+        # Try "e2e4" or "e2-e4" format (4 chars with optional dash)
+        clean = text.replace("-", "").replace("X", "").replace(" ", "")
+        sq_pattern = r"([A-H][1-8])"
+        squares_found = re.findall(sq_pattern, clean)
+        if len(squares_found) >= 2:
+            src = self._parse_square(squares_found[0])
+            dst = self._parse_square(squares_found[1])
+            if src and dst:
+                piece = board[src[0]][src[1]]
+                if piece and piece[0] == prefix:
+                    target = board[dst[0]][dst[1]]
+                    is_capture = bool(target and target[0] != prefix)
+                    return {"from": src, "to": dst, "piece": piece, "capture": is_capture}
+
+        # Try standard algebraic: Nf3, Bxe5, Qd1, e4, etc.
+        # Extract the move part after any leading description
+        # Look for patterns like [NBKQR]?x?[a-h][1-8]
+        san_match = re.search(r"([NBKQR])?([A-H])?([1-8])?X?([A-H])([1-8])", clean)
+        if not san_match:
+            # Try simple pawn move like E4
+            san_match = re.search(r"([A-H])([1-8])", clean)
+            if san_match and len(clean) <= 4:
+                dst_col = ord(san_match.group(1)) - ord('A')
+                dst_row = 8 - int(san_match.group(2))
+                # Find a pawn of the right color that can reach this square
+                direction = -1 if color == "white" else 1
+                for dr in [1, 2]:
+                    src_row = dst_row + dr * direction
+                    if 0 <= src_row <= 7:
+                        piece = board[src_row][dst_col]
+                        if piece == f"{prefix}P":
+                            target = board[dst_row][dst_col]
+                            is_capture = bool(target and target[0] != prefix)
+                            return {"from": (src_row, dst_col), "to": (dst_row, dst_col),
+                                    "piece": piece, "capture": is_capture}
+                return None
+
+        piece_letter = san_match.group(1)
+        dst_col = ord(san_match.group(4)) - ord('A')
+        dst_row = 8 - int(san_match.group(5))
+
+        if piece_letter:
+            # Piece move
+            piece_map = {"K": "K", "Q": "Q", "R": "R", "B": "B", "N": "N"}
+            piece_type = piece_map.get(piece_letter, "")
+            full_piece = f"{prefix}{piece_type}"
+            # Find the piece on the board
+            candidates = []
+            for r in range(8):
+                for c in range(8):
+                    if board[r][c] == full_piece:
+                        candidates.append((r, c))
+            if len(candidates) == 1:
+                src = candidates[0]
+            elif len(candidates) > 1:
+                # Disambiguate using hint columns/rows
+                hint_col = None
+                hint_row = None
+                if san_match.group(2):
+                    hint_col = ord(san_match.group(2)) - ord('A')
+                if san_match.group(3):
+                    hint_row = 8 - int(san_match.group(3))
+                filtered = candidates
+                if hint_col is not None:
+                    filtered = [c for c in filtered if c[1] == hint_col]
+                if hint_row is not None:
+                    filtered = [c for c in filtered if c[0] == hint_row]
+                src = filtered[0] if filtered else candidates[0]
+            else:
+                return None
+            target = board[dst_row][dst_col]
+            is_capture = bool(target and target[0] != prefix)
+            return {"from": src, "to": (dst_row, dst_col), "piece": full_piece, "capture": is_capture}
+        else:
+            # Pawn move or capture
+            hint_col = None
+            if san_match.group(2):
+                hint_col = ord(san_match.group(2)) - ord('A')
+            if hint_col is not None:
+                # Pawn capture: source column is given
+                src_row_candidates = []
+                direction = -1 if color == "white" else 1
+                for dr in [1, 2]:
+                    sr = dst_row + dr * direction
+                    if 0 <= sr <= 7 and board[sr][hint_col] == f"{prefix}P":
+                        src_row_candidates.append(sr)
+                if src_row_candidates:
+                    src_row = src_row_candidates[0]
+                    target = board[dst_row][dst_col]
+                    return {"from": (src_row, hint_col), "to": (dst_row, dst_col),
+                            "piece": f"{prefix}P", "capture": bool(target)}
+            else:
+                # Simple pawn move forward
+                direction = -1 if color == "white" else 1
+                for dr in [1, 2]:
+                    sr = dst_row + dr * direction
+                    if 0 <= sr <= 7 and board[sr][dst_col] == f"{prefix}P":
+                        # For 2-square move, check starting row
+                        if dr == 2:
+                            start_row = 6 if color == "white" else 1
+                            if sr != start_row:
+                                continue
+                        target = board[dst_row][dst_col]
+                        return {"from": (sr, dst_col), "to": (dst_row, dst_col),
+                                "piece": f"{prefix}P", "capture": bool(target)}
+
+        return None
+
+    def _validate_pawn_move(self, src: tuple, dst: tuple, color: str, board: List[List[str]]) -> bool:
+        """Basic pawn move validation."""
+        direction = -1 if color == "white" else 1
+        start_row = 6 if color == "white" else 1
+        dr = dst[0] - src[0]
+        dc = dst[1] - src[1]
+
+        # Forward one square
+        if dc == 0 and dr == direction and not board[dst[0]][dst[1]]:
+            return True
+        # Forward two squares from start
+        if dc == 0 and dr == 2 * direction and src[0] == start_row and \
+           not board[src[0] + direction][src[1]] and not board[dst[0]][dst[1]]:
+            return True
+        # Diagonal capture
+        if abs(dc) == 1 and dr == direction and board[dst[0]][dst[1]]:
+            return True
+        return False
+
+    def _validate_move(
+        self, move: Dict[str, Any], board: List[List[str]], color: str
+    ) -> bool:
+        """Basic move validation. Returns True if the move looks legal."""
+        src = move["from"]
+        dst = move["to"]
+        piece = move["piece"]
+
+        # Source must have the piece
+        if board[src[0]][src[1]] != piece:
+            return False
+        # Can't capture own piece
+        target = board[dst[0]][dst[1]]
+        if target and target[0] == color[0]:
+            return False
+        # Can't stay in place
+        if src == dst:
+            return False
+
+        # Basic pawn validation
+        if piece[1] == "P":
+            return self._validate_pawn_move(src, dst, color, board)
+
+        # For other pieces, basic checks only (leave complex rules to LLM)
+        piece_type = piece[1]
+        dr = abs(dst[0] - src[0])
+        dc = abs(dst[1] - src[1])
+
+        if piece_type == "N":
+            # Knight: L-shape
+            return (dr == 2 and dc == 1) or (dr == 1 and dc == 2)
+        elif piece_type == "K":
+            # King: one square any direction
+            return dr <= 1 and dc <= 1
+        elif piece_type == "R":
+            # Rook: straight lines (simplified - no path check)
+            return dr == 0 or dc == 0
+        elif piece_type == "B":
+            # Bishop: diagonal (simplified)
+            return dr == dc
+        elif piece_type == "Q":
+            # Queen: straight or diagonal (simplified)
+            return dr == 0 or dc == 0 or dr == dc
+
+        return True
+
+    def _apply_move(self, board: List[List[str]], move: Dict[str, Any]) -> tuple:
+        """Apply a move to the board. Returns (new_board, captured_piece)."""
+        new_board = [row[:] for row in board]
+        src = move["from"]
+        dst = move["to"]
+        captured = new_board[dst[0]][dst[1]] or None
+
+        new_board[dst[0]][dst[1]] = new_board[src[0]][src[1]]
+        new_board[src[0]][src[1]] = ""
+
+        # Handle castling rook
+        if "castle_rook_from" in move:
+            rook_src = move["castle_rook_from"]
+            rook_dst = move["castle_rook_to"]
+            new_board[rook_dst[0]][rook_dst[1]] = new_board[rook_src[0]][rook_src[1]]
+            new_board[rook_src[0]][rook_src[1]] = ""
+
+        # Pawn promotion: auto-promote to queen
+        piece = new_board[dst[0]][dst[1]]
+        if piece and piece[1] == "P":
+            if (piece[0] == "w" and dst[0] == 0) or (piece[0] == "b" and dst[0] == 7):
+                new_board[dst[0]][dst[1]] = piece[0] + "Q"
+
+        return new_board, captured
+
+    def _check_king_captured(self, board: List[List[str]]) -> Optional[str]:
+        """Check if either king is missing (simplified checkmate detection)."""
+        white_king = False
+        black_king = False
+        for row in board:
+            for cell in row:
+                if cell == "wK":
+                    white_king = True
+                elif cell == "bK":
+                    black_king = True
+        if not white_king:
+            return "black"
+        if not black_king:
+            return "white"
+        return None
+
+    async def _process_chess_turn(
+        self, db: AsyncSession, game: Game
+    ) -> Dict[str, Any]:
+        state = game.state
+        board = state["board"]
+        current_turn = state["current_turn"]
+        move_history = state.get("move_history", [])
+
+        if state.get("finished"):
+            return {"round": state.get("round"), "phase": "chess", "events": [], "finished": True}
+
+        # Get current player agent
+        agent_id_key = f"{current_turn}_agent_id"
+        current_agent_id = state[agent_id_key]
+        agent = await db.get(Agent, current_agent_id)
+        model = await db.get(Model, agent.model_id)
+
+        # Build prompt
+        board_ascii = self._board_to_ascii(board)
+        color_label = "白方(White)" if current_turn == "white" else "黑方(Black)"
+        recent_moves = move_history[-10:] if move_history else []
+        moves_text = ", ".join(recent_moves) if recent_moves else "（尚无走棋记录）"
+
+        prompt = f"""你是 {agent.name}，正在下国际象棋。
+你是 {color_label}，使用 {color_label.split('(')[1].rstrip(')')} 方的棋子。
+
+当前棋盘：
+{board_ascii}
+
+走棋记录：{moves_text}
+
+轮到你走棋。请用标准代数记谱法回复你的走法。
+格式示例：
+- e2e4（兵从e2走到e4）
+- Nf3（马走到f3）
+- Bxe5（象吃掉e5的棋子）
+- O-O（王翼易位）
+- O-O-O（后翼易位）
+
+请只回复走法，不要有其他文字。"""
+
+        max_retries = 3
+        move = None
+        last_error = ""
+
+        for attempt in range(max_retries):
+            if attempt > 0:
+                retry_prompt = prompt + f"\n\n你上次的走法无效：{last_error}，请重新选择走法。"
+                response = await self._call_llm(model, retry_prompt)
+            else:
+                response = await self._call_llm(model, prompt)
+
+            if not response:
+                last_error = "未收到回复"
+                continue
+
+            parsed = self._parse_move_response(response, board, current_turn)
+            if not parsed:
+                last_error = f"无法解析走法 '{response.strip()}'"
+                continue
+
+            if not self._validate_move(parsed, board, current_turn):
+                last_error = f"走法不合法: {self._square_name(*parsed['from'])}-{self._square_name(*parsed['to'])}"
+                continue
+
+            move = parsed
+            break
+
+        if not move:
+            # If all retries failed, skip this turn
+            return {
+                "round": state.get("round", 1),
+                "phase": "chess",
+                "events": [{
+                    "action": "invalid_move",
+                    "agent_id": current_agent_id,
+                    "agent_name": agent.name,
+                    "error": last_error,
+                }],
+            }
+
+        # Apply the move
+        new_board, captured = self._apply_move(board, move)
+        move_notation = f"{self._square_name(*move['from'])}-{self._square_name(*move['to'])}"
+        if captured:
+            move_notation += f" (吃{captured})"
+
+        state["board"] = new_board
+        move_history.append(move_notation)
+        state["move_history"] = move_history
+
+        # Track captured pieces
+        if captured:
+            captured_color = "black" if current_turn == "white" else "white"
+            state["captured_pieces"][captured_color].append(captured)
+
+        # Check for king capture (simplified checkmate)
+        winner_color = self._check_king_captured(new_board)
+        event = {
+            "action": "move",
+            "agent_id": current_agent_id,
+            "agent_name": agent.name,
+            "color": current_turn,
+            "move": move_notation,
+            "board": self._board_to_ascii(new_board),
+        }
+        if captured:
+            event["captured"] = captured
+
+        if winner_color:
+            state["finished"] = True
+            state["winner"] = winner_color
+            winner_agent_id = state[f"{winner_color}_agent_id"]
+            game.winner_id = winner_agent_id
+            event["checkmate"] = True
+
+        # Switch turns
+        state["current_turn"] = "black" if current_turn == "white" else "white"
+        state["round"] = state.get("round", 1) + 1
+
+        return {
+            "round": state.get("round", 1),
+            "phase": "chess",
+            "events": [event],
+        }
+
+    # ========== 文字冒险实现 ==========
+
+    ADVENTURE_MAX_TURNS = 30
+
+    async def _setup_text_adventure(self, db: AsyncSession, game: Game):
+        result = await db.execute(
+            select(GamePlayer).where(GamePlayer.game_id == game.id)
+        )
+        players = result.scalars().all()
+
+        if len(players) < 2:
+            raise ValueError("Text adventure requires at least 2 agents")
+
+        config = game.config or {}
+        starting_scene = config.get("starting_scene", "a mysterious dungeon entrance")
+        max_turns = config.get("max_turns", self.ADVENTURE_MAX_TURNS)
+        goal = config.get("goal", "find the legendary treasure hidden deep within")
+
+        # First agent is narrator/game master, rest are explorers
+        narrator = players[0]
+        narrator.role = "narrator"
+        explorer_ids = []
+        for player in players[1:]:
+            player.role = "explorer"
+            explorer_ids.append(str(player.agent_id))
+
+        game.state = {
+            "round": 1,
+            "phase": "adventure",
+            "scene": starting_scene,
+            "inventory": {str(p.agent_id): [] for p in players[1:]},
+            "hp": {str(p.agent_id): 100 for p in players[1:]},
+            "turn_count": 0,
+            "narrator_agent_id": str(narrator.agent_id),
+            "explorer_agents": explorer_ids,
+            "events": [],
+            "max_turns": max_turns,
+            "goal": goal,
+            "current_explorer_index": 0,
+            "narrator_rotation_counter": 0,
+            "finished": False,
+            "winner": None,
+        }
+
+    async def _process_adventure_turn(
+        self, db: AsyncSession, game: Game
+    ) -> Dict[str, Any]:
+        state = game.state
+
+        if state.get("finished"):
+            return {"round": state.get("round"), "phase": "adventure", "events": [], "finished": True}
+
+        turn_count = state.get("turn_count", 0)
+        phase = state.get("phase", "adventure")
+
+        players_result = await db.execute(
+            select(GamePlayer).where(GamePlayer.game_id == game.id)
+        )
+        players = players_result.scalars().all()
+
+        if phase == "adventure":
+            # Narrator describes the scene and presents choices
+            result = await self._adventure_narrator_phase(db, game, players)
+            state["phase"] = "adventure_choice"
+            return result
+        else:
+            # Explorers choose actions
+            result = await self._adventure_explorer_phase(db, game, players)
+            state["phase"] = "adventure"
+            state["turn_count"] = turn_count + 1
+            return result
+
+    async def _adventure_narrator_phase(
+        self, db: AsyncSession, game: Game, players: List[GamePlayer]
+    ) -> Dict[str, Any]:
+        state = game.state
+        narrator_id = state["narrator_agent_id"]
+        narrator_agent = await db.get(Agent, narrator_id)
+        narrator_model = await db.get(Model, narrator_agent.model_id)
+
+        scene = state.get("scene", "")
+        events = state.get("events", [])
+        recent_events = events[-5:] if events else []
+        explorer_agents = state["explorer_agents"]
+        goal = state.get("goal", "")
+
+        # Build explorer status
+        explorer_status = []
+        for eid in explorer_agents:
+            agent = await db.get(Agent, eid)
+            hp = state["hp"].get(eid, 0)
+            inv = state["inventory"].get(eid, [])
+            explorer_status.append(f"- {agent.name}: HP={hp}, 物品={inv if inv else '无'}")
+
+        events_text = ""
+        if recent_events:
+            event_lines = []
+            for evt in recent_events:
+                event_lines.append(f"- {evt.get('description', str(evt))}")
+            events_text = "\n".join(event_lines)
+
+        prompt = f"""你是 {narrator_agent.name}，作为地下城主/叙述者引导一场文字冒险。
+
+冒险目标：{goal}
+当前场景：{scene}
+
+冒险者状态：
+{chr(10).join(explorer_status)}
+
+近期事件：
+{events_text if events_text else '（冒险刚开始）'}
+
+请描述当前场景（150字以内），并给出 2-3 个可选行动。
+格式要求：
+SCENE: <场景描述>
+CHOICE1: <选项1描述>
+CHOICE2: <选项2描述>
+CHOICE3: <选项3描述（可选）>"""
+
+        response = await self._call_llm(narrator_model, prompt)
+        content = response or "(叙述者沉默了...)"
+
+        # Parse scene and choices
+        scene_text = content
+        choices = []
+        for line in content.split("\n"):
+            line = line.strip()
+            upper = line.upper()
+            if upper.startswith("SCENE:"):
+                scene_text = line[6:].strip()
+            elif upper.startswith("CHOICE"):
+                colon_idx = line.find(":")
+                if colon_idx >= 0:
+                    choices.append(line[colon_idx + 1:].strip())
+
+        if not choices:
+            choices = ["继续前进", "仔细观察周围", "休息一下"]
+
+        state["scene"] = scene_text
+        state["current_choices"] = choices
+
+        event_entry = {
+            "type": "narration",
+            "agent_id": narrator_id,
+            "agent_name": narrator_agent.name,
+            "scene": scene_text,
+            "choices": choices,
+            "description": f"[叙述者 {narrator_agent.name}] {scene_text}",
+        }
+        events.append(event_entry)
+        state["events"] = events
+
+        return {
+            "round": state.get("round", 1),
+            "phase": "adventure",
+            "events": [event_entry],
+        }
+
+    async def _adventure_explorer_phase(
+        self, db: AsyncSession, game: Game, players: List[GamePlayer]
+    ) -> Dict[str, Any]:
+        state = game.state
+        explorer_agents = state["explorer_agents"]
+        choices = state.get("current_choices", [])
+        scene = state.get("scene", "")
+        events = state.get("events", [])
+
+        # Each explorer votes/describes their action
+        explorer_actions = []
+        alive_explorers = [
+            eid for eid in explorer_agents if state["hp"].get(eid, 0) > 0
+        ]
+
+        for eid in alive_explorers:
+            agent = await db.get(Agent, eid)
+            model = await db.get(Model, agent.model_id)
+            hp = state["hp"].get(eid, 0)
+            inv = state["inventory"].get(eid, [])
+
+            choices_text = "\n".join(f"{i+1}. {c}" for i, c in enumerate(choices))
+            prompt = f"""你是 {agent.name}，一名冒险者。
+当前场景：{scene}
+你的HP：{hp}
+你的物品：{inv if inv else '无'}
+
+可选行动：
+{choices_text}
+
+你也可以描述自己的独特行动。
+请回复选项编号（1/2/3）或描述你的行动（50字以内）。"""
+
+            response = await self._call_llm(model, prompt)
+            action_text = response or "观察四周"
+            explorer_actions.append({
+                "agent_id": eid,
+                "agent_name": agent.name,
+                "action": action_text,
+            })
+
+        # Narrator resolves actions
+        narrator_id = state["narrator_agent_id"]
+        narrator_agent = await db.get(Agent, narrator_id)
+        narrator_model = await db.get(Model, narrator_agent.model_id)
+
+        actions_summary = "\n".join(
+            f"- {a['agent_name']}: {a['action']}" for a in explorer_actions
+        )
+
+        prompt = f"""你是 {narrator_agent.name}，作为地下城主。
+
+当前场景：{scene}
+
+冒险者的行动：
+{actions_summary}
+
+请描述行动的结果（150字以内）。可以包含：
+- HP 变化（用 HP:+10 或 HP:-20 表示）
+- 发现物品（用 ITEM:<agent名字>:<物品名> 表示）
+- 是否到达目标（用 GOAL_REACHED 表示）
+- 是否有人死亡（用 DEATH:<agent名字> 表示）
+
+格式：
+RESULT: <结果描述>
+HP:<agent名字>:<变化量>（可多行）
+ITEM:<agent名字>:<物品名>（可多行）"""
+
+        response = await self._call_llm(narrator_model, prompt)
+        content = response or "(结果未知...)"
+
+        # Parse result
+        result_text = content
+        hp_changes = {}
+        items_found = {}
+        goal_reached = False
+        deaths = []
+
+        for line in content.split("\n"):
+            line = line.strip()
+            upper = line.upper()
+            if upper.startswith("RESULT:"):
+                result_text = line[7:].strip()
+            elif upper.startswith("HP:"):
+                parts = line[3:].split(":")
+                if len(parts) >= 2:
+                    name = parts[0].strip()
+                    try:
+                        change = int(parts[1].strip())
+                        hp_changes[name] = change
+                    except ValueError:
+                        pass
+            elif upper.startswith("ITEM:"):
+                parts = line[5:].split(":")
+                if len(parts) >= 2:
+                    name = parts[0].strip()
+                    item = parts[1].strip()
+                    items_found[name] = item
+            elif "GOAL_REACHED" in upper:
+                goal_reached = True
+            elif upper.startswith("DEATH:"):
+                name = line[6:].strip()
+                deaths.append(name)
+
+        # Apply HP changes
+        for name, change in hp_changes.items():
+            for eid in explorer_agents:
+                agent = await db.get(Agent, eid)
+                if agent and agent.name == name:
+                    state["hp"][eid] = max(0, min(100, state["hp"].get(eid, 0) + change))
+
+        # Apply item discoveries
+        for name, item in items_found.items():
+            for eid in explorer_agents:
+                agent = await db.get(Agent, eid)
+                if agent and agent.name == name:
+                    if eid not in state["inventory"]:
+                        state["inventory"][eid] = []
+                    state["inventory"][eid].append(item)
+
+        # Apply deaths
+        for name in deaths:
+            for eid in explorer_agents:
+                agent = await db.get(Agent, eid)
+                if agent and agent.name == name:
+                    state["hp"][eid] = 0
+
+        # Check win/loss conditions
+        all_dead = all(state["hp"].get(eid, 0) <= 0 for eid in explorer_agents)
+        max_turns = state.get("max_turns", self.ADVENTURE_MAX_TURNS)
+        turn_count = state.get("turn_count", 0)
+
+        if goal_reached:
+            state["finished"] = True
+            state["winner"] = "explorers"
+        elif all_dead:
+            state["finished"] = True
+            state["winner"] = "dungeon"
+        elif turn_count + 1 >= max_turns:
+            state["finished"] = True
+            state["winner"] = "timeout"
+
+        # Rotate narrator every 3 turns
+        state["narrator_rotation_counter"] = state.get("narrator_rotation_counter", 0) + 1
+        if state["narrator_rotation_counter"] >= 3 and not state.get("finished"):
+            state["narrator_rotation_counter"] = 0
+            # Find next alive explorer to become narrator
+            current_narrator = state["narrator_agent_id"]
+            alive_explorers = [
+                eid for eid in explorer_agents if state["hp"].get(eid, 0) > 0
+            ]
+            if alive_explorers:
+                next_narrator = alive_explorers[0]
+                state["narrator_agent_id"] = next_narrator
+                state["explorer_agents"] = [eid for eid in explorer_agents if eid != next_narrator] + [current_narrator]
+
+        # Update scene for next narration
+        state["scene"] = result_text
+
+        event_entry = {
+            "type": "resolution",
+            "narrator_id": narrator_id,
+            "narrator_name": narrator_agent.name,
+            "actions": explorer_actions,
+            "result": result_text,
+            "hp_changes": hp_changes,
+            "items_found": items_found,
+            "description": f"[结果] {result_text}",
+        }
+        events.append(event_entry)
+        state["events"] = events
+
+        # Advance round
+        state["round"] = state.get("round", 1) + 1
+
+        return {
+            "round": state.get("round", 1),
+            "phase": "adventure",
+            "events": [event_entry],
+        }
 
 
 game_engine = GameEngine()

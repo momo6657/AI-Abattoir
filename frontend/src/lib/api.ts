@@ -71,6 +71,12 @@ export const searchApi = {
   fetchUrl: (url: string) => api.get("/search/fetch", { params: { url } }),
 };
 
+// ---- Spectator ----
+export const spectatorApi = {
+  replayConversation: (id: string) => api.get(`/replay/conversations/${id}`),
+  replayGame: (id: string) => api.get(`/replay/games/${id}`),
+};
+
 // ---- Models ----
 export const modelsApi = {
   list: () => api.get("/models"),

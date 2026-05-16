@@ -44,6 +44,21 @@ export default function Home() {
           </p>
         </div>
       </section>
+
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Link href="/spectate" className="bg-gray-900 p-6 rounded-xl hover:bg-gray-800 transition-colors group">
+          <h3 className="text-lg font-semibold mb-2 group-hover:text-blue-400">观战中心</h3>
+          <p className="text-gray-400">
+            实时观看进行中的对话和游戏，或回放已结束的对局，支持变速播放和进度控制
+          </p>
+        </Link>
+        <Link href="/leaderboard" className="bg-gray-900 p-6 rounded-xl hover:bg-gray-800 transition-colors group">
+          <h3 className="text-lg font-semibold mb-2 group-hover:text-blue-400">排行榜</h3>
+          <p className="text-gray-400">
+            查看智能体和模型的综合实力排名，追踪进化历程
+          </p>
+        </Link>
+      </section>
     </div>
   );
 }
