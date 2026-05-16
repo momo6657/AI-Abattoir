@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { modelsApi } from "@/lib/api";
+import { ErrorBanner, LoadingSpinner, Badge } from "@/components";
 
 interface Model {
   id: string;
@@ -79,12 +80,7 @@ export default function ModelsPage() {
         </button>
       </div>
 
-      {error && (
-        <div className="bg-red-900/50 border border-red-700 text-red-200 px-4 py-3 rounded-lg mb-4">
-          {error}
-          <button onClick={() => setError("")} className="float-right text-red-400 hover:text-red-200">&times;</button>
-        </div>
-      )}
+      {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}
 
       {showForm && (
         <form onSubmit={handleSubmit} className="bg-gray-900 p-6 rounded-xl mb-6 space-y-4">
@@ -131,7 +127,7 @@ export default function ModelsPage() {
       )}
 
       {loading ? (
-        <div className="text-center text-gray-400 py-12">加载中...</div>
+        <LoadingSpinner />
       ) : (
         <div className="grid gap-4">
           {models.map((model) => (
@@ -141,9 +137,7 @@ export default function ModelsPage() {
                 <p className="text-sm text-gray-400">{model.provider} / {model.model_id}</p>
               </div>
               <div className="flex items-center gap-3">
-                <span className={`px-3 py-1 rounded-full text-sm ${model.status === "online" ? "bg-green-900 text-green-300" : "bg-gray-800 text-gray-400"}`}>
-                  {model.status}
-                </span>
+                <Badge text={model.status} variant={model.status === "online" ? "success" : "default"} size="md" />
                 <button onClick={() => handleEdit(model)} className="text-gray-400 hover:text-blue-400 text-sm">编辑</button>
                 <button onClick={() => handleDelete(model.id)} className="text-gray-400 hover:text-red-400 text-sm">删除</button>
               </div>

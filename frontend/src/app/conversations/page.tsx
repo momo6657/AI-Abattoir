@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { conversationsApi, agentsApi } from "@/lib/api";
+import { useWebSocket } from "@/hooks/useWebSocket";
 
 // ---- Types ----
 interface Agent {
@@ -80,9 +81,16 @@ export default function ConversationsPage() {
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [inputText, setInputText] = useState("");
   const [convStatus, setConvStatus] = useState<string>("idle");
-  const [thinkingAgent, setThinkingAgent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // WebSocket real-time connection
+  const {
+    messages: wsMessages,
+    setMessages: setWsMessages,
+    thinkingAgent,
+    connected: wsConnected,
+  } = useWebSocket(selectedConvId);
 
   const loadConversations = useCallback(async () => {
     try {
@@ -121,14 +129,36 @@ export default function ConversationsPage() {
   useEffect(() => {
     if (selectedConvId) {
       loadMessages(selectedConvId);
+      setWsMessages([]); // clear WS messages when switching conversations
       const conv = conversations.find((c) => c.id === selectedConvId);
       if (conv) setConvStatus(conv.status);
     }
-  }, [selectedConvId, loadMessages, conversations]);
+  }, [selectedConvId, loadMessages, conversations, setWsMessages]);
+
+  // Merge REST-loaded messages with real-time WS messages (deduplicate by id)
+  const allMessages = useMemo(() => {
+    const seen = new Set<string>();
+    const merged: Record<string, unknown>[] = [];
+    for (const msg of messages) {
+      const id = (msg as Record<string, unknown>).id as string;
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        merged.push(msg as Record<string, unknown>);
+      }
+    }
+    for (const msg of wsMessages) {
+      const id = msg.id as string;
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        merged.push(msg);
+      }
+    }
+    return merged;
+  }, [messages, wsMessages]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [allMessages]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -199,14 +229,7 @@ export default function ConversationsPage() {
         content_type: "text",
       });
       setInputText("");
-      // Simulate thinking state
-      const conv = conversations.find((c) => c.id === selectedConvId);
-      if (conv && conv.agent_ids.length > 0) {
-        const randomAgent = conv.agent_ids[Math.floor(Math.random() * conv.agent_ids.length)];
-        setThinkingAgent(randomAgent);
-        setTimeout(() => setThinkingAgent(null), 3000);
-      }
-      await loadMessages(selectedConvId);
+      // Thinking state now comes from WebSocket (agent_thinking events)
     } catch {
       alert("发送失败");
     }
@@ -336,7 +359,15 @@ export default function ConversationsPage() {
             {/* Chat Header */}
             <div className="border-b border-gray-800 px-4 py-3 flex justify-between items-center">
               <div>
-                <h3 className="font-semibold">{selectedConv?.title || "对话"}</h3>
+                <h3 className="font-semibold flex items-center gap-2">
+                  {selectedConv?.title || "对话"}
+                  <span
+                    className={`w-2 h-2 rounded-full inline-block ${
+                      wsConnected ? "bg-green-500" : "bg-gray-500"
+                    }`}
+                    title={wsConnected ? "实时连接已建立" : "未连接"}
+                  />
+                </h3>
                 <p className="text-xs text-gray-400">
                   {MODES.find((m) => m.value === selectedConv?.mode)?.label}
                   {selectedConv?.agent_ids && (
@@ -382,7 +413,7 @@ export default function ConversationsPage() {
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {messages.map((msg) => {
+              {allMessages.map((msg) => {
                 const isUser = msg.role === "user";
                 const isSystem = msg.role === "system";
                 const agentName = msg.agent_name || (msg.agent_id ? getAgentName(msg.agent_id, agents) : "用户");
@@ -423,7 +454,7 @@ export default function ConversationsPage() {
                           isUser ? "bg-blue-600 text-white" : "bg-gray-800"
                         }`}
                       >
-                        {msg.content_type === "text" && <p className="whitespace-pre-wrap">{displayContent}</p>}
+                        {(!msg.content_type || msg.content_type === "text") && <p className="whitespace-pre-wrap">{displayContent}</p>}
                         {msg.content_type === "image" && msg.image_url && (
                           <div>
                             <img

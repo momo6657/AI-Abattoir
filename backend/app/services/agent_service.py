@@ -111,7 +111,8 @@ class AgentService:
         profile = result.scalar_one_or_none()
         return agent, profile
 
-    def build_system_prompt(self, agent: Agent, profile: Optional[AgentProfile] = None) -> str:
+    @staticmethod
+    def build_system_prompt(agent: Agent, profile: Optional[AgentProfile] = None) -> str:
         if profile is None:
             return f"你是 {agent.name}。{agent.description or ''}"
 

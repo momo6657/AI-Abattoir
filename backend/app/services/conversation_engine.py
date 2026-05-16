@@ -8,22 +8,40 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import async_session
 from app.models.agent import Agent, AgentProfile
 from app.models.conversation import Conversation, Message, ConversationMode, ConversationStatus
+from app.models.model import Model, ModelCapability, CapabilityType
 from app.services.llm_adapter import llm_adapter
 from app.services.agent_service import AgentService
+from app.services.evolution_service import evolution_service
 from app.websocket.manager import ws_manager
 
 
 class ConversationEngine:
     """Singleton conversation engine. DB sessions are obtained per-operation."""
 
+    MAX_CONCURRENT = 10
+
     def __init__(self):
         self._running: Dict[str, bool] = {}
+        self._cancelled: Dict[str, bool] = {}
 
     @classmethod
     def _create_singleton(cls) -> "ConversationEngine":
         return cls()
 
+    def cancel(self, conversation_id: UUID):
+        """Request graceful cancellation of a running conversation."""
+        key = str(conversation_id)
+        if self._running.get(key, False):
+            self._cancelled[key] = True
+
     async def start_conversation(self, db: AsyncSession, conversation_id: UUID, agent_ids: List[UUID]):
+        # Check concurrent conversation limit
+        if len(self._running) >= self.MAX_CONCURRENT:
+            raise RuntimeError(
+                f"Concurrent conversation limit reached ({self.MAX_CONCURRENT}). "
+                "Please wait for an existing conversation to finish."
+            )
+
         conversation = await db.get(Conversation, conversation_id)
         if not conversation:
             raise ValueError("Conversation not found")
@@ -34,6 +52,11 @@ class ConversationEngine:
 
         key = str(conversation_id)
         self._running[key] = True
+        self._cancelled[key] = False
+
+        await ws_manager.broadcast_to_conversation(
+            conversation_id, "conversation_started", {"conversation_id": str(conversation_id)}
+        )
 
         participants = await self._load_participants(db, agent_ids)
         if not participants:
@@ -59,18 +82,57 @@ class ConversationEngine:
                 select(AgentProfile).where(AgentProfile.agent_id == aid)
             )
             profile = result.scalar_one_or_none()
-            participants.append({"agent": agent, "profile": profile})
+
+            # Check if the agent's model supports vision
+            supports_vision = False
+            model = await db.get(Model, agent.model_id)
+            if model:
+                cap_result = await db.execute(
+                    select(ModelCapability)
+                    .where(ModelCapability.model_id == model.id)
+                    .where(ModelCapability.capability == CapabilityType.IMAGE_UNDERSTANDING)
+                )
+                supports_vision = cap_result.scalar_one_or_none() is not None
+
+            participants.append({
+                "agent": agent,
+                "profile": profile,
+                "supports_vision": supports_vision,
+            })
         return participants
 
     def _build_messages_for_agent(
-        self, system_prompt: str, history: List[Message], current_agent_id: UUID
-    ) -> List[Dict[str, str]]:
-        messages = [{"role": "system", "content": system_prompt}]
+        self,
+        system_prompt: str,
+        history: List[Message],
+        current_agent_id: UUID,
+        supports_vision: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """Build messages list for LLM, supporting both text-only and multimodal content."""
+        messages: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]
         for msg in history:
-            if msg.agent_id == current_agent_id:
-                messages.append({"role": "assistant", "content": msg.content.get("text", "")})
+            role = "assistant" if msg.agent_id == current_agent_id else "user"
+            content = msg.content
+
+            if isinstance(content, dict) and "blocks" in content:
+                # Multimodal format: content has a "blocks" list
+                parts: List[Dict[str, Any]] = []
+                for block in content["blocks"]:
+                    block_type = block.get("type", "text")
+                    if block_type == "text":
+                        parts.append({"type": "text", "text": block.get("text", "")})
+                    elif block_type == "image" and supports_vision:
+                        parts.append({
+                            "type": "image_url",
+                            "image_url": {"url": block.get("url", "")},
+                        })
+                    # Audio and other unsupported block types are skipped
+                if parts:
+                    messages.append({"role": role, "content": parts})
             else:
-                messages.append({"role": "user", "content": msg.content.get("text", "")})
+                # Simple text format (backward compatible): {"text": "..."}
+                text = content.get("text", "") if isinstance(content, dict) else str(content)
+                messages.append({"role": role, "content": text})
         return messages
 
     async def _get_history(self, db: AsyncSession, conversation_id: UUID) -> List[Message]:
@@ -95,60 +157,187 @@ class ConversationEngine:
         await db.commit()
         await db.refresh(msg)
 
-        await ws_manager.broadcast(conversation_id, {
-            "type": "message",
-            "data": {
-                "id": str(msg.id),
-                "agent_id": str(agent_id),
-                "content": msg.content,
-                "turn_number": turn,
-            },
+        agent = await db.get(Agent, agent_id)
+        agent_name = agent.name if agent else "Unknown"
+
+        await ws_manager.broadcast_to_conversation(conversation_id, "new_message", {
+            "id": str(msg.id),
+            "agent_id": str(agent_id),
+            "agent_name": agent_name,
+            "content": msg.content,
+            "turn_number": turn,
+            "created_at": msg.created_at.isoformat() if msg.created_at else None,
         })
         return msg
 
-    async def generate_reply(
-        self, agent: Agent, profile: Optional[AgentProfile], messages: List[Dict[str, str]]
-    ) -> str:
-        agent_service = AgentService.__new__(AgentService)
-        system_prompt = agent_service.build_system_prompt(agent, profile)
-        full_messages = [{"role": "system", "content": system_prompt}] + messages
-        result = await llm_adapter.chat(
-            model_id=str(agent.model_id),
-            messages=full_messages,
+    async def _save_system_message(
+        self, db: AsyncSession, conversation_id: UUID, text: str, turn: int
+    ) -> Message:
+        """Save a system message (e.g. cancellation notice) to the conversation."""
+        msg = Message(
+            conversation_id=conversation_id,
+            agent_id=None,
+            role="system",
+            content={"text": text},
+            turn_number=turn,
         )
-        return result["content"]
+        db.add(msg)
+        await db.commit()
+        await db.refresh(msg)
+
+        await ws_manager.broadcast_to_conversation(conversation_id, "new_message", {
+            "id": str(msg.id),
+            "agent_id": None,
+            "agent_name": "System",
+            "content": msg.content,
+            "turn_number": turn,
+            "created_at": msg.created_at.isoformat() if msg.created_at else None,
+        })
+        return msg
+
+    async def _record_conversation_experiences(
+        self,
+        conversation: Conversation,
+        participants: List[Dict[str, Any]],
+        total_turns: int,
+        cancelled: bool = False,
+    ):
+        """Record an experience for each participating agent after a conversation ends."""
+        mode = conversation.mode if isinstance(conversation.mode, ConversationMode) else ConversationMode(conversation.mode)
+        topic = conversation.title or conversation.config.get("topic", "")
+        first_msg_text = ""
+        if total_turns > 0:
+            try:
+                async with async_session() as db:
+                    history = await self._get_history(db, conversation.id)
+                    if history:
+                        content = history[0].content
+                        first_msg_text = content.get("text", "")[:100] if isinstance(content, dict) else ""
+            except Exception:
+                pass
+
+        description_topic = topic or first_msg_text or "general"
+        outcome = f"completed ({total_turns} turns)" if not cancelled else f"cancelled after {total_turns} turns"
+
+        for i, p in enumerate(participants):
+            agent = p["agent"]
+            # First participant in debate/interview is considered a key contributor
+            is_key = (mode == ConversationMode.DEBATE and i == 0) or \
+                     (mode == ConversationMode.INTERVIEW and i == 0)
+            decision = f"Participated in {mode.value} conversation about '{description_topic}'"
+            if is_key:
+                decision += " (key contributor)"
+
+            try:
+                async with async_session() as db:
+                    await evolution_service.record_experience(
+                        db=db,
+                        agent_id=agent.id,
+                        scene_type="conversation",
+                        context_id=conversation.id,
+                        decision=decision,
+                        outcome=outcome,
+                    )
+            except Exception:
+                # Don't let experience recording failure break the engine
+                pass
+
+    async def generate_reply(
+        self,
+        agent: Agent,
+        profile: Optional[AgentProfile],
+        messages: List[Dict[str, Any]],
+        conversation_id: Optional[UUID] = None,
+    ) -> str:
+        if conversation_id:
+            await ws_manager.broadcast_to_conversation(
+                conversation_id, "agent_thinking", {"agent_id": str(agent.id)}
+            )
+        try:
+            system_prompt = AgentService.build_system_prompt(agent, profile)
+            full_messages = [{"role": "system", "content": system_prompt}] + messages
+            result = await llm_adapter.chat(
+                model_id=str(agent.model_id),
+                messages=full_messages,
+            )
+            return result["content"]
+        finally:
+            if conversation_id:
+                await ws_manager.broadcast_to_conversation(
+                    conversation_id, "agent_done_thinking", {"agent_id": str(agent.id)}
+                )
+
+    def _should_continue(self, key: str, turn: int, max_turns: int) -> bool:
+        """Check if the conversation loop should continue."""
+        return self._running.get(key, False) and not self._cancelled.get(key, False) and turn < max_turns
+
+    async def _finalize_conversation(
+        self,
+        conversation: Conversation,
+        participants: List[Dict[str, Any]],
+        total_turns: int,
+    ):
+        """Clean up running state and finalize a conversation."""
+        key = str(conversation.id)
+        cancelled = self._cancelled.get(key, False)
+
+        if cancelled:
+            # Save cancellation system message
+            async with async_session() as db:
+                await self._save_system_message(
+                    db, conversation.id,
+                    "This conversation has been cancelled.",
+                    total_turns,
+                )
+
+        # Record experiences for all participants
+        await self._record_conversation_experiences(
+            conversation, participants, total_turns, cancelled=cancelled
+        )
+
+        # Update conversation status
+        async with async_session() as db:
+            conv = await db.get(Conversation, conversation.id)
+            if conv:
+                conv.status = ConversationStatus.ENDED
+                await db.commit()
+
+        # Clean up state dicts
+        self._running.pop(key, None)
+        self._cancelled.pop(key, None)
+
+        await ws_manager.broadcast_to_conversation(
+            conversation.id, "conversation_ended", {"conversation_id": str(conversation.id)}
+        )
 
     async def _run_free_mode(
         self, conversation: Conversation, participants: List[Dict[str, Any]]
     ):
         turn = 0
         max_turns = conversation.config.get("max_turns", 10)
-        while self._running.get(str(conversation.id), False) and turn < max_turns:
+        key = str(conversation.id)
+
+        while self._should_continue(key, turn, max_turns):
             current = participants[turn % len(participants)]
             agent = current["agent"]
             profile = current["profile"]
+            supports_vision = current.get("supports_vision", False)
 
             # Use a new session for each iteration
             async with async_session() as db:
                 history = await self._get_history(db, conversation.id)
-                agent_service = AgentService(db)
                 chat_messages = self._build_messages_for_agent(
-                    agent_service.build_system_prompt(agent, profile), history, agent.id
+                    AgentService.build_system_prompt(agent, profile), history, agent.id,
+                    supports_vision=supports_vision,
                 )
                 chat_messages = [m for m in chat_messages if m["role"] != "system"]
 
-                reply = await self.generate_reply(agent, profile, chat_messages)
+                reply = await self.generate_reply(agent, profile, chat_messages, conversation.id)
                 await self._save_message(db, conversation.id, agent.id, reply, turn)
             turn += 1
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1.0)
 
-        # Final status update with its own session
-        async with async_session() as db:
-            conv = await db.get(Conversation, conversation.id)
-            if conv:
-                conv.status = ConversationStatus.ENDED
-                await db.commit()
-        await ws_manager.broadcast(conversation.id, {"type": "conversation_ended"})
+        await self._finalize_conversation(conversation, participants, turn)
 
     async def _run_debate_mode(
         self, conversation: Conversation, participants: List[Dict[str, Any]]
@@ -158,19 +347,21 @@ class ConversationEngine:
         turn = 0
         max_turns = conversation.config.get("max_turns", 10)
         topic = conversation.config.get("topic", conversation.title or "请就给定话题展开辩论")
+        key = str(conversation.id)
 
-        while self._running.get(str(conversation.id), False) and turn < max_turns:
+        while self._should_continue(key, turn, max_turns):
             idx = turn % len(participants)
             current = participants[idx]
             agent = current["agent"]
             profile = current["profile"]
+            supports_vision = current.get("supports_vision", False)
             stance = "正方" if idx == 0 else "反方"
 
             async with async_session() as db:
                 history = await self._get_history(db, conversation.id)
-                agent_service = AgentService(db)
                 chat_messages = self._build_messages_for_agent(
-                    agent_service.build_system_prompt(agent, profile), history, agent.id
+                    AgentService.build_system_prompt(agent, profile), history, agent.id,
+                    supports_vision=supports_vision,
                 )
                 chat_messages = [m for m in chat_messages if m["role"] != "system"]
                 chat_messages.insert(0, {
@@ -178,25 +369,21 @@ class ConversationEngine:
                     "content": f"辩论主题：{topic}。你是{stance}，请发表你的观点。",
                 })
 
-                reply = await self.generate_reply(agent, profile, chat_messages)
+                reply = await self.generate_reply(agent, profile, chat_messages, conversation.id)
                 await self._save_message(db, conversation.id, agent.id, reply, turn)
             turn += 1
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1.0)
 
-        async with async_session() as db:
-            conv = await db.get(Conversation, conversation.id)
-            if conv:
-                conv.status = ConversationStatus.ENDED
-                await db.commit()
-        await ws_manager.broadcast(conversation.id, {"type": "conversation_ended"})
+        await self._finalize_conversation(conversation, participants, turn)
 
     async def _run_relay_mode(
         self, conversation: Conversation, participants: List[Dict[str, Any]]
     ):
         turn = 0
         max_turns = conversation.config.get("max_turns", len(participants) * 2)
+        key = str(conversation.id)
 
-        while self._running.get(str(conversation.id), False) and turn < max_turns:
+        while self._should_continue(key, turn, max_turns):
             current = participants[turn % len(participants)]
             agent = current["agent"]
             profile = current["profile"]
@@ -210,17 +397,12 @@ class ConversationEngine:
                     last_msg = history[-1]
                     chat_messages = [{"role": "user", "content": f"上一位发言者说：{last_msg.content.get('text', '')}"}]
 
-                reply = await self.generate_reply(agent, profile, chat_messages)
+                reply = await self.generate_reply(agent, profile, chat_messages, conversation.id)
                 await self._save_message(db, conversation.id, agent.id, reply, turn)
             turn += 1
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1.0)
 
-        async with async_session() as db:
-            conv = await db.get(Conversation, conversation.id)
-            if conv:
-                conv.status = ConversationStatus.ENDED
-                await db.commit()
-        await ws_manager.broadcast(conversation.id, {"type": "conversation_ended"})
+        await self._finalize_conversation(conversation, participants, turn)
 
     async def _run_interview_mode(
         self, conversation: Conversation, participants: List[Dict[str, Any]]
@@ -233,21 +415,23 @@ class ConversationEngine:
         turn = 0
         max_turns = conversation.config.get("max_turns", 10)
         topic = conversation.config.get("topic", conversation.title or "请进行访谈")
+        key = str(conversation.id)
 
-        while self._running.get(str(conversation.id), False) and turn < max_turns:
+        while self._should_continue(key, turn, max_turns):
             async with async_session() as db:
                 if turn % 2 == 0:
                     agent = interviewer["agent"]
                     profile = interviewer["profile"]
+                    supports_vision = interviewer.get("supports_vision", False)
                     history = await self._get_history(db, conversation.id)
-                    agent_service = AgentService(db)
                     chat_messages = self._build_messages_for_agent(
-                        agent_service.build_system_prompt(agent, profile), history, agent.id
+                        AgentService.build_system_prompt(agent, profile), history, agent.id,
+                        supports_vision=supports_vision,
                     )
                     chat_messages = [m for m in chat_messages if m["role"] != "system"]
                     if turn == 0:
                         chat_messages.append({"role": "user", "content": f"访谈主题：{topic}。请提出第一个问题。"})
-                    reply = await self.generate_reply(agent, profile, chat_messages)
+                    reply = await self.generate_reply(agent, profile, chat_messages, conversation.id)
                 else:
                     target = interviewees[(turn // 2) % len(interviewees)]
                     agent = target["agent"]
@@ -255,18 +439,13 @@ class ConversationEngine:
                     history = await self._get_history(db, conversation.id)
                     last_q = history[-1].content.get("text", "") if history else ""
                     chat_messages = [{"role": "user", "content": f"采访者问：{last_q}\n请回答。"}]
-                    reply = await self.generate_reply(agent, profile, chat_messages)
+                    reply = await self.generate_reply(agent, profile, chat_messages, conversation.id)
 
                 await self._save_message(db, conversation.id, agent.id, reply, turn)
             turn += 1
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1.0)
 
-        async with async_session() as db:
-            conv = await db.get(Conversation, conversation.id)
-            if conv:
-                conv.status = ConversationStatus.ENDED
-                await db.commit()
-        await ws_manager.broadcast(conversation.id, {"type": "conversation_ended"})
+        await self._finalize_conversation(conversation, participants, turn)
 
     async def route_message(self, db: AsyncSession, conversation_id: UUID, message: Message) -> Optional[UUID]:
         conversation = await db.get(Conversation, conversation_id)
@@ -300,7 +479,7 @@ class ConversationEngine:
                 return agent_ids[idx] if idx < len(agent_ids) else agent_ids[1]
         return None
 
-    async def build_context(self, db: AsyncSession, conversation_id: UUID, agent_id: UUID) -> List[Dict[str, str]]:
+    async def build_context(self, db: AsyncSession, conversation_id: UUID, agent_id: UUID) -> List[Dict[str, Any]]:
         agent = await db.get(Agent, agent_id)
         if not agent:
             return []
@@ -309,8 +488,7 @@ class ConversationEngine:
             select(AgentProfile).where(AgentProfile.agent_id == agent_id)
         )
         profile = result.scalar_one_or_none()
-        agent_service = AgentService(db)
-        system_prompt = agent_service.build_system_prompt(agent, profile)
+        system_prompt = AgentService.build_system_prompt(agent, profile)
 
         history = await self._get_history(db, conversation_id)
         messages = self._build_messages_for_agent(system_prompt, history, agent_id)

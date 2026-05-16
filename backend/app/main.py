@@ -3,7 +3,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPExcept
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api import models, agents, conversations, games, auth, arena
+from app.api import models, agents, conversations, games, auth, arena, search
 from app.core.database import get_db
 from app.core.config import settings
 from app.websocket.manager import ws_manager
@@ -30,6 +30,7 @@ app.include_router(conversations.router, prefix="/api")
 app.include_router(games.router, prefix="/api")
 app.include_router(arena.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
+app.include_router(search.router, prefix="/api")
 
 
 @app.get("/health")

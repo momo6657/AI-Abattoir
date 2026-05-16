@@ -64,6 +64,13 @@ export const leaderboardApi = {
     api.get("/leaderboard", { params: category ? { category } : {} }),
 };
 
+// ---- Search ----
+export const searchApi = {
+  search: (query: string, maxResults?: number) =>
+    api.get("/search", { params: { query, max_results: maxResults } }),
+  fetchUrl: (url: string) => api.get("/search/fetch", { params: { url } }),
+};
+
 // ---- Models ----
 export const modelsApi = {
   list: () => api.get("/models"),

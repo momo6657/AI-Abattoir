@@ -19,6 +19,20 @@ jobs:
           pip install ruff
           ruff check .
 
+  backend-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - working-directory: backend
+        run: |
+          pip install pyright
+          pip install -r requirements.txt
+          pyright --version
+          pyright app/ --ignoremissingtypes
+
   frontend-lint:
     runs-on: ubuntu-latest
     steps:
@@ -30,3 +44,25 @@ jobs:
         run: |
           npm ci
           npm run lint
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: [backend-lint, frontend-lint]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend image
+        run: docker build -t ai-abattoir-backend ./backend
+      - name: Build frontend image
+        run: docker build -t ai-abattoir-frontend ./frontend

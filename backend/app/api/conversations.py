@@ -144,7 +144,7 @@ async def end_conversation(conversation_id: UUID, db: AsyncSession = Depends(get
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    _engine.pause(conversation_id)
+    _engine.cancel(conversation_id)
 
     conversation.status = "ended"
     await db.commit()
