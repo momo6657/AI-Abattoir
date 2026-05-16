@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { arenaApi, agentsApi } from "@/lib/api";
+import { ErrorBanner, Badge, ProgressBar, Modal } from "@/components";
 
 // ---- Types ----
 interface Agent {
@@ -229,12 +230,7 @@ export default function ArenaPage() {
 
       {/* Error / Coming Soon Banner */}
       {error && (
-        <div className="bg-yellow-900/40 border border-yellow-700 rounded-xl px-4 py-3 mb-6 flex items-center justify-between">
-          <span className="text-yellow-300 text-sm">{error}</span>
-          <button onClick={() => setError(null)} className="text-yellow-400 hover:text-yellow-200 text-sm">
-            关闭
-          </button>
-        </div>
+        <ErrorBanner message={error} onDismiss={() => setError(null)} />
       )}
 
       {/* Create Match Form */}
@@ -364,17 +360,11 @@ export default function ArenaPage() {
                   </span>
                   <span className="text-sm font-medium">{typeInfo.label}</span>
                 </div>
-                <span
-                  className={`text-xs px-2 py-0.5 rounded-full ${
-                    match.status === "active"
-                      ? "bg-green-900 text-green-300"
-                      : match.status === "completed"
-                      ? "bg-blue-900 text-blue-300"
-                      : "bg-gray-800 text-gray-400"
-                  }`}
-                >
-                  {match.status === "active" ? "进行中" : match.status === "completed" ? "已完成" : match.status}
-                </span>
+                <Badge
+                  text={match.status === "active" ? "进行中" : match.status === "completed" ? "已完成" : match.status}
+                  variant={match.status === "active" ? "success" : match.status === "completed" ? "info" : "default"}
+                  size="sm"
+                />
               </div>
               <p className="text-sm text-gray-400 mb-2 truncate">{match.prompt}</p>
               <div className="flex items-center justify-between">

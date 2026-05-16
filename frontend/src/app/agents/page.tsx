@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { agentsApi, modelsApi } from "@/lib/api";
+import { ErrorBanner, Badge, ProgressBar, Modal } from "@/components";
 
 // ---- Types ----
 interface Model {
@@ -280,12 +281,7 @@ export default function AgentsPage() {
 
       {/* Error Banner */}
       {error && (
-        <div className="bg-red-900/40 border border-red-700 rounded-xl px-4 py-3 mb-6 flex items-center justify-between">
-          <span className="text-red-300 text-sm">{error}</span>
-          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-200 text-sm">
-            关闭
-          </button>
-        </div>
+        <ErrorBanner message={error} onDismiss={() => setError(null)} />
       )}
 
       {/* Templates */}
@@ -477,9 +473,11 @@ export default function AgentsPage() {
 
             <div className="mt-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className={`text-sm font-medium ${getLevelColor(agent.level || 1)}`}>
-                  Lv.{agent.level || 1}
-                </span>
+                <Badge
+                  text={`Lv.${agent.level || 1}`}
+                  variant={((agent.level || 1) >= 10 ? "danger" : (agent.level || 1) >= 7 ? "info" : (agent.level || 1) >= 4 ? "info" : "success") as "danger" | "info" | "success"}
+                  size="sm"
+                />
                 <span className="text-xs text-gray-500">
                   {getModelName(agent.model_id)}
                 </span>
@@ -503,17 +501,10 @@ export default function AgentsPage() {
                   {agent.experience_points || 0} / {agent.max_experience || 100}
                 </span>
               </div>
-              <div className="w-full bg-gray-800 rounded-full h-1.5">
-                <div
-                  className="bg-blue-500 h-1.5 rounded-full transition-all"
-                  style={{
-                    width: `${Math.min(
-                      ((agent.experience_points || 0) / (agent.max_experience || 100)) * 100,
-                      100
-                    )}%`,
-                  }}
-                />
-              </div>
+              <ProgressBar
+                value={Math.min(((agent.experience_points || 0) / (agent.max_experience || 100)) * 100, 100)}
+                height="h-1.5"
+              />
             </div>
 
             <div className="mt-3 flex gap-2" onClick={(e) => e.stopPropagation()}>
@@ -542,30 +533,12 @@ export default function AgentsPage() {
 
       {/* Detail Modal */}
       {detailAgent && (
-        <div
-          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
-          onClick={() => setDetailAgent(null)}
-        >
-          <div
-            className="bg-gray-900 rounded-xl max-w-2xl w-full max-h-[85vh] overflow-y-auto p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex justify-between items-start mb-6">
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-full bg-blue-600 flex items-center justify-center text-2xl font-bold text-white">
-                  {getAvatarLetter(detailAgent.name)}
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold">{detailAgent.name}</h3>
-                  <p className="text-gray-400">{detailAgent.description}</p>
-                </div>
+        <Modal open onClose={() => setDetailAgent(null)} title={detailAgent.name} maxWidth="max-w-2xl">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-16 h-16 rounded-full bg-blue-600 flex items-center justify-center text-2xl font-bold text-white">
+                {getAvatarLetter(detailAgent.name)}
               </div>
-              <button
-                onClick={() => setDetailAgent(null)}
-                className="text-gray-400 hover:text-white text-xl"
-              >
-                &times;
-              </button>
+              <p className="text-gray-400">{detailAgent.description}</p>
             </div>
 
             <div className="space-y-4">
@@ -579,17 +552,9 @@ export default function AgentsPage() {
                     {detailAgent.experience_points || 0} / {detailAgent.max_experience || 100} XP
                   </span>
                 </div>
-                <div className="w-full bg-gray-700 rounded-full h-2">
-                  <div
-                    className="bg-blue-500 h-2 rounded-full"
-                    style={{
-                      width: `${Math.min(
-                        ((detailAgent.experience_points || 0) / (detailAgent.max_experience || 100)) * 100,
-                        100
-                      )}%`,
-                    }}
-                  />
-                </div>
+                <ProgressBar
+                  value={Math.min(((detailAgent.experience_points || 0) / (detailAgent.max_experience || 100)) * 100, 100)}
+                />
               </div>
 
               {/* Model */}
@@ -667,8 +632,7 @@ export default function AgentsPage() {
                 关闭
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
