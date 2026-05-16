@@ -43,3 +43,23 @@ class AgentResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class EvolutionResponse(BaseModel):
+    agent_id: str
+    level: str
+    xp: int
+    next_level_xp: Optional[int] = None
+    progress: float
+
+
+class ExperienceResponse(BaseModel):
+    id: str
+    scene_type: str
+    decision: Optional[str]
+    outcome: Optional[str]
+    lesson: Optional[str]
+    xp_gained: int
+    cumulative_xp: int
+    level_at_time: str
+    created_at: Optional[str] = None
