@@ -417,6 +417,7 @@ class ConversationEngine:
             agent = current["agent"]
             profile = current["profile"]
             supports_vision = current.get("supports_vision", False)
+            model_id = current.get("model_id")
             api_key = current.get("api_key")
             api_base = current.get("api_base")
 
