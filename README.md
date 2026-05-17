@@ -199,7 +199,11 @@ cp backend/.env.example backend/.env
 # 3. 启动所有服务
 docker-compose up -d
 
-# 4. 访问应用
+# 4. 初始化数据（注册模型和智能体）
+# 编辑 backend/.env.models 填入你的 API Key
+docker-compose run --rm seed
+
+# 5. 访问应用
 # 前端：http://localhost:3000
 # API 文档：http://localhost:8000/docs
 # MinIO 控制台：http://localhost:9001

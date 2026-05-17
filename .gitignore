@@ -31,3 +31,4 @@ pgdata/
 redisdata/
 miniodata/
 *.db
+.env.models

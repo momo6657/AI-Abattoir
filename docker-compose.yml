@@ -28,6 +28,7 @@ services:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_WS_URL=ws://localhost:8000
     depends_on:
       - backend
     volumes:
@@ -74,6 +75,19 @@ services:
     volumes:
       - miniodata:/data
     command: server /data --console-address ":9001"
+
+  seed:
+    build: ./backend
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/ai_abattoir
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: python seed.py
+    profiles:
+      - seed
 
 volumes:
   pgdata:
