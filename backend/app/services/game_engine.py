@@ -563,7 +563,13 @@ class GameEngine:
         if response is not None:
             target_id = self._extract_target_id(response, alive_targets)
         else:
-            target_id = None
+            # Default: shoot a random target
+            self._log_llm_failure(
+                type("Game", (), {"state": state})(),
+                agent.name, "hunter", "猎人开枪"
+            )
+            fallback = random.choice(alive_targets)
+            target_id = str(fallback.agent_id)
 
         if target_id:
             shot_player = next(
@@ -754,7 +760,7 @@ class GameEngine:
 
         if not alive_werewolves:
             return "villagers"
-        if len(alive) <= 2 and alive_werewolves:
+        if len(alive_werewolves) >= len(alive_villagers):
             return "werewolves"
         return None
 
@@ -822,6 +828,11 @@ class GameEngine:
             base += f"""你已死亡，作为猎人你可以开枪带走一名玩家。
 可选目标：{', '.join(targets)}
 请直接回复你想带走的玩家 ID（UUID 格式）。"""
+
+        elif phase == "night_guard":
+            base += f"""夜晚阶段 - 守卫守护。
+可守护的玩家：{', '.join(targets)}
+请直接回复你想守护的玩家 ID（UUID 格式）。"""
 
         elif phase == "day_discussion":
             seer_results = state.get("seer_results", {})
