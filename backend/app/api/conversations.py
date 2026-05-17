@@ -91,6 +91,27 @@ async def list_messages(conversation_id: UUID, db: AsyncSession = Depends(get_db
     return result.scalars().all()
 
 
+@router.get("/{conversation_id}/status")
+async def get_conversation_status(conversation_id: UUID, db: AsyncSession = Depends(get_db)):
+    conversation = await db.get(Conversation, conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    result = await db.execute(
+        select(Message).where(Message.conversation_id == conversation_id)
+    )
+    messages = result.scalars().all()
+    current_turn = len(messages)
+    total_turns = conversation.config.get("max_turns", 10)
+
+    status = conversation.status.value if hasattr(conversation.status, "value") else str(conversation.status)
+    return {
+        "status": status,
+        "current_turn": current_turn,
+        "total_turns": total_turns,
+    }
+
+
 @router.post("/{conversation_id}/start")
 async def start_conversation(
     conversation_id: UUID,
@@ -106,8 +127,12 @@ async def start_conversation(
         try:
             async with async_session() as session:
                 await _engine.start_conversation(session, conversation_id, body.agent_ids)
-        except Exception:
+        except Exception as e:
             logger.exception("Conversation %s failed to start", conversation_id)
+            await ws_manager.broadcast_to_conversation(
+                conversation_id, "conversation_error",
+                {"conversation_id": str(conversation_id), "error": str(e)[:500]},
+            )
 
     asyncio.create_task(_run_and_log())
     return {"status": "started", "conversation_id": str(conversation_id)}
@@ -128,6 +153,15 @@ async def send_message(
     message = await router_instance.handle_incoming_message(
         conversation_id, body.agent_id, body.content
     )
+
+    # Trigger next agent response in background
+    async def _trigger_response():
+        try:
+            await _engine.handle_user_message(conversation_id)
+        except Exception:
+            logger.exception("Failed to trigger agent response for conversation %s", conversation_id)
+
+    asyncio.create_task(_trigger_response())
     return message
 
 

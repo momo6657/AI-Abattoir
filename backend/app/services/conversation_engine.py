@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from uuid import UUID
 from typing import List, Optional, Dict, Any
 from sqlalchemy import select
@@ -12,6 +13,8 @@ from app.services.llm_adapter import llm_adapter
 from app.services.agent_service import AgentService
 from app.services.evolution_service import evolution_service
 from app.websocket.manager import ws_manager
+
+logger = logging.getLogger(__name__)
 
 
 class ConversationEngine:
@@ -55,6 +58,12 @@ class ConversationEngine:
 
         participants = await self._load_participants(db, agent_ids)
         if not participants:
+            logger.error("No participants loaded for conversation %s, aborting", conversation_id)
+            await self._save_system_message(
+                db, conversation_id,
+                "No valid agents found. Conversation cannot start.", 0,
+            )
+            await self._finalize_conversation(conversation, [], 0)
             return
 
         mode = conversation.mode if isinstance(conversation.mode, ConversationMode) else ConversationMode(conversation.mode)
@@ -72,6 +81,7 @@ class ConversationEngine:
         for aid in agent_ids:
             agent = await db.get(Agent, aid)
             if not agent:
+                logger.warning("Agent %s not found, skipping", aid)
                 continue
             result = await db.execute(
                 select(AgentProfile).where(AgentProfile.agent_id == aid)
@@ -81,6 +91,8 @@ class ConversationEngine:
             # Check if the agent's model supports vision
             supports_vision = False
             model = await db.get(Model, agent.model_id)
+            if not model:
+                logger.warning("Model %s not found for agent %s", agent.model_id, agent.name)
             if model:
                 cap_result = await db.execute(
                     select(ModelCapability)
@@ -94,6 +106,8 @@ class ConversationEngine:
                 "profile": profile,
                 "supports_vision": supports_vision,
             })
+        if not participants:
+            logger.error("No valid participants found for agent_ids: %s", [str(a) for a in agent_ids])
         return participants
 
     def _build_messages_for_agent(
@@ -262,6 +276,81 @@ class ConversationEngine:
                     conversation_id, "agent_done_thinking", {"agent_id": str(agent.id)}
                 )
 
+    async def handle_user_message(self, conversation_id: UUID):
+        """After a user message is saved, trigger the next agent's response."""
+        async with async_session() as db:
+            conversation = await db.get(Conversation, conversation_id)
+            if not conversation or conversation.status != ConversationStatus.ACTIVE:
+                return
+
+            agent_ids_str = conversation.config.get("agent_ids", [])
+            if not agent_ids_str:
+                return
+
+            agent_ids = [UUID(aid) if isinstance(aid, str) else aid for aid in agent_ids_str]
+            participants = await self._load_participants(db, agent_ids)
+            if not participants:
+                logger.warning("No valid participants for conversation %s", conversation_id)
+                return
+
+            history = await self._get_history(db, conversation_id)
+            msg_count = len(history)
+            mode = conversation.mode if isinstance(conversation.mode, ConversationMode) else ConversationMode(conversation.mode)
+            topic = conversation.config.get("topic", conversation.title or "")
+
+            # Determine next participant based on mode
+            if mode == ConversationMode.INTERVIEW and len(participants) >= 2:
+                if msg_count % 2 == 0:
+                    next_p = participants[0]  # interviewer
+                else:
+                    idx = ((msg_count - 1) // 2) % max(1, len(participants) - 1)
+                    next_p = participants[idx + 1]  # interviewee
+            else:
+                next_p = participants[msg_count % len(participants)]
+
+            agent = next_p["agent"]
+            profile = next_p["profile"]
+            supports_vision = next_p.get("supports_vision", False)
+
+            # Build messages for the agent
+            system_prompt = AgentService.build_system_prompt(agent, profile)
+            chat_messages = self._build_messages_for_agent(
+                system_prompt, history, agent.id, supports_vision=supports_vision
+            )
+            chat_messages = [m for m in chat_messages if m["role"] != "system"]
+
+            # Add mode-specific context
+            if mode == ConversationMode.DEBATE:
+                debate_topic = topic or "请就给定话题展开辩论"
+                idx = participants.index(next_p)
+                stance = "正方" if idx == 0 else "反方"
+                chat_messages.insert(0, {
+                    "role": "user",
+                    "content": f"辩论主题：{debate_topic}。你是{stance}，请发表你的观点。",
+                })
+            elif mode == ConversationMode.INTERVIEW:
+                interview_topic = topic or "请进行访谈"
+                if msg_count == 0:
+                    chat_messages.append({
+                        "role": "user",
+                        "content": f"访谈主题：{interview_topic}。请提出第一个问题。",
+                    })
+                elif msg_count % 2 == 1:
+                    last_q = history[-1].content.get("text", "") if history else ""
+                    chat_messages = [{"role": "user", "content": f"采访者问：{last_q}\n请回答。"}]
+
+            # Generate response
+            try:
+                reply = await self.generate_reply(agent, profile, chat_messages, conversation_id)
+                await self._save_message(db, conversation_id, agent.id, reply, msg_count)
+            except Exception as e:
+                logger.error("Agent %s failed to respond to user message: %s", agent.name, e)
+                await self._save_system_message(
+                    db, conversation_id,
+                    f"Agent {agent.name} failed to respond: {str(e)[:200]}",
+                    msg_count,
+                )
+
     def _should_continue(self, key: str, turn: int, max_turns: int) -> bool:
         """Check if the conversation loop should continue."""
         return self._running.get(key, False) and not self._cancelled.get(key, False) and turn < max_turns
@@ -327,8 +416,16 @@ class ConversationEngine:
                 )
                 chat_messages = [m for m in chat_messages if m["role"] != "system"]
 
-                reply = await self.generate_reply(agent, profile, chat_messages, conversation.id)
-                await self._save_message(db, conversation.id, agent.id, reply, turn)
+                try:
+                    reply = await self.generate_reply(agent, profile, chat_messages, conversation.id)
+                    await self._save_message(db, conversation.id, agent.id, reply, turn)
+                except Exception as e:
+                    logger.error("Agent %s failed on turn %d: %s", agent.name, turn, e)
+                    await self._save_system_message(
+                        db, conversation.id,
+                        f"Agent {agent.name} failed to respond: {str(e)[:200]}",
+                        turn,
+                    )
             turn += 1
             await asyncio.sleep(1.0)
 
@@ -364,8 +461,16 @@ class ConversationEngine:
                     "content": f"辩论主题：{topic}。你是{stance}，请发表你的观点。",
                 })
 
-                reply = await self.generate_reply(agent, profile, chat_messages, conversation.id)
-                await self._save_message(db, conversation.id, agent.id, reply, turn)
+                try:
+                    reply = await self.generate_reply(agent, profile, chat_messages, conversation.id)
+                    await self._save_message(db, conversation.id, agent.id, reply, turn)
+                except Exception as e:
+                    logger.error("Agent %s failed on turn %d: %s", agent.name, turn, e)
+                    await self._save_system_message(
+                        db, conversation.id,
+                        f"Agent {agent.name} failed to respond: {str(e)[:200]}",
+                        turn,
+                    )
             turn += 1
             await asyncio.sleep(1.0)
 
@@ -392,8 +497,16 @@ class ConversationEngine:
                     last_msg = history[-1]
                     chat_messages = [{"role": "user", "content": f"上一位发言者说：{last_msg.content.get('text', '')}"}]
 
-                reply = await self.generate_reply(agent, profile, chat_messages, conversation.id)
-                await self._save_message(db, conversation.id, agent.id, reply, turn)
+                try:
+                    reply = await self.generate_reply(agent, profile, chat_messages, conversation.id)
+                    await self._save_message(db, conversation.id, agent.id, reply, turn)
+                except Exception as e:
+                    logger.error("Agent %s failed on turn %d: %s", agent.name, turn, e)
+                    await self._save_system_message(
+                        db, conversation.id,
+                        f"Agent {agent.name} failed to respond: {str(e)[:200]}",
+                        turn,
+                    )
             turn += 1
             await asyncio.sleep(1.0)
 
@@ -414,29 +527,37 @@ class ConversationEngine:
 
         while self._should_continue(key, turn, max_turns):
             async with async_session() as db:
-                if turn % 2 == 0:
-                    agent = interviewer["agent"]
-                    profile = interviewer["profile"]
-                    supports_vision = interviewer.get("supports_vision", False)
-                    history = await self._get_history(db, conversation.id)
-                    chat_messages = self._build_messages_for_agent(
-                        AgentService.build_system_prompt(agent, profile), history, agent.id,
-                        supports_vision=supports_vision,
-                    )
-                    chat_messages = [m for m in chat_messages if m["role"] != "system"]
-                    if turn == 0:
-                        chat_messages.append({"role": "user", "content": f"访谈主题：{topic}。请提出第一个问题。"})
-                    reply = await self.generate_reply(agent, profile, chat_messages, conversation.id)
-                else:
-                    target = interviewees[(turn // 2) % len(interviewees)]
-                    agent = target["agent"]
-                    profile = target["profile"]
-                    history = await self._get_history(db, conversation.id)
-                    last_q = history[-1].content.get("text", "") if history else ""
-                    chat_messages = [{"role": "user", "content": f"采访者问：{last_q}\n请回答。"}]
-                    reply = await self.generate_reply(agent, profile, chat_messages, conversation.id)
+                try:
+                    if turn % 2 == 0:
+                        agent = interviewer["agent"]
+                        profile = interviewer["profile"]
+                        supports_vision = interviewer.get("supports_vision", False)
+                        history = await self._get_history(db, conversation.id)
+                        chat_messages = self._build_messages_for_agent(
+                            AgentService.build_system_prompt(agent, profile), history, agent.id,
+                            supports_vision=supports_vision,
+                        )
+                        chat_messages = [m for m in chat_messages if m["role"] != "system"]
+                        if turn == 0:
+                            chat_messages.append({"role": "user", "content": f"访谈主题：{topic}。请提出第一个问题。"})
+                        reply = await self.generate_reply(agent, profile, chat_messages, conversation.id)
+                    else:
+                        target = interviewees[(turn // 2) % len(interviewees)]
+                        agent = target["agent"]
+                        profile = target["profile"]
+                        history = await self._get_history(db, conversation.id)
+                        last_q = history[-1].content.get("text", "") if history else ""
+                        chat_messages = [{"role": "user", "content": f"采访者问：{last_q}\n请回答。"}]
+                        reply = await self.generate_reply(agent, profile, chat_messages, conversation.id)
 
-                await self._save_message(db, conversation.id, agent.id, reply, turn)
+                    await self._save_message(db, conversation.id, agent.id, reply, turn)
+                except Exception as e:
+                    logger.error("Agent %s failed on turn %d: %s", agent.name, turn, e)
+                    await self._save_system_message(
+                        db, conversation.id,
+                        f"Agent {agent.name} failed to respond: {str(e)[:200]}",
+                        turn,
+                    )
             turn += 1
             await asyncio.sleep(1.0)
 

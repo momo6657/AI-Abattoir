@@ -43,6 +43,7 @@ export const arenaApi = {
   createMatch: (data: Record<string, unknown>) => api.post("/arena/matches", data),
   getMatch: (id: string) => api.get(`/arena/matches/${id}`),
   listMatches: () => api.get("/arena/matches"),
+  startMatch: (id: string) => api.post(`/arena/matches/${id}/start`),
   vote: (matchId: string, data: Record<string, unknown>) =>
     api.post(`/arena/matches/${matchId}/vote`, data),
 };

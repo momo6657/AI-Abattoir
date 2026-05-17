@@ -46,6 +46,14 @@ function getAgentName(agentId: string, agents: Agent[]): string {
   return agent ? agent.name : "未知";
 }
 
+function extractErrorMessage(err: unknown, fallback: string): string {
+  if (typeof err === "object" && err !== null) {
+    const axiosErr = err as { response?: { data?: { detail?: string } } };
+    if (axiosErr.response?.data?.detail) return axiosErr.response.data.detail;
+  }
+  return fallback;
+}
+
 // ---- Page Component ----
 export default function ConversationsPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -59,6 +67,7 @@ export default function ConversationsPage() {
   const [inputText, setInputText] = useState("");
   const [convStatus, setConvStatus] = useState<string>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [errorRetryFn, setErrorRetryFn] = useState<(() => void) | null>(null);
   const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -76,8 +85,10 @@ export default function ConversationsPage() {
       const r = await conversationsApi.list();
       setConversations(r.data);
       setError(null);
-    } catch {
-      setError("无法加载对话列表，请检查后端服务是否运行");
+      setErrorRetryFn(null);
+    } catch (err) {
+      setError(extractErrorMessage(err, "无法加载对话列表，请检查后端服务是否运行"));
+      setErrorRetryFn(() => loadConversations);
     } finally {
       setLoading(false);
     }
@@ -101,9 +112,10 @@ export default function ConversationsPage() {
     try {
       const r = await conversationsApi.getMessages(convId);
       setMessages(r.data);
-    } catch {
+    } catch (err) {
       setMessages([]);
-      setError("无法加载消息，请检查后端服务是否运行");
+      setError(extractErrorMessage(err, "无法加载消息，请检查后端服务是否运行"));
+      setErrorRetryFn(() => () => loadMessages(convId));
     }
   }, []);
 
@@ -164,8 +176,8 @@ export default function ConversationsPage() {
       setNewTitle("");
       setNewMode("free");
       setSelectedAgentIds([]);
-    } catch {
-      setError("创建失败");
+    } catch (err) {
+      setError(extractErrorMessage(err, "创建对话失败"));
     }
   };
 
@@ -174,8 +186,8 @@ export default function ConversationsPage() {
     try {
       await conversationsApi.start(selectedConvId);
       setConvStatus("active");
-    } catch {
-      setError("启动失败");
+    } catch (err) {
+      setError(extractErrorMessage(err, "启动对话失败"));
     }
   };
 
@@ -184,8 +196,8 @@ export default function ConversationsPage() {
     try {
       await conversationsApi.pause(selectedConvId);
       setConvStatus("paused");
-    } catch {
-      setError("暂停失败");
+    } catch (err) {
+      setError(extractErrorMessage(err, "暂停对话失败"));
     }
   };
 
@@ -194,8 +206,8 @@ export default function ConversationsPage() {
     try {
       await conversationsApi.resume(selectedConvId);
       setConvStatus("active");
-    } catch {
-      setError("继续失败");
+    } catch (err) {
+      setError(extractErrorMessage(err, "继续对话失败"));
     }
   };
 
@@ -204,24 +216,27 @@ export default function ConversationsPage() {
     try {
       await conversationsApi.end(selectedConvId);
       setConvStatus("ended");
-    } catch {
-      setError("结束失败");
+    } catch (err) {
+      setError(extractErrorMessage(err, "结束对话失败"));
     }
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedConvId || !inputText.trim()) return;
+    const messageText = inputText;
+    setInputText("");
     try {
       await conversationsApi.sendMessage(selectedConvId, {
-        content: inputText,
+        content: messageText,
         role: "user",
         content_type: "text",
       });
-      setInputText("");
-      // Thinking state now comes from WebSocket (agent_thinking events)
-    } catch {
-      setError("发送失败");
+      // AI response and thinking state come via WebSocket (agent_thinking / new_message events)
+    } catch (err) {
+      // Restore input on failure so user can retry
+      setInputText(messageText);
+      setError(extractErrorMessage(err, "发送消息失败，请重试"));
     }
   };
 
@@ -238,7 +253,11 @@ export default function ConversationsPage() {
       {/* Error Banner */}
       {error && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-40 shadow-lg">
-          <ErrorBanner message={error} onDismiss={() => setError(null)} />
+          <ErrorBanner
+            message={error}
+            onDismiss={() => { setError(null); setErrorRetryFn(null); }}
+            onRetry={errorRetryFn || undefined}
+          />
         </div>
       )}
 

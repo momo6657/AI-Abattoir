@@ -45,6 +45,14 @@ function getMatchTypeInfo(type: string) {
   return MATCH_TYPES.find((t) => t.value === type) || MATCH_TYPES[0];
 }
 
+function extractErrorMessage(err: unknown, fallback: string): string {
+  if (typeof err === "object" && err !== null) {
+    const axiosErr = err as { response?: { data?: { detail?: string } } };
+    if (axiosErr.response?.data?.detail) return axiosErr.response.data.detail;
+  }
+  return fallback;
+}
+
 // ---- Page Component ----
 export default function ArenaPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -57,6 +65,7 @@ export default function ArenaPage() {
   const [viewingMatch, setViewingMatch] = useState<ArenaMatch | null>(null);
   const [votedMatches, setVotedMatches] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [errorRetryFn, setErrorRetryFn] = useState<(() => void) | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadAgents = useCallback(async () => {
@@ -74,8 +83,10 @@ export default function ArenaPage() {
       const r = await arenaApi.listMatches();
       setMatches(r.data);
       setError(null);
-    } catch {
-      setError("竞技场 API 即将上线，敬请期待");
+      setErrorRetryFn(null);
+    } catch (err) {
+      setError(extractErrorMessage(err, "无法加载竞技场数据，请检查后端服务是否运行"));
+      setErrorRetryFn(() => loadMatches);
     } finally {
       setLoading(false);
     }
@@ -94,20 +105,29 @@ export default function ArenaPage() {
       return;
     }
     try {
-      await arenaApi.createMatch({
+      const res = await arenaApi.createMatch({
         match_type: selectedType,
         prompt,
         agent_a_id: agentAId,
         agent_b_id: agentBId,
       });
+      const matchId = res.data?.id;
+      // Auto-start the match after creation
+      if (matchId) {
+        try {
+          await arenaApi.startMatch(matchId);
+        } catch {
+          // Start may fail if the backend auto-starts; non-critical
+        }
+      }
       await loadMatches();
       setShowCreate(false);
       setSelectedType("");
       setAgentAId("");
       setAgentBId("");
       setPrompt("");
-    } catch {
-      setError("创建失败");
+    } catch (err) {
+      setError(extractErrorMessage(err, "创建对决失败"));
     }
   };
 
@@ -117,8 +137,8 @@ export default function ArenaPage() {
       await arenaApi.vote(matchId, { side });
       setVotedMatches((prev) => new Set(prev).add(matchId));
       await loadMatches();
-    } catch {
-      setError("投票失败");
+    } catch (err) {
+      setError(extractErrorMessage(err, "投票失败"));
     }
   };
 
@@ -229,9 +249,13 @@ export default function ArenaPage() {
         </button>
       </div>
 
-      {/* Error / Coming Soon Banner */}
+      {/* Error Banner */}
       {error && (
-        <ErrorBanner message={error} onDismiss={() => setError(null)} />
+        <ErrorBanner
+          message={error}
+          onDismiss={() => { setError(null); setErrorRetryFn(null); }}
+          onRetry={errorRetryFn || undefined}
+        />
       )}
 
       {/* Create Match Form */}

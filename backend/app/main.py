@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api import models, agents, conversations, games, auth, arena, search, hierarchy, evolution
+from app.api import models, agents, conversations, games, auth, arena, search, hierarchy, evolution, leaderboard
 from app.core.database import get_db, engine, Base
 from app.core.config import settings
 from app.websocket.manager import ws_manager
@@ -61,11 +61,24 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(search.router, prefix="/api")
 app.include_router(hierarchy.router, prefix="/api")
 app.include_router(evolution.router, prefix="/api")
+app.include_router(leaderboard.router, prefix="/api")
 
 
 @app.get("/health")
-async def health():
-    return {"status": "ok"}
+async def health(db: AsyncSession = Depends(get_db)):
+    """Health check with database status."""
+    try:
+        from sqlalchemy import text
+        await db.execute(text("SELECT 1"))
+        db_status = "connected"
+    except Exception as e:
+        db_status = f"error: {str(e)[:100]}"
+
+    return {
+        "status": "ok",
+        "database": db_status,
+        "version": "0.1.0",
+    }
 
 
 @app.post("/api/seed")

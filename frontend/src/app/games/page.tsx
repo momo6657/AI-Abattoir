@@ -63,6 +63,14 @@ function getStatusLabel(status: string): string {
   return map[status] || status;
 }
 
+function extractErrorMessage(err: unknown, fallback: string): string {
+  if (typeof err === "object" && err !== null) {
+    const axiosErr = err as { response?: { data?: { detail?: string } } };
+    if (axiosErr.response?.data?.detail) return axiosErr.response.data.detail;
+  }
+  return fallback;
+}
+
 
 // ---- Page Component ----
 export default function GamesPage() {
@@ -80,6 +88,7 @@ export default function GamesPage() {
   const [filter, setFilter] = useState<"all" | "waiting" | "active" | "finished">("all");
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorRetryFn, setErrorRetryFn] = useState<(() => void) | null>(null);
   const [loading, setLoading] = useState(true);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
@@ -89,8 +98,10 @@ export default function GamesPage() {
       const r = await gamesApi.list();
       setGames(r.data);
       setError(null);
-    } catch {
-      setError("无法加载游戏列表，请检查后端服务是否运行");
+      setErrorRetryFn(null);
+    } catch (err) {
+      setError(extractErrorMessage(err, "无法加载游戏列表，请检查后端服务是否运行"));
+      setErrorRetryFn(() => loadGames);
     } finally {
       setLoading(false);
     }
@@ -117,10 +128,12 @@ export default function GamesPage() {
       const stateR = await gamesApi.getState(gameId);
       setGameLogs(stateR.data.logs || []);
       setGameState(stateR.data);
-    } catch {
+    } catch (err) {
       setActiveGame(null);
       setGameLogs([]);
       setGameState(null);
+      setError(extractErrorMessage(err, "无法加载游戏详情"));
+      setErrorRetryFn(() => () => loadGameDetail(gameId));
     }
   }, []);
 
@@ -151,8 +164,8 @@ export default function GamesPage() {
       setGameTitle("");
       setSelectedAgentIds([]);
       setMaxTurns(20);
-    } catch {
-      setError("创建失败");
+    } catch (err) {
+      setError(extractErrorMessage(err, "创建游戏失败"));
     }
   };
 
@@ -161,8 +174,8 @@ export default function GamesPage() {
       await gamesApi.start(gameId);
       await loadGames();
       if (activeGameId === gameId) await loadGameDetail(gameId);
-    } catch {
-      setError("启动失败");
+    } catch (err) {
+      setError(extractErrorMessage(err, "启动游戏失败"));
     }
   };
 
@@ -173,8 +186,8 @@ export default function GamesPage() {
       await gamesApi.processTurn(activeGameId);
       await loadGameDetail(activeGameId);
       await loadGames();
-    } catch {
-      setError("回合处理失败");
+    } catch (err) {
+      setError(extractErrorMessage(err, "回合处理失败"));
     } finally {
       setIsProcessing(false);
     }
@@ -186,8 +199,8 @@ export default function GamesPage() {
       await gamesApi.end(gameId);
       await loadGames();
       if (activeGameId === gameId) await loadGameDetail(gameId);
-    } catch {
-      setError("结束失败");
+    } catch (err) {
+      setError(extractErrorMessage(err, "结束游戏失败"));
     }
   };
 
@@ -214,7 +227,11 @@ export default function GamesPage() {
 
       {/* Error Banner */}
       {error && (
-        <ErrorBanner message={error} onDismiss={() => setError(null)} />
+        <ErrorBanner
+          message={error}
+          onDismiss={() => { setError(null); setErrorRetryFn(null); }}
+          onRetry={errorRetryFn || undefined}
+        />
       )}
 
       {/* Create Game Form */}
