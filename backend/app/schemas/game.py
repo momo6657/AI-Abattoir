@@ -28,7 +28,9 @@ class GameStateResponse(BaseModel):
     status: str
     state: dict
     players: List[dict]
+    events: List[dict] = []
     winner_id: Optional[str] = None
+    winner: Optional[str] = None
     created_at: Optional[str] = None
 
 

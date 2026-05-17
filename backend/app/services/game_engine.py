@@ -49,6 +49,23 @@ class GameEngine:
             await self._setup_werewolf(db, game)
             game.state["round"] = 1
             game.state["phase"] = "night"
+            # Log role assignments
+            players_result = await db.execute(
+                select(GamePlayer).where(GamePlayer.game_id == game.id)
+            )
+            players = players_result.scalars().all()
+            for player in players:
+                agent = await db.get(Agent, player.agent_id)
+                self._log_event(game, {
+                    "type": "role_assignment",
+                    "agent_id": str(player.agent_id),
+                    "agent_name": agent.name if agent else "Unknown",
+                    "role": player.role,
+                })
+            self._log_event(game, {
+                "type": "game_start",
+                "message": "狼人杀游戏开始！第一轮夜晚降临...",
+            })
         elif game.game_type == GameType.DEBATE:
             await self._setup_debate(db, game)
         elif game.game_type == GameType.NEGOTIATION:
@@ -421,11 +438,70 @@ class GameEngine:
                     "default": True,
                 })
 
+        # 守卫守护
+        guards = alive_by_role.get("guard", [])
+        if guards:
+            guard = guards[0]
+            agent = await db.get(Agent, guard.agent_id)
+            model = await db.get(Model, agent.model_id)
+            guard_targets = [
+                p for p in alive_players if p.agent_id != guard.agent_id
+            ]
+            # Cannot guard same person twice in a row
+            last_guarded = state.get("last_guarded")
+            if last_guarded:
+                guard_targets = [p for p in guard_targets if str(p.agent_id) != last_guarded]
+            if guard_targets:
+                target_names = [
+                    f"{(a.name if (a := await db.get(Agent, t.agent_id)) else 'Unknown')}(ID:{t.agent_id})"
+                    for t in guard_targets
+                ]
+                prompt = self._build_werewolf_prompt(
+                    agent, "guard", state, "night_guard", target_names
+                )
+                response = await self._call_llm(model, prompt)
+                if response is not None:
+                    guard_id = self._extract_target_id(response, guard_targets)
+                    if guard_id:
+                        state["night_actions"]["guard_target"] = guard_id
+                        state["last_guarded"] = guard_id
+                        guarded_agent = await db.get(Agent, next(t.agent_id for t in guard_targets if str(t.agent_id) == guard_id))
+                        events.append({
+                            "action": "guard_protect",
+                            "agent_id": str(guard.agent_id),
+                            "agent_name": agent.name,
+                            "target_id": guard_id,
+                            "target_name": guarded_agent.name if guarded_agent else "Unknown",
+                        })
+                else:
+                    self._log_llm_failure(game, agent.name, "guard", "守卫守护")
+                    # Default: guard a random target
+                    fallback = random.choice(guard_targets)
+                    state["night_actions"]["guard_target"] = str(fallback.agent_id)
+                    state["last_guarded"] = str(fallback.agent_id)
+                    events.append({
+                        "action": "guard_protect",
+                        "agent_id": str(guard.agent_id),
+                        "agent_name": agent.name,
+                        "target_id": str(fallback.agent_id),
+                        "target_name": "Unknown",
+                        "default": True,
+                    })
+
         # 结算夜晚死亡
         deaths = []
         wolf_target = state["night_actions"].get("wolf_target")
+        guard_target = state["night_actions"].get("guard_target")
         if wolf_target:
-            deaths.append(wolf_target)
+            if guard_target and wolf_target == guard_target:
+                # Guard protected the wolf target
+                events.append({
+                    "action": "guard_save",
+                    "target_id": wolf_target,
+                    "message": "守卫成功守护了目标！",
+                })
+            else:
+                deaths.append(wolf_target)
 
         witch_poison = state["night_actions"].get("witch_poison")
         if witch_poison:
