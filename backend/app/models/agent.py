@@ -49,8 +49,8 @@ class AgentHierarchy(Base):
     __tablename__ = "agent_hierarchy"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    parent_agent_id = Column(UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False)
-    child_agent_id = Column(UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False)
+    parent_agent_id = Column(UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True)
+    child_agent_id = Column(UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True)
     relation_type = Column(String(50), default="command")
     context_id = Column(UUID(as_uuid=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
@@ -60,7 +60,7 @@ class AgentExperience(Base):
     __tablename__ = "agent_experiences"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    agent_id = Column(UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False)
+    agent_id = Column(UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True)
     scene_type = Column(String(50), nullable=False)
     context_id = Column(UUID(as_uuid=True), nullable=True)
     decision = Column(Text, nullable=True)

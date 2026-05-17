@@ -41,8 +41,8 @@ class GamePlayer(Base):
     __tablename__ = "game_players"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    game_id = Column(UUID(as_uuid=True), ForeignKey("games.id", ondelete="CASCADE"), nullable=False)
-    agent_id = Column(UUID(as_uuid=True), ForeignKey("agents.id"), nullable=False)
+    game_id = Column(UUID(as_uuid=True), ForeignKey("games.id", ondelete="CASCADE"), nullable=False, index=True)
+    agent_id = Column(UUID(as_uuid=True), ForeignKey("agents.id"), nullable=False, index=True)
     role = Column(String(50), nullable=True)
     is_alive = Column(Boolean, default=True)
     config = Column(JSONB, default=dict)

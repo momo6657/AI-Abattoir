@@ -41,6 +41,6 @@ class Message(Base):
     agent_id = Column(UUID(as_uuid=True), ForeignKey("agents.id"), nullable=True)
     role = Column(String(20), nullable=False)
     content = Column(JSONB, nullable=False)
-    turn_number = Column(Integer, nullable=True)
+    turn_number = Column(Integer, nullable=True, index=True)
     metadata_ = Column("metadata", JSONB, default=dict)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

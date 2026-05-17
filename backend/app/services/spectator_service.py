@@ -1,13 +1,16 @@
 import json
+import logging
 from uuid import UUID
 from typing import Dict, List, Optional, Any
-from fastapi import WebSocket
+from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.conversation import Conversation, Message
 from app.models.game import Game, GamePlayer
 from app.models.agent import Agent
+
+logger = logging.getLogger(__name__)
 
 
 class SpectatorService:
@@ -30,8 +33,10 @@ class SpectatorService:
                 data = await websocket.receive_json()
                 if data.get("type") == "ping":
                     await websocket.send_json({"type": "pong"})
-        except Exception:
+        except WebSocketDisconnect:
             pass
+        except Exception as e:
+            logger.warning("Spectator websocket error for %s: %s", key, e)
         finally:
             self._remove_spectator(websocket, key)
 
@@ -49,8 +54,10 @@ class SpectatorService:
                 data = await websocket.receive_json()
                 if data.get("type") == "ping":
                     await websocket.send_json({"type": "pong"})
-        except Exception:
+        except WebSocketDisconnect:
             pass
+        except Exception as e:
+            logger.warning("Spectator websocket error for %s: %s", key, e)
         finally:
             self._remove_spectator(websocket, key)
 
@@ -103,9 +110,16 @@ class SpectatorService:
         )
         messages = result.scalars().all()
 
+        # Batch load agents to avoid N+1 queries
+        agent_ids = {msg.agent_id for msg in messages if msg.agent_id}
+        agents_map: Dict[str, Agent] = {}
+        if agent_ids:
+            agents_result = await db.execute(select(Agent).where(Agent.id.in_(agent_ids)))
+            agents_map = {str(a.id): a for a in agents_result.scalars().all()}
+
         message_list = []
         for msg in messages:
-            agent = await db.get(Agent, msg.agent_id) if msg.agent_id else None
+            agent = agents_map.get(str(msg.agent_id)) if msg.agent_id else None
             message_list.append({
                 "id": str(msg.id),
                 "agent_id": str(msg.agent_id) if msg.agent_id else None,
@@ -139,9 +153,16 @@ class SpectatorService:
         )
         players = result.scalars().all()
 
+        # Batch load agents to avoid N+1 queries
+        agent_ids = {p.agent_id for p in players if p.agent_id}
+        agents_map: Dict[str, Agent] = {}
+        if agent_ids:
+            agents_result = await db.execute(select(Agent).where(Agent.id.in_(agent_ids)))
+            agents_map = {str(a.id): a for a in agents_result.scalars().all()}
+
         player_list = []
         for p in players:
-            agent = await db.get(Agent, p.agent_id)
+            agent = agents_map.get(str(p.agent_id)) if p.agent_id else None
             player_list.append({
                 "agent_id": str(p.agent_id),
                 "agent_name": agent.name if agent else "Unknown",

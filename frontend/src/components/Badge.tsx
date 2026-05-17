@@ -15,7 +15,7 @@ const variants = {
 export default function Badge({ text, variant = "default", size = "sm" }: BadgeProps) {
   const sizeClass = size === "sm" ? "px-2 py-0.5 text-xs" : "px-3 py-1 text-sm";
   return (
-    <span className={`rounded-full ${sizeClass} ${variants[variant]}`}>
+    <span role="status" className={`rounded-full ${sizeClass} ${variants[variant]}`}>
       {text}
     </span>
   );

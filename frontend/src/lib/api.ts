@@ -2,7 +2,7 @@ import axios from "axios";
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
-export const api = axios.create({ baseURL });
+const api = axios.create({ baseURL, timeout: 30000 });
 
 api.interceptors.response.use(
   (response) => response,
@@ -18,7 +18,6 @@ api.interceptors.response.use(
 export const agentsApi = {
   list: () => api.get("/agents"),
   create: (data: Record<string, unknown>) => api.post("/agents", data),
-  get: (id: string) => api.get(`/agents/${id}`),
   update: (id: string, data: Record<string, unknown>) => api.put(`/agents/${id}`, data),
   delete: (id: string) => api.delete(`/agents/${id}`),
   getEvolution: (id: string) => api.get(`/agents/${id}/evolution`),
@@ -46,9 +45,6 @@ export const arenaApi = {
   listMatches: () => api.get("/arena/matches"),
   vote: (matchId: string, data: Record<string, unknown>) =>
     api.post(`/arena/matches/${matchId}/vote`, data),
-  getResults: (matchId: string) => api.get(`/arena/matches/${matchId}/results`),
-  start: (matchId: string) => api.post(`/arena/matches/${matchId}/start`),
-  finish: (matchId: string) => api.post(`/arena/matches/${matchId}/finish`),
 };
 
 // ---- Games ----
@@ -74,13 +70,6 @@ export const leaderboardApi = {
     api.get("/leaderboard", { params: category ? { category } : {} }),
 };
 
-// ---- Search ----
-export const searchApi = {
-  search: (query: string, maxResults?: number) =>
-    api.get("/search", { params: { query, max_results: maxResults } }),
-  fetchUrl: (url: string) => api.get("/search/fetch", { params: { url } }),
-};
-
 // ---- Spectator ----
 export const spectatorApi = {
   replayConversation: (id: string) => api.get(`/replay/conversations/${id}`),
@@ -91,7 +80,6 @@ export const spectatorApi = {
 export const modelsApi = {
   list: () => api.get("/models"),
   create: (data: Record<string, unknown>) => api.post("/models", data),
-  get: (id: string) => api.get(`/models/${id}`),
   update: (id: string, data: Record<string, unknown>) => api.put(`/models/${id}`, data),
   delete: (id: string) => api.delete(`/models/${id}`),
 };

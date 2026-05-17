@@ -1,5 +1,7 @@
 from uuid import UUID
+import os
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, Request
+from fastapi.exceptions import HTTPException as FastAPIHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,6 +41,8 @@ app.add_middleware(CORSMiddleware, **_cors_kwargs)
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    if isinstance(exc, FastAPIHTTPException):
+        raise exc
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal server error"},
@@ -60,8 +64,12 @@ async def health():
 
 
 @app.post("/api/seed")
-async def seed_data(db: AsyncSession = Depends(get_db)):
+async def seed_data(request: Request, db: AsyncSession = Depends(get_db)):
     """Seed database with initial models and agents. Call once after deployment."""
+    # Simple auth check - require X-Seed-Key header
+    seed_key = request.headers.get("X-Seed-Key", "")
+    if seed_key != os.getenv("SEED_KEY", "ai-abattoir-seed-2025"):
+        raise HTTPException(status_code=403, detail="Invalid seed key")
     from sqlalchemy import select, func
     from app.models.model import Model, ModelCapability, CapabilityType
     from app.models.agent import Agent, AgentProfile
@@ -72,7 +80,6 @@ async def seed_data(db: AsyncSession = Depends(get_db)):
         return {"message": "Database already seeded", "models": count.scalar()}
 
     # Create models (API keys from environment or hardcoded for demo)
-    import os
     gpt_key = os.getenv("GPT54_API_KEY", "")
     deepseek_key = os.getenv("DEEPSEEK_API_KEY", "")
     llm_base = os.getenv("LLM_API_BASE", "https://api.vip.crond.dev/v1")

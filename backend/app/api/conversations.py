@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db, async_session
-from app.models.conversation import Conversation, Message, ConversationMode
+from app.models.conversation import Conversation, Message, ConversationMode, ConversationStatus
 from app.models.user import User
 from app.schemas.conversation import ConversationCreate, ConversationResponse, MessageResponse
 from app.services.conversation_engine import ConversationEngine
@@ -139,7 +139,7 @@ async def pause_conversation(conversation_id: UUID, db: AsyncSession = Depends(g
 
     _engine.pause(conversation_id)
 
-    conversation.status = "paused"
+    conversation.status = ConversationStatus.PAUSED
     await db.commit()
     await ws_manager.broadcast(conversation_id, {"type": "conversation_paused"})
     return {"status": "paused", "conversation_id": str(conversation_id)}
@@ -153,7 +153,7 @@ async def resume_conversation(conversation_id: UUID, db: AsyncSession = Depends(
 
     _engine.resume(conversation_id)
 
-    conversation.status = "active"
+    conversation.status = ConversationStatus.ACTIVE
     await db.commit()
     await ws_manager.broadcast(conversation_id, {"type": "conversation_resumed"})
     return {"status": "resumed", "conversation_id": str(conversation_id)}
@@ -167,7 +167,7 @@ async def end_conversation(conversation_id: UUID, db: AsyncSession = Depends(get
 
     _engine.cancel(conversation_id)
 
-    conversation.status = "ended"
+    conversation.status = ConversationStatus.ENDED
     await db.commit()
     await ws_manager.broadcast(conversation_id, {"type": "conversation_ended"})
     return {"status": "ended", "conversation_id": str(conversation_id)}

@@ -14,6 +14,6 @@ class MediaAsset(Base):
     file_type = Column(String(50), nullable=False)
     file_size = Column(Integer, nullable=True)
     storage_path = Column(String(500), nullable=False)
-    message_id = Column(UUID(as_uuid=True), ForeignKey("messages.id", ondelete="SET NULL"), nullable=True)
-    uploader_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    message_id = Column(UUID(as_uuid=True), ForeignKey("messages.id", ondelete="SET NULL"), nullable=True, index=True)
+    uploader_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
