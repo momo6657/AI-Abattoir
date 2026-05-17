@@ -2,13 +2,13 @@ import asyncio
 import logging
 from uuid import UUID
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db, async_session
-from app.models.conversation import Conversation, Message
+from app.models.conversation import Conversation, Message, ConversationMode
 from app.models.user import User
 from app.schemas.conversation import ConversationCreate, ConversationResponse, MessageResponse
 from app.services.conversation_engine import ConversationEngine
@@ -34,13 +34,34 @@ class SendMessageRequest(BaseModel):
 
 
 @router.get("/", response_model=List[ConversationResponse])
-async def list_conversations(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Conversation).order_by(Conversation.created_at.desc()))
+async def list_conversations(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Conversation)
+        .order_by(Conversation.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )
     return result.scalars().all()
 
 
 @router.post("/", response_model=ConversationResponse)
 async def create_conversation(data: ConversationCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Validate mode
+    valid_modes = {m.value for m in ConversationMode}
+    if data.mode not in valid_modes:
+        raise HTTPException(status_code=400, detail=f"Invalid mode '{data.mode}'. Must be one of: {', '.join(sorted(valid_modes))}")
+
+    # Validate agent_ids for non-free modes
+    if data.mode != ConversationMode.FREE.value:
+        if len(data.agent_ids) < 2:
+            raise HTTPException(status_code=400, detail=f"Mode '{data.mode}' requires at least 2 agents")
+        if data.mode == ConversationMode.DEBATE.value and len(data.agent_ids) != 2:
+            raise HTTPException(status_code=400, detail="Debate mode requires exactly 2 agents")
+
     conversation = Conversation(
         title=data.title,
         mode=data.mode,

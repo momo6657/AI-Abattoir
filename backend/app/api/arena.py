@@ -1,11 +1,11 @@
 from uuid import UUID
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db
-from app.models.arena import ArenaMatch, ArenaParticipant
+from app.models.arena import ArenaMatch, ArenaParticipant, MatchType
 from app.models.agent import Agent
 from app.schemas.arena import (
     ArenaMatchCreate, ArenaMatchResponse, ArenaParticipantResponse,
@@ -18,6 +18,20 @@ router = APIRouter(tags=["arena"])
 
 @router.post("/arena/matches", response_model=ArenaMatchResponse)
 async def create_match(data: ArenaMatchCreate, db: AsyncSession = Depends(get_db)):
+    # Validate match_type
+    valid_types = {t.value for t in MatchType}
+    if data.match_type not in valid_types:
+        raise HTTPException(status_code=400, detail=f"Invalid match_type '{data.match_type}'. Must be one of: {', '.join(sorted(valid_types))}")
+
+    # Validate at least 2 agents
+    if len(data.agent_ids) < 2:
+        raise HTTPException(status_code=400, detail="At least 2 agents are required for a match")
+
+    # For voice type, ensure TTS config is provided
+    if data.match_type == MatchType.VOICE.value:
+        if not data.config.get("tts_config"):
+            raise HTTPException(status_code=400, detail="Voice matches require 'tts_config' in config")
+
     try:
         match = await arena_engine.create_match(
             db,
@@ -33,8 +47,17 @@ async def create_match(data: ArenaMatchCreate, db: AsyncSession = Depends(get_db
 
 
 @router.get("/arena/matches", response_model=List[ArenaMatchResponse])
-async def list_matches(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(ArenaMatch).order_by(ArenaMatch.created_at.desc()))
+async def list_matches(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(ArenaMatch)
+        .order_by(ArenaMatch.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )
     return result.scalars().all()
 
 

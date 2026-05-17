@@ -1,11 +1,11 @@
 from uuid import UUID
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db
-from app.models.game import Game, GamePlayer
+from app.models.game import Game, GamePlayer, GameType
 from app.models.agent import Agent, AgentExperience
 from app.models.user import User
 from app.api.auth import get_current_user
@@ -22,13 +22,46 @@ router = APIRouter(tags=["games"])
 
 
 @router.get("/games", response_model=List[GameResponse])
-async def list_games(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Game).order_by(Game.created_at.desc()))
+async def list_games(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Game)
+        .order_by(Game.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )
     return result.scalars().all()
 
 
 @router.post("/games", response_model=GameResponse)
 async def create_game(data: GameCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Validate game_type
+    valid_types = {t.value for t in GameType}
+    if data.game_type not in valid_types:
+        raise HTTPException(status_code=400, detail=f"Invalid game_type '{data.game_type}'. Must be one of: {', '.join(sorted(valid_types))}")
+
+    # Validate agent count per game type
+    num_agents = len(data.agent_ids)
+    game_type = data.game_type
+    if game_type == GameType.WEREWOLF.value:
+        if num_agents < 4 or num_agents > 12:
+            raise HTTPException(status_code=400, detail="Werewolf requires 4-12 agents")
+    elif game_type == GameType.DEBATE.value:
+        if num_agents < 2 or num_agents > 3:
+            raise HTTPException(status_code=400, detail="Debate requires 2-3 agents")
+    elif game_type == GameType.CHESS.value:
+        if num_agents != 2:
+            raise HTTPException(status_code=400, detail="Chess requires exactly 2 agents")
+    elif game_type == GameType.TEXT_ADVENTURE.value:
+        if num_agents < 2 or num_agents > 6:
+            raise HTTPException(status_code=400, detail="Text adventure requires 2-6 agents")
+    elif game_type == GameType.NEGOTIATION.value:
+        if num_agents < 2:
+            raise HTTPException(status_code=400, detail="Negotiation requires at least 2 agents")
+
     game = await game_engine.create_game(
         db, data.game_type, data.config, [str(a) for a in data.agent_ids]
     )
