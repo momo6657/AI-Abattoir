@@ -105,7 +105,7 @@ class ConversationEngine:
                 "agent": agent,
                 "profile": profile,
                 "supports_vision": supports_vision,
-                "model_id": model.model_id if model else None,
+                "model_id": model.model_id if model else str(agent.model_id),
                 "api_key": model.api_key if model else None,
                 "api_base": model.api_base if model else None,
             })
@@ -260,6 +260,7 @@ class ConversationEngine:
         profile: Optional[AgentProfile],
         messages: List[Dict[str, Any]],
         conversation_id: Optional[UUID] = None,
+        model_id: Optional[str] = None,
         api_key: Optional[str] = None,
         api_base: Optional[str] = None,
     ) -> str:
@@ -271,7 +272,7 @@ class ConversationEngine:
             system_prompt = AgentService.build_system_prompt(agent, profile)
             full_messages = [{"role": "system", "content": system_prompt}] + messages
             result = await llm_adapter.chat(
-                model_id=str(agent.model_id),
+                model_id=model_id or str(agent.model_id),
                 messages=full_messages,
                 api_key=api_key,
                 api_base=api_base,
@@ -318,6 +319,7 @@ class ConversationEngine:
             agent = next_p["agent"]
             profile = next_p["profile"]
             supports_vision = next_p.get("supports_vision", False)
+            model_id = next_p.get("model_id")
             api_key = next_p.get("api_key")
             api_base = next_p.get("api_base")
 
@@ -350,7 +352,7 @@ class ConversationEngine:
 
             # Generate response
             try:
-                reply = await self.generate_reply(agent, profile, chat_messages, conversation_id, api_key=api_key, api_base=api_base)
+                reply = await self.generate_reply(agent, profile, chat_messages, conversation_id, model_id=model_id, api_key=api_key, api_base=api_base)
                 await self._save_message(db, conversation_id, agent.id, reply, msg_count)
             except Exception as e:
                 logger.error("Agent %s failed to respond to user message: %s", agent.name, e)
@@ -428,7 +430,7 @@ class ConversationEngine:
                 chat_messages = [m for m in chat_messages if m["role"] != "system"]
 
                 try:
-                    reply = await self.generate_reply(agent, profile, chat_messages, conversation.id, api_key=api_key, api_base=api_base)
+                    reply = await self.generate_reply(agent, profile, chat_messages, conversation.id, model_id=model_id, api_key=api_key, api_base=api_base)
                     await self._save_message(db, conversation.id, agent.id, reply, turn)
                 except Exception as e:
                     logger.error("Agent %s failed on turn %d: %s", agent.name, turn, e)
@@ -458,6 +460,7 @@ class ConversationEngine:
             agent = current["agent"]
             profile = current["profile"]
             supports_vision = current.get("supports_vision", False)
+            model_id = current.get("model_id")
             api_key = current.get("api_key")
             api_base = current.get("api_base")
             stance = "正方" if idx == 0 else "反方"
@@ -475,7 +478,7 @@ class ConversationEngine:
                 })
 
                 try:
-                    reply = await self.generate_reply(agent, profile, chat_messages, conversation.id, api_key=api_key, api_base=api_base)
+                    reply = await self.generate_reply(agent, profile, chat_messages, conversation.id, model_id=model_id, api_key=api_key, api_base=api_base)
                     await self._save_message(db, conversation.id, agent.id, reply, turn)
                 except Exception as e:
                     logger.error("Agent %s failed on turn %d: %s", agent.name, turn, e)
@@ -500,6 +503,7 @@ class ConversationEngine:
             current = participants[turn % len(participants)]
             agent = current["agent"]
             profile = current["profile"]
+            model_id = current.get("model_id")
             api_key = current.get("api_key")
             api_base = current.get("api_base")
 
@@ -513,7 +517,7 @@ class ConversationEngine:
                     chat_messages = [{"role": "user", "content": f"上一位发言者说：{last_msg.content.get('text', '')}"}]
 
                 try:
-                    reply = await self.generate_reply(agent, profile, chat_messages, conversation.id, api_key=api_key, api_base=api_base)
+                    reply = await self.generate_reply(agent, profile, chat_messages, conversation.id, model_id=model_id, api_key=api_key, api_base=api_base)
                     await self._save_message(db, conversation.id, agent.id, reply, turn)
                 except Exception as e:
                     logger.error("Agent %s failed on turn %d: %s", agent.name, turn, e)
@@ -547,6 +551,7 @@ class ConversationEngine:
                         agent = interviewer["agent"]
                         profile = interviewer["profile"]
                         supports_vision = interviewer.get("supports_vision", False)
+                        model_id = interviewer.get("model_id")
                         api_key = interviewer.get("api_key")
                         api_base = interviewer.get("api_base")
                         history = await self._get_history(db, conversation.id)
@@ -557,17 +562,18 @@ class ConversationEngine:
                         chat_messages = [m for m in chat_messages if m["role"] != "system"]
                         if turn == 0:
                             chat_messages.append({"role": "user", "content": f"访谈主题：{topic}。请提出第一个问题。"})
-                        reply = await self.generate_reply(agent, profile, chat_messages, conversation.id, api_key=api_key, api_base=api_base)
+                        reply = await self.generate_reply(agent, profile, chat_messages, conversation.id, model_id=model_id, api_key=api_key, api_base=api_base)
                     else:
                         target = interviewees[(turn // 2) % len(interviewees)]
                         agent = target["agent"]
                         profile = target["profile"]
+                        model_id = target.get("model_id")
                         api_key = target.get("api_key")
                         api_base = target.get("api_base")
                         history = await self._get_history(db, conversation.id)
                         last_q = history[-1].content.get("text", "") if history else ""
                         chat_messages = [{"role": "user", "content": f"采访者问：{last_q}\n请回答。"}]
-                        reply = await self.generate_reply(agent, profile, chat_messages, conversation.id, api_key=api_key, api_base=api_base)
+                        reply = await self.generate_reply(agent, profile, chat_messages, conversation.id, model_id=model_id, api_key=api_key, api_base=api_base)
 
                     await self._save_message(db, conversation.id, agent.id, reply, turn)
                 except Exception as e:
