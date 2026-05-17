@@ -5,12 +5,23 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import models, agents, conversations, games, auth, arena, search
-from app.core.database import get_db
+from app.core.database import get_db, engine, Base
 from app.core.config import settings
 from app.websocket.manager import ws_manager
 from app.services.spectator_service import spectator_service
 
+# Import all models to register them with Base
+from app.models import *  # noqa: F401, F403
+
 app = FastAPI(title="AI Abattoir", version="0.1.0")
+
+
+@app.on_event("startup")
+async def startup():
+    """Create database tables on startup if they don't exist."""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
 
 # CORS configuration: read allowed origins from settings instead of wildcard
 _allowed_origins = settings.allowed_origins_list
