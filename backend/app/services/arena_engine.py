@@ -12,6 +12,7 @@ from app.services.llm_adapter import llm_adapter
 from app.services.image_adapter import image_adapter
 from app.services.tts_adapter import tts_adapter
 from app.services.agent_service import AgentService
+from app.services.media_storage import media_storage
 
 logger = logging.getLogger(__name__)
 
@@ -98,12 +99,15 @@ class ArenaEngine:
                     response_content = {"error": f"Unsupported match type: {match.match_type}"}
 
                 participant.response_content = response_content
-            except Exception:
+            except Exception as e:
                 logger.exception(
-                    "Failed to generate response for agent=%s in match=%s",
-                    agent.id, match.id,
+                    "Failed to generate response for agent=%s in match=%s (type=%s)",
+                    agent.id, match.id, match.match_type,
                 )
-                participant.response_content = {"error": "Generation failed"}
+                participant.response_content = {
+                    "type": match.match_type.value if hasattr(match.match_type, 'value') else str(match.match_type),
+                    "error": f"Generation failed: {str(e)[:300]}",
+                }
 
         match.status = MatchStatus.VOTING
         await db.commit()
@@ -278,41 +282,92 @@ class ArenaEngine:
         if not system_prompt or system_prompt == f"你是 {agent.name}。":
             system_prompt = f"你是 {agent.name}。{agent.description or ''}"
 
-        enhance_prompt = (
-            f"{system_prompt}\n\n"
-            f"请将以下描述转化为一个详细的图像生成提示词（英文），只输出提示词本身：\n\n{match.prompt}"
-        )
+        # Step 1: Use LLM to enhance the prompt into a detailed image generation prompt
+        enhanced_prompt = match.prompt  # fallback
+        try:
+            enhance_prompt_msg = (
+                f"{system_prompt}\n\n"
+                f"请将以下描述转化为一个详细的图像生成提示词（英文），只输出提示词本身：\n\n{match.prompt}"
+            )
+            llm_response = await llm_adapter.chat(
+                model_id=model.model_id,
+                messages=[{"role": "user", "content": enhance_prompt_msg}],
+                api_key=model.api_key,
+                api_base=model.api_base,
+                temperature=0.7,
+                max_tokens=300,
+            )
+            enhanced_prompt = llm_response.get("content", match.prompt).strip()
+            logger.info(
+                "Enhanced prompt for agent=%s: %s...",
+                agent.id, enhanced_prompt[:100],
+            )
+        except Exception as e:
+            logger.warning(
+                "LLM prompt enhancement failed for agent=%s, using original prompt: %s",
+                agent.id, str(e)[:200],
+            )
 
-        llm_response = await llm_adapter.chat(
-            model_id=model.model_id,
-            messages=[{"role": "user", "content": enhance_prompt}],
-            api_key=model.api_key,
-            api_base=model.api_base,
-            temperature=0.7,
-            max_tokens=300,
-        )
-        enhanced_prompt = llm_response.get("content", match.prompt).strip()
-
+        # Step 2: Resolve image generation config (from match config or agent's model)
         provider = match.config.get("image_provider", "openai")
-        image_api_key = match.config.get("image_api_key", model.api_key)
+        image_api_key = match.config.get("image_api_key") or model.api_key
+        image_api_base = match.config.get("image_api_base") or model.api_base
         image_model = match.config.get("image_model", "dall-e-3")
         image_size = match.config.get("image_size", "1024x1024")
 
+        if not image_api_key:
+            return {
+                "type": "image",
+                "error": "No API key available for image generation. Set image_api_key in match config or ensure the agent's model has an API key.",
+                "prompt_used": enhanced_prompt,
+            }
+
+        # Step 3: Generate the image
         image_result = await image_adapter.generate(
             provider=provider,
             prompt=enhanced_prompt,
             api_key=image_api_key,
+            api_base=image_api_base,
             model=image_model,
             size=image_size,
         )
 
-        return {
+        image_b64 = image_result.get("image_b64", "")
+
+        # Step 4: Try to store the image via media_storage and get a URL
+        image_url = None
+        try:
+            image_bytes = base64.b64decode(image_b64)
+            object_name = await media_storage.upload(
+                data=image_bytes,
+                content_type="image/png",
+                prefix="arena/images",
+            )
+            image_url = await media_storage.get_url(object_name)
+            logger.info("Image stored in media storage: %s", object_name)
+        except Exception as e:
+            logger.warning(
+                "Media storage unavailable, returning base64 directly: %s",
+                str(e)[:200],
+            )
+
+        result: Dict[str, Any] = {
             "type": "image",
             "prompt_used": enhanced_prompt,
-            "image_b64": image_result.get("image_b64", ""),
-            "provider": image_result.get("provider", ""),
-            "model": image_result.get("model", ""),
+            "provider": image_result.get("provider", provider),
+            "model": image_result.get("model", image_model),
         }
+
+        if image_url:
+            result["image_url"] = image_url
+        else:
+            result["image_b64"] = image_b64
+
+        # Include revised_prompt if the provider returned one (e.g. DALL-E 3)
+        if image_result.get("revised_prompt"):
+            result["revised_prompt"] = image_result["revised_prompt"]
+
+        return result
 
     async def _generate_voice_response(
         self,

@@ -1,5 +1,6 @@
 from uuid import UUID
 from typing import List
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -12,6 +13,8 @@ from app.schemas.arena import (
     ArenaVoteRequest, ArenaResultResponse,
 )
 from app.services.arena_engine import arena_engine
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["arena"])
 
@@ -31,6 +34,16 @@ async def create_match(data: ArenaMatchCreate, db: AsyncSession = Depends(get_db
     if data.match_type == MatchType.VOICE.value:
         if not data.config.get("tts_config"):
             raise HTTPException(status_code=400, detail="Voice matches require 'tts_config' in config")
+
+    # For image_gen type, validate config if provided
+    if data.match_type == MatchType.IMAGE_GEN.value:
+        image_provider = data.config.get("image_provider", "openai")
+        supported_providers = {"openai", "stability"}
+        if image_provider not in supported_providers:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported image_provider '{image_provider}'. Must be one of: {', '.join(sorted(supported_providers))}",
+            )
 
     try:
         match = await arena_engine.create_match(

@@ -29,6 +29,7 @@ export default function RootLayout({
               <Link href="/hierarchy" className="hover:text-blue-400">层级</Link>
               <Link href="/evolution" className="hover:text-blue-400">进化</Link>
               <Link href="/spectate" className="hover:text-blue-400">观战</Link>
+              <Link href="/search" className="hover:text-blue-400">搜索</Link>
               <Link href="/leaderboard" className="hover:text-blue-400">排行榜</Link>
             </div>
           </div>

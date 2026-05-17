@@ -95,7 +95,11 @@ class GameEngine:
             game.status = GameStatus.FINISHED
             game.state["winner"] = winner
             game.updated_at = datetime.now(timezone.utc)
-            await db.commit()
+            self._log_event(game, {
+                "type": "game_over",
+                "winner": winner,
+                "message": f"游戏结束！{'村民' if winner == 'villagers' else '狼人'}阵营获胜！",
+            })
             result["game_over"] = True
             result["winner"] = winner
 
@@ -126,24 +130,35 @@ class GameEngine:
         )
         players = result.scalars().all()
 
+        is_game_over = game.status == GameStatus.FINISHED
+
         player_list = []
         for p in players:
             agent = await db.get(Agent, p.agent_id)
-            player_list.append({
+            player_info = {
                 "agent_id": str(p.agent_id),
                 "agent_name": agent.name if agent else "Unknown",
-                "role": p.role,
                 "is_alive": bool(p.is_alive),
-                "config": p.config or {},
-            })
+            }
+            # Only reveal roles if game is over
+            if is_game_over:
+                player_info["role"] = p.role
+            else:
+                player_info["role"] = None  # Hidden during gameplay
+            player_list.append(player_info)
+
+        state = game.state or {}
+        events = state.pop("events", []) if state else []
 
         return {
             "game_id": str(game.id),
             "game_type": game.game_type,
             "status": game.status,
-            "state": game.state or {},
+            "state": state,
             "players": player_list,
+            "events": events,
             "winner_id": str(game.winner_id) if game.winner_id else None,
+            "winner": state.get("winner") if is_game_over else None,
             "created_at": game.created_at.isoformat() if game.created_at else None,
         }
 
@@ -215,6 +230,7 @@ class GameEngine:
             "witch_save_used": False,
             "witch_poison_used": False,
             "seer_results": {},
+            "events": [],
         }
 
     async def _process_werewolf_turn(
@@ -271,6 +287,27 @@ class GameEngine:
                 target_id = self._extract_target_id(response, wolf_targets)
                 if target_id:
                     state["night_actions"]["wolf_target"] = target_id
+                    target_agent = await db.get(Agent, next(t.agent_id for t in wolf_targets if str(t.agent_id) == target_id))
+                    self._log_event(game, {
+                        "type": "night_action",
+                        "action": "wolf_kill",
+                        "agent_id": str(wolf.agent_id),
+                        "agent_name": agent.name,
+                        "target_id": target_id,
+                        "target_name": target_agent.name if target_agent else "Unknown",
+                    })
+            else:
+                self._log_llm_failure(game, agent.name, "werewolf", "狼人击杀")
+                # Default: pick a random target
+                if wolf_targets:
+                    fallback = random.choice(wolf_targets)
+                    state["night_actions"]["wolf_target"] = str(fallback.agent_id)
+                    self._log_event(game, {
+                        "type": "system",
+                        "action": "default_action",
+                        "role": "werewolf",
+                        "message": f"[系统] 狼人随机选择了目标",
+                    })
 
         # 预言家查验
         seers = alive_by_role.get("seer", [])
@@ -300,11 +337,35 @@ class GameEngine:
                             is_wolf = checked_player.role == "werewolf"
                             state["seer_results"][check_id] = is_wolf
                             state["night_actions"]["seer_check"] = check_id
+                            checked_agent = await db.get(Agent, checked_player.agent_id)
                             events.append({
                                 "action": "seer_check",
+                                "agent_id": str(seer.agent_id),
+                                "agent_name": agent.name,
                                 "target": check_id,
+                                "target_name": checked_agent.name if checked_agent else "Unknown",
                                 "result": "werewolf" if is_wolf else "villager",
                             })
+                else:
+                    self._log_llm_failure(game, agent.name, "seer", "预言家查验")
+                    # Default: check a random target
+                    fallback = random.choice(check_targets)
+                    checked_player = next(
+                        (p for p in players if p.agent_id == fallback.agent_id), None
+                    )
+                    if checked_player:
+                        is_wolf = checked_player.role == "werewolf"
+                        state["seer_results"][str(fallback.agent_id)] = is_wolf
+                        state["night_actions"]["seer_check"] = str(fallback.agent_id)
+                        events.append({
+                            "action": "seer_check",
+                            "agent_id": str(seer.agent_id),
+                            "agent_name": agent.name,
+                            "target": str(fallback.agent_id),
+                            "target_name": "Unknown",
+                            "result": "werewolf" if is_wolf else "villager",
+                            "default": True,
+                        })
 
         # 女巫行动
         witches = alive_by_role.get("witch", [])
@@ -328,11 +389,37 @@ class GameEngine:
                 if action.get("save"):
                     state["night_actions"].pop("wolf_target", None)
                     state["witch_save_used"] = True
-                    events.append({"action": "witch_save"})
+                    events.append({
+                        "action": "witch_save",
+                        "agent_id": str(witch.agent_id),
+                        "agent_name": agent.name,
+                    })
                 elif action.get("poison"):
-                    state["night_actions"]["witch_poison"] = action["poison"]
+                    poison_target = action["poison"]
+                    state["night_actions"]["witch_poison"] = poison_target
                     state["witch_poison_used"] = True
-                    events.append({"action": "witch_poison", "target": action["poison"]})
+                    poison_agent = await db.get(Agent, next((p.agent_id for p in players if str(p.agent_id) == poison_target), None))
+                    events.append({
+                        "action": "witch_poison",
+                        "agent_id": str(witch.agent_id),
+                        "agent_name": agent.name,
+                        "target": poison_target,
+                        "target_name": poison_agent.name if poison_agent else "Unknown",
+                    })
+                else:
+                    events.append({
+                        "action": "witch_skip",
+                        "agent_id": str(witch.agent_id),
+                        "agent_name": agent.name,
+                    })
+            else:
+                self._log_llm_failure(game, agent.name, "witch", "女巫行动")
+                events.append({
+                    "action": "witch_skip",
+                    "agent_id": str(witch.agent_id),
+                    "agent_name": agent.name,
+                    "default": True,
+                })
 
         # 结算夜晚死亡
         deaths = []
@@ -448,11 +535,14 @@ class GameEngine:
                 agent, player.role, state, "day_discussion", alive_names
             )
             response = await self._call_llm(model, prompt)
+            if response is None:
+                self._log_llm_failure(game, agent.name, player.role, "白天讨论")
+                response = "(沉默...)"
             discussion_messages.append({
                 "agent_id": str(player.agent_id),
                 "agent_name": agent.name,
                 "role": player.role,
-                "message": response or "",
+                "message": response,
             })
 
         state["discussion"] = discussion_messages
@@ -472,12 +562,24 @@ class GameEngine:
                 agent, player.role, state, "day_vote", candidates
             )
             response = await self._call_llm(model, prompt)
+            other_players = [p for p in alive_players if p.agent_id != player.agent_id]
             if response is not None:
-                vote_target = self._extract_target_id(response, [
-                    p for p in alive_players if p.agent_id != player.agent_id
-                ])
+                vote_target = self._extract_target_id(response, other_players)
                 if vote_target:
                     votes[str(player.agent_id)] = vote_target
+            else:
+                self._log_llm_failure(game, agent.name, player.role, "白天投票")
+                # Default: random vote
+                if other_players:
+                    fallback = random.choice(other_players)
+                    votes[str(player.agent_id)] = str(fallback.agent_id)
+                    self._log_event(game, {
+                        "type": "system",
+                        "action": "default_vote",
+                        "agent_id": str(player.agent_id),
+                        "agent_name": agent.name,
+                        "message": f"[系统] {agent.name} 随机投票",
+                    })
 
         # 统计投票
         vote_counts: Dict[str, int] = {}
@@ -485,6 +587,23 @@ class GameEngine:
             vote_counts[target] = vote_counts.get(target, 0) + 1
 
         state["day_votes"] = {"votes": votes, "counts": vote_counts}
+
+        # Log vote details
+        vote_details = []
+        for voter_id, target_id in votes.items():
+            voter_agent = await db.get(Agent, voter_id)
+            target_agent = await db.get(Agent, target_id)
+            vote_details.append({
+                "voter_id": voter_id,
+                "voter_name": voter_agent.name if voter_agent else "Unknown",
+                "target_id": target_id,
+                "target_name": target_agent.name if target_agent else "Unknown",
+            })
+        events.append({
+            "action": "vote_result",
+            "votes": vote_details,
+            "counts": vote_counts,
+        })
 
         # 放逐得票最多者
         if vote_counts:
@@ -510,6 +629,7 @@ class GameEngine:
                         "action": "exile",
                         "agent_id": exiled_id,
                         "agent_name": agent.name if agent else "Unknown",
+                        "role": player.role,
                         "votes": vote_counts[exiled_id],
                     })
 
@@ -649,6 +769,27 @@ class GameEngine:
         return base
 
     # ========== 辅助方法 ==========
+
+    def _log_event(self, game: Game, event: Dict[str, Any]):
+        """Append an event to the game's event log."""
+        if "events" not in game.state:
+            game.state["events"] = []
+        event["timestamp"] = datetime.now(timezone.utc).isoformat()
+        game.state["events"].append(event)
+
+    def _log_llm_failure(self, game: Game, agent_name: str, role: str, phase: str):
+        """Log an LLM failure event and return a system message."""
+        msg = f"[系统] {agent_name}({role}) 在{phase}阶段未能响应，已跳过"
+        self._log_event(game, {
+            "type": "system",
+            "action": "llm_failure",
+            "agent_name": agent_name,
+            "role": role,
+            "phase": phase,
+            "message": msg,
+        })
+        logger.warning("LLM failure for %s(%s) in %s", agent_name, role, phase)
+        return msg
 
     async def _call_llm(self, model: Model, prompt: str) -> Optional[str]:
         try:
