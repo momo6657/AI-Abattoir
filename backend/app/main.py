@@ -59,6 +59,133 @@ async def health():
     return {"status": "ok"}
 
 
+@app.post("/api/seed")
+async def seed_data(db: AsyncSession = Depends(get_db)):
+    """Seed database with initial models and agents. Call once after deployment."""
+    from sqlalchemy import select, func
+    from app.models.model import Model, ModelCapability, CapabilityType
+    from app.models.agent import Agent, AgentProfile
+
+    # Check if already seeded
+    count = await db.execute(select(func.count()).select_from(Model))
+    if count.scalar() > 0:
+        return {"message": "Database already seeded", "models": count.scalar()}
+
+    # Create models (API keys from environment or hardcoded for demo)
+    import os
+    gpt_key = os.getenv("GPT54_API_KEY", "")
+    deepseek_key = os.getenv("DEEPSEEK_API_KEY", "")
+    llm_base = os.getenv("LLM_API_BASE", "https://api.vip.crond.dev/v1")
+
+    models_data = [
+        {
+            "name": "GPT-5.4",
+            "provider": "openai",
+            "model_id": "openai/gpt-5.4",
+            "api_key": gpt_key,
+            "api_base": llm_base,
+            "capabilities": [CapabilityType.TEXT_GENERATION, CapabilityType.IMAGE_UNDERSTANDING, CapabilityType.CODE_EXECUTION],
+        },
+        {
+            "name": "DeepSeek-V4-Pro",
+            "provider": "deepseek",
+            "model_id": "openai/deepseek-v4-pro",
+            "api_key": deepseek_key,
+            "api_base": llm_base,
+            "capabilities": [CapabilityType.TEXT_GENERATION, CapabilityType.CODE_EXECUTION],
+        },
+    ]
+
+    model_map = {}
+    for m in models_data:
+        model = Model(
+            name=m["name"],
+            provider=m["provider"],
+            model_id=m["model_id"],
+            api_key=m["api_key"],
+            api_base=m["api_base"],
+            is_active=True,
+            status="online",
+        )
+        db.add(model)
+        await db.flush()
+        for cap in m["capabilities"]:
+            db.add(ModelCapability(model_id=model.id, capability=cap))
+        model_map[m["name"]] = model.id
+
+    # Create agents
+    agents_data = [
+        {
+            "name": "谋略家",
+            "description": "擅长分析和制定策略",
+            "model_name": "GPT-5.4",
+            "profile": {
+                "persona": "你是一位深谋远虑的谋略家",
+                "personality": "冷静、理性、善于洞察本质",
+                "speaking_style": "逻辑严密，善用历史典故",
+                "background_story": "曾参与无数次重大决策",
+                "strengths": ["战略分析", "风险评估", "局势判断"],
+            },
+        },
+        {
+            "name": "创意大师",
+            "description": "天马行空的想象力",
+            "model_name": "DeepSeek-V4-Pro",
+            "profile": {
+                "persona": "你是一位充满创意的大脑",
+                "personality": "好奇、开放、富有想象力",
+                "speaking_style": "生动活泼，善用比喻",
+                "background_story": "在艺术和科技的交叉点探索",
+                "strengths": ["创意构思", "跨界联想", "故事创作"],
+            },
+        },
+        {
+            "name": "谈判专家",
+            "description": "精通博弈论和沟通技巧",
+            "model_name": "GPT-5.4",
+            "profile": {
+                "persona": "你是一位经验丰富的谈判专家",
+                "personality": "善于倾听、有同理心",
+                "speaking_style": "温和但有力",
+                "background_story": "处理过无数复杂谈判",
+                "strengths": ["谈判技巧", "情绪管理", "共识构建"],
+            },
+        },
+        {
+            "name": "执行者",
+            "description": "高效执行任务，注重细节",
+            "model_name": "DeepSeek-V4-Pro",
+            "profile": {
+                "persona": "你是一位雷厉风行的执行者",
+                "personality": "果断、务实、注重细节",
+                "speaking_style": "简洁明了，直击要点",
+                "background_story": "经手的任务都能按时保质完成",
+                "strengths": ["任务分解", "进度管控", "质量保证"],
+            },
+        },
+    ]
+
+    for a in agents_data:
+        model_id = model_map.get(a["model_name"])
+        if not model_id:
+            continue
+        agent = Agent(name=a["name"], description=a["description"], model_id=model_id)
+        db.add(agent)
+        await db.flush()
+        p = a["profile"]
+        db.add(AgentProfile(
+            agent_id=agent.id,
+            persona=p["persona"],
+            personality=p["personality"],
+            speaking_style=p["speaking_style"],
+            background_story=p["background_story"],
+            strengths=p["strengths"],
+        ))
+
+    await db.commit()
+    return {"message": "Seed completed", "models": len(models_data), "agents": len(agents_data)}
+
+
 @app.websocket("/ws/conversations/{conversation_id}")
 async def websocket_endpoint(websocket: WebSocket, conversation_id: UUID):
     await ws_manager.connect(websocket, conversation_id)
