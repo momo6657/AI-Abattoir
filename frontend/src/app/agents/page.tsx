@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { agentsApi, modelsApi } from "@/lib/api";
-import { ErrorBanner, Badge, ProgressBar, Modal } from "@/components";
+import { ErrorBanner, Badge, ProgressBar, Modal, LoadingSpinner } from "@/components";
 
 // ---- Types ----
 interface Model {
@@ -142,14 +142,18 @@ export default function AgentsPage() {
   const [showTemplates, setShowTemplates] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const loadAgents = useCallback(async () => {
     try {
+      setLoading(true);
       const r = await agentsApi.list();
       setAgents(r.data);
       setError(null);
     } catch (err) {
       setError("无法加载智能体列表，请检查后端服务是否运行");
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -185,7 +189,7 @@ export default function AgentsPage() {
       setShowForm(false);
       resetForm();
     } catch {
-      alert("操作失败，请检查网络连接");
+      setError("操作失败，请检查网络连接");
     }
   };
 
@@ -211,7 +215,7 @@ export default function AgentsPage() {
       await agentsApi.delete(id);
       await loadAgents();
     } catch {
-      alert("删除失败");
+      setError("删除失败");
     }
   };
 
@@ -450,6 +454,9 @@ export default function AgentsPage() {
       )}
 
       {/* Agent Cards */}
+      {loading ? (
+        <div className="flex justify-center py-16"><LoadingSpinner /></div>
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredAgents.map((agent, index) => (
           <div
@@ -529,6 +536,7 @@ export default function AgentsPage() {
         <div className="text-center py-16 text-gray-500">
           {searchQuery ? "没有找到匹配的智能体" : "还没有智能体，点击上方按钮创建"}
         </div>
+      )}
       )}
 
       {/* Detail Modal */}

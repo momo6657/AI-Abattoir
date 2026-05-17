@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { gamesApi, agentsApi } from "@/lib/api";
-import { ErrorBanner, Badge } from "@/components";
+import { ErrorBanner, Badge, LoadingSpinner } from "@/components";
 
 // ---- Types ----
 interface Agent {
@@ -80,15 +80,19 @@ export default function GamesPage() {
   const [filter, setFilter] = useState<"all" | "waiting" | "active" | "finished">("all");
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   const loadGames = useCallback(async () => {
     try {
+      setLoading(true);
       const r = await gamesApi.list();
       setGames(r.data);
       setError(null);
     } catch {
       setError("无法加载游戏列表，请检查后端服务是否运行");
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -148,7 +152,7 @@ export default function GamesPage() {
       setSelectedAgentIds([]);
       setMaxTurns(20);
     } catch {
-      alert("创建失败");
+      setError("创建失败");
     }
   };
 
@@ -158,7 +162,7 @@ export default function GamesPage() {
       await loadGames();
       if (activeGameId === gameId) await loadGameDetail(gameId);
     } catch {
-      alert("启动失败");
+      setError("启动失败");
     }
   };
 
@@ -170,7 +174,7 @@ export default function GamesPage() {
       await loadGameDetail(activeGameId);
       await loadGames();
     } catch {
-      alert("回合处理失败");
+      setError("回合处理失败");
     } finally {
       setIsProcessing(false);
     }
@@ -183,7 +187,7 @@ export default function GamesPage() {
       await loadGames();
       if (activeGameId === gameId) await loadGameDetail(gameId);
     } catch {
-      alert("结束失败");
+      setError("结束失败");
     }
   };
 
@@ -322,6 +326,9 @@ export default function GamesPage() {
           </div>
 
           {/* Game Cards */}
+          {loading ? (
+            <div className="flex justify-center py-12"><LoadingSpinner /></div>
+          ) : (
           <div className="space-y-3">
             {filteredGames.map((game) => {
               const typeInfo = getGameTypeInfo(game.game_type);
@@ -378,6 +385,7 @@ export default function GamesPage() {
               </div>
             )}
           </div>
+          )}
         </div>
 
         {/* Game Room (Right Panel) */}

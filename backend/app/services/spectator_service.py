@@ -85,16 +85,6 @@ class SpectatorService:
         """向游戏观战者广播"""
         await self.broadcast_to_spectators(f"game:{game_id}", data)
 
-    def get_spectator_count(self, conversation_id: UUID) -> int:
-        """获取对话观战人数"""
-        key = f"conv:{conversation_id}"
-        return len(self._spectators.get(key, []))
-
-    def get_game_spectator_count(self, game_id: UUID) -> int:
-        """获取游戏观战人数"""
-        key = f"game:{game_id}"
-        return len(self._spectators.get(key, []))
-
     async def replay_conversation(
         self, db: AsyncSession, conversation_id: UUID
     ) -> Dict[str, Any]:

@@ -23,10 +23,6 @@ class ConversationEngine:
         self._running: Dict[str, bool] = {}
         self._cancelled: Dict[str, bool] = {}
 
-    @classmethod
-    def _create_singleton(cls) -> "ConversationEngine":
-        return cls()
-
     def cancel(self, conversation_id: UUID):
         """Request graceful cancellation of a running conversation."""
         key = str(conversation_id)
@@ -445,53 +441,6 @@ class ConversationEngine:
             await asyncio.sleep(1.0)
 
         await self._finalize_conversation(conversation, participants, turn)
-
-    async def route_message(self, db: AsyncSession, conversation_id: UUID, message: Message) -> Optional[UUID]:
-        conversation = await db.get(Conversation, conversation_id)
-        if not conversation:
-            return None
-        return await self.get_next_agent(db, conversation_id)
-
-    async def get_next_agent(self, db: AsyncSession, conversation_id: UUID) -> Optional[UUID]:
-        conversation = await db.get(Conversation, conversation_id)
-        if not conversation:
-            return None
-
-        history = await self._get_history(db, conversation_id)
-        mode = conversation.mode if isinstance(conversation.mode, ConversationMode) else ConversationMode(conversation.mode)
-
-        agent_ids = conversation.config.get("agent_ids", [])
-        if not agent_ids:
-            return None
-
-        if mode == ConversationMode.FREE:
-            return agent_ids[len(history) % len(agent_ids)]
-        elif mode == ConversationMode.DEBATE:
-            return agent_ids[len(history) % len(agent_ids)]
-        elif mode == ConversationMode.RELAY:
-            return agent_ids[len(history) % len(agent_ids)]
-        elif mode == ConversationMode.INTERVIEW:
-            if len(history) % 2 == 0:
-                return agent_ids[0]
-            else:
-                idx = 1 + ((len(history) // 2) - 1) % (len(agent_ids) - 1)
-                return agent_ids[idx] if idx < len(agent_ids) else agent_ids[1]
-        return None
-
-    async def build_context(self, db: AsyncSession, conversation_id: UUID, agent_id: UUID) -> List[Dict[str, Any]]:
-        agent = await db.get(Agent, agent_id)
-        if not agent:
-            return []
-
-        result = await db.execute(
-            select(AgentProfile).where(AgentProfile.agent_id == agent_id)
-        )
-        profile = result.scalar_one_or_none()
-        system_prompt = AgentService.build_system_prompt(agent, profile)
-
-        history = await self._get_history(db, conversation_id)
-        messages = self._build_messages_for_agent(system_prompt, history, agent_id)
-        return messages
 
     def pause(self, conversation_id: UUID):
         self._running[str(conversation_id)] = False

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { agentsApi, hierarchyApi } from "@/lib/api";
+import { ErrorBanner, LoadingSpinner } from "@/components";
 
 interface Agent {
   id: string;
@@ -22,24 +23,28 @@ export default function HierarchyPage() {
   const [selectedAgent, setSelectedAgent] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ parent_agent_id: "", child_agent_id: "", relation_type: "command" });
-  const [error, setError] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     agentsApi.list().then((r) => setAgents(r.data)).catch(() => {});
   }, []);
 
-  const loadTree = async (agentId: string) => {
+  const loadTree = useCallback(async (agentId: string) => {
     try {
+      setLoading(true);
       const r = await hierarchyApi.getTree(agentId);
       setTree(r.data);
     } catch {
       setTree(null);
+    } finally {
+      setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (selectedAgent) loadTree(selectedAgent);
-  }, [selectedAgent]);
+  }, [selectedAgent, loadTree]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,10 +82,7 @@ export default function HierarchyPage() {
       </div>
 
       {error && (
-        <div className="bg-red-900/50 border border-red-700 text-red-200 px-4 py-3 rounded-lg mb-4">
-          {error}
-          <button onClick={() => setError("")} className="float-right">&times;</button>
-        </div>
+        <ErrorBanner message={error} onDismiss={() => setError(null)} />
       )}
 
       {showForm && (
@@ -148,7 +150,9 @@ export default function HierarchyPage() {
 
         <div className="bg-gray-900 p-6 rounded-xl">
           <h3 className="text-lg font-semibold mb-4">层级树</h3>
-          {tree ? renderTree(tree) : <p className="text-gray-500">请选择智能体查看层级结构</p>}
+          {loading && selectedAgent ? (
+            <div className="flex justify-center py-8"><LoadingSpinner /></div>
+          ) : tree ? renderTree(tree) : <p className="text-gray-500">请选择智能体查看层级结构</p>}
         </div>
       </div>
     </div>

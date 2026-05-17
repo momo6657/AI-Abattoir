@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { arenaApi, agentsApi } from "@/lib/api";
-import { ErrorBanner, Badge, ProgressBar, Modal } from "@/components";
+import { ErrorBanner, Badge, ProgressBar, Modal, LoadingSpinner } from "@/components";
 
 // ---- Types ----
 interface Agent {
@@ -57,6 +57,7 @@ export default function ArenaPage() {
   const [viewingMatch, setViewingMatch] = useState<ArenaMatch | null>(null);
   const [votedMatches, setVotedMatches] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const loadAgents = useCallback(async () => {
     try {
@@ -69,11 +70,14 @@ export default function ArenaPage() {
 
   const loadMatches = useCallback(async () => {
     try {
+      setLoading(true);
       const r = await arenaApi.listMatches();
       setMatches(r.data);
       setError(null);
     } catch {
       setError("竞技场 API 即将上线，敬请期待");
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -86,7 +90,7 @@ export default function ArenaPage() {
     e.preventDefault();
     if (!selectedType || !agentAId || !agentBId || !prompt.trim()) return;
     if (agentAId === agentBId) {
-      alert("请选择两个不同的智能体");
+      setError("请选择两个不同的智能体");
       return;
     }
     try {
@@ -103,7 +107,7 @@ export default function ArenaPage() {
       setAgentBId("");
       setPrompt("");
     } catch {
-      alert("创建失败");
+      setError("创建失败");
     }
   };
 
@@ -114,7 +118,7 @@ export default function ArenaPage() {
       setVotedMatches((prev) => new Set(prev).add(matchId));
       await loadMatches();
     } catch {
-      alert("投票失败");
+      setError("投票失败");
     }
   };
 
@@ -312,6 +316,10 @@ export default function ArenaPage() {
       )}
 
       {/* Match Type Cards */}
+      {loading ? (
+        <div className="flex justify-center py-16"><LoadingSpinner /></div>
+      ) : (
+      <>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
         {MATCH_TYPES.map((t) => {
           const count = matches.filter((m) => m.match_type === t.value).length;
@@ -386,6 +394,8 @@ export default function ArenaPage() {
             还没有对决记录，点击上方按钮发起 PK
           </div>
         )}
+      </>
+      )}
       </div>
 
       {/* Match Detail Modal */}

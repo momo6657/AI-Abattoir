@@ -69,21 +69,5 @@ class LLMAdapter:
         )
         raise last_error
 
-    async def chat_with_vision(
-        self,
-        model_id: str,
-        messages: List[Dict[str, Any]],
-        api_key: Optional[str] = None,
-        api_base: Optional[str] = None,
-        **kwargs,
-    ) -> Dict[str, Any]:
-        return await self.chat(
-            model_id=model_id,
-            messages=messages,
-            api_key=api_key,
-            api_base=api_base,
-            **kwargs,
-        )
-
 
 llm_adapter = LLMAdapter()

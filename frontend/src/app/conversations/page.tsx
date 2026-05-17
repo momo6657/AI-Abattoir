@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { conversationsApi, agentsApi } from "@/lib/api";
 import { useWebSocket } from "@/hooks/useWebSocket";
-import { ErrorBanner } from "@/components";
+import { ErrorBanner, LoadingSpinner } from "@/components";
 
 // ---- Types ----
 interface Agent {
@@ -83,6 +83,7 @@ export default function ConversationsPage() {
   const [inputText, setInputText] = useState("");
   const [convStatus, setConvStatus] = useState<string>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // WebSocket real-time connection
@@ -95,11 +96,14 @@ export default function ConversationsPage() {
 
   const loadConversations = useCallback(async () => {
     try {
+      setLoading(true);
       const r = await conversationsApi.list();
       setConversations(r.data);
       setError(null);
     } catch {
       setError("无法加载对话列表，请检查后端服务是否运行");
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -185,7 +189,7 @@ export default function ConversationsPage() {
       setNewMode("free");
       setSelectedAgentIds([]);
     } catch {
-      alert("创建失败");
+      setError("创建失败");
     }
   };
 
@@ -195,7 +199,7 @@ export default function ConversationsPage() {
       await conversationsApi.start(selectedConvId);
       setConvStatus("active");
     } catch {
-      alert("启动失败");
+      setError("启动失败");
     }
   };
 
@@ -205,7 +209,7 @@ export default function ConversationsPage() {
       await conversationsApi.pause(selectedConvId);
       setConvStatus("paused");
     } catch {
-      alert("暂停失败");
+      setError("暂停失败");
     }
   };
 
@@ -215,7 +219,7 @@ export default function ConversationsPage() {
       await conversationsApi.resume(selectedConvId);
       setConvStatus("active");
     } catch {
-      alert("继续失败");
+      setError("继续失败");
     }
   };
 
@@ -225,7 +229,7 @@ export default function ConversationsPage() {
       await conversationsApi.end(selectedConvId);
       setConvStatus("ended");
     } catch {
-      alert("结束失败");
+      setError("结束失败");
     }
   };
 
@@ -241,7 +245,7 @@ export default function ConversationsPage() {
       setInputText("");
       // Thinking state now comes from WebSocket (agent_thinking events)
     } catch {
-      alert("发送失败");
+      setError("发送失败");
     }
   };
 
@@ -322,6 +326,12 @@ export default function ConversationsPage() {
 
         {/* Conversation List */}
         <div className="flex-1 overflow-y-auto space-y-2">
+          {loading ? (
+            <div className="flex justify-center py-8"><LoadingSpinner /></div>
+          ) : conversations.length === 0 ? (
+            <p className="text-center text-gray-500 text-sm py-8">暂无对话</p>
+          ) : (
+          <>
           {conversations.map((conv) => (
             <button
               key={conv.id}
@@ -353,8 +363,7 @@ export default function ConversationsPage() {
               </p>
             </button>
           ))}
-          {conversations.length === 0 && (
-            <p className="text-center text-gray-500 text-sm py-8">暂无对话</p>
+          </>
           )}
         </div>
       </div>

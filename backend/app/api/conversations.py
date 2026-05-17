@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 # Module-level singleton: all pause/resume/start operations share the same engine instance
-_engine = ConversationEngine._create_singleton()
+_engine = ConversationEngine()
 
 
 class StartConversationRequest(BaseModel):

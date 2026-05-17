@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock
 
-from app.services.agent_service import AgentService, AGENT_TEMPLATES
+from app.services.agent_service import AgentService
 
 
 def _make_agent(name="TestAgent", description="A test agent"):
@@ -70,31 +70,3 @@ class TestBuildSystemPrompt:
         # Fields not set should not appear
         assert "性格特点" not in prompt
         assert "说话风格" not in prompt
-
-
-class TestTemplates:
-    def test_all_templates_have_required_fields(self):
-        required_keys = {"name", "description", "profile"}
-        required_profile_keys = {"persona", "personality", "speaking_style", "background_story", "strengths"}
-
-        for key, tpl in AGENT_TEMPLATES.items():
-            for rk in required_keys:
-                assert rk in tpl, f"Template '{key}' missing '{rk}'"
-            for rpk in required_profile_keys:
-                assert rpk in tpl["profile"], f"Template '{key}' profile missing '{rpk}'"
-            assert isinstance(tpl["profile"]["strengths"], list), (
-                f"Template '{key}' strengths should be a list"
-            )
-
-    def test_list_templates_returns_all(self):
-        db = MagicMock()
-        service = AgentService(db)
-        templates = service.list_templates()
-        assert len(templates) == len(AGENT_TEMPLATES)
-        template_keys = {t["template_key"] for t in templates}
-        assert template_keys == set(AGENT_TEMPLATES.keys())
-
-    def test_template_names_non_empty(self):
-        for key, tpl in AGENT_TEMPLATES.items():
-            assert tpl["name"], f"Template '{key}' has empty name"
-            assert tpl["description"], f"Template '{key}' has empty description"

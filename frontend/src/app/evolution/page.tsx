@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { agentsApi } from "@/lib/api";
+import { ErrorBanner } from "@/components";
 
 interface Agent {
   id: string;
@@ -36,9 +37,12 @@ export default function EvolutionPage() {
   const [evolution, setEvolution] = useState<EvolutionInfo | null>(null);
   const [experiences, setExperiences] = useState<Experience[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    agentsApi.list().then((r) => setAgents(r.data)).catch(() => {});
+    agentsApi.list().then((r) => setAgents(r.data)).catch(() => {
+      setError("无法加载智能体列表");
+    });
   }, []);
 
   useEffect(() => {
@@ -74,6 +78,10 @@ export default function EvolutionPage() {
   return (
     <div>
       <h2 className="text-2xl font-bold mb-6">智能体进化日志</h2>
+
+      {error && (
+        <ErrorBanner message={error} onDismiss={() => setError(null)} />
+      )}
 
       <div className="mb-6">
         <select

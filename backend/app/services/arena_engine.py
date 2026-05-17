@@ -11,6 +11,7 @@ from app.models.model import Model
 from app.services.llm_adapter import llm_adapter
 from app.services.image_adapter import image_adapter
 from app.services.tts_adapter import tts_adapter
+from app.services.agent_service import AgentService
 
 logger = logging.getLogger(__name__)
 
@@ -224,27 +225,6 @@ class ArenaEngine:
 
     # ========== 内部方法 ==========
 
-    def _build_system_prompt(self, agent: Agent, profile: Optional[AgentProfile] = None) -> str:
-        if profile and profile.system_prompt:
-            return profile.system_prompt
-
-        parts = [f"你是 {agent.name}。"]
-        if profile:
-            if profile.persona:
-                parts.append(profile.persona)
-            if profile.personality:
-                parts.append(f"性格特点：{profile.personality}")
-            if profile.speaking_style:
-                parts.append(f"说话风格：{profile.speaking_style}")
-            if profile.background_story:
-                parts.append(f"背景：{profile.background_story}")
-            if profile.strengths:
-                parts.append(f"擅长领域：{', '.join(profile.strengths)}")
-        elif agent.description:
-            parts.append(agent.description)
-
-        return "\n".join(parts)
-
     async def _generate_text_response(
         self,
         db: AsyncSession,
@@ -253,7 +233,9 @@ class ArenaEngine:
         profile: Optional[AgentProfile],
         model: Model,
     ) -> Dict[str, Any]:
-        system_prompt = self._build_system_prompt(agent, profile)
+        system_prompt = AgentService.build_system_prompt(agent, profile)
+        if not system_prompt or system_prompt == f"你是 {agent.name}。":
+            system_prompt = f"你是 {agent.name}。{agent.description or ''}"
 
         match_type_prompts = {
             MatchType.QA_PK: "请回答以下问题，给出你认为最准确、最有洞察力的回答：",
@@ -292,7 +274,9 @@ class ArenaEngine:
         profile: Optional[AgentProfile],
         model: Model,
     ) -> Dict[str, Any]:
-        system_prompt = self._build_system_prompt(agent, profile)
+        system_prompt = AgentService.build_system_prompt(agent, profile)
+        if not system_prompt or system_prompt == f"你是 {agent.name}。":
+            system_prompt = f"你是 {agent.name}。{agent.description or ''}"
 
         enhance_prompt = (
             f"{system_prompt}\n\n"
@@ -338,7 +322,9 @@ class ArenaEngine:
         profile: Optional[AgentProfile],
         model: Model,
     ) -> Dict[str, Any]:
-        system_prompt = self._build_system_prompt(agent, profile)
+        system_prompt = AgentService.build_system_prompt(agent, profile)
+        if not system_prompt or system_prompt == f"你是 {agent.name}。":
+            system_prompt = f"你是 {agent.name}。{agent.description or ''}"
 
         text_prompt = (
             f"{system_prompt}\n\n"
