@@ -260,7 +260,7 @@ class GameEngine:
             agent = await db.get(Agent, wolf.agent_id)
             model = await db.get(Model, agent.model_id)
             target_names = [
-                f"{(await db.get(Agent, t.agent_id)).name}(ID:{t.agent_id})"
+                f"{(a.name if (a := await db.get(Agent, t.agent_id)) else 'Unknown')}(ID:{t.agent_id})"
                 for t in wolf_targets
             ]
             prompt = self._build_werewolf_prompt(
@@ -283,7 +283,7 @@ class GameEngine:
             ]
             if check_targets:
                 target_names = [
-                    f"{(await db.get(Agent, t.agent_id)).name}(ID:{t.agent_id})"
+                    f"{(a.name if (a := await db.get(Agent, t.agent_id)) else 'Unknown')}(ID:{t.agent_id})"
                     for t in check_targets
                 ]
                 prompt = self._build_werewolf_prompt(
@@ -390,7 +390,7 @@ class GameEngine:
             return None
 
         target_names = [
-            f"{(await db.get(Agent, t.agent_id)).name}(ID:{t.agent_id})"
+            f"{(a.name if (a := await db.get(Agent, t.agent_id)) else 'Unknown')}(ID:{t.agent_id})"
             for t in alive_targets
         ]
         prompt = self._build_werewolf_prompt(
@@ -442,7 +442,7 @@ class GameEngine:
             agent = await db.get(Agent, player.agent_id)
             model = await db.get(Model, agent.model_id)
             alive_names = [
-                (await db.get(Agent, p.agent_id)).name for p in alive_players
+                (a.name if (a := await db.get(Agent, p.agent_id)) else 'Unknown') for p in alive_players
             ]
             prompt = self._build_werewolf_prompt(
                 agent, player.role, state, "day_discussion", alive_names
@@ -464,7 +464,7 @@ class GameEngine:
             agent = await db.get(Agent, player.agent_id)
             model = await db.get(Model, agent.model_id)
             candidates = [
-                f"{(await db.get(Agent, p.agent_id)).name}(ID:{p.agent_id})"
+                f"{(a.name if (a := await db.get(Agent, p.agent_id)) else 'Unknown')}(ID:{p.agent_id})"
                 for p in alive_players
                 if p.agent_id != player.agent_id
             ]

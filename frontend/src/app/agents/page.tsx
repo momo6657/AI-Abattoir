@@ -457,6 +457,7 @@ export default function AgentsPage() {
       {loading ? (
         <div className="flex justify-center py-16"><LoadingSpinner /></div>
       ) : (
+      <>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredAgents.map((agent, index) => (
           <div
@@ -537,6 +538,7 @@ export default function AgentsPage() {
           {searchQuery ? "没有找到匹配的智能体" : "还没有智能体，点击上方按钮创建"}
         </div>
       )}
+      </>
       )}
 
       {/* Detail Modal */}

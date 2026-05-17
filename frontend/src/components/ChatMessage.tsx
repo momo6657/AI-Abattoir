@@ -10,6 +10,12 @@ interface ChatMessageProps {
   createdAt: string;
   agentIndex?: number;
   isSystem?: boolean;
+  /** Spectate-specific: show elimination styling */
+  isElimination?: boolean;
+  /** Spectate-specific: turn number to display */
+  turnNumber?: number;
+  /** Whether this is a user-sent message (right-aligned) */
+  isUser?: boolean;
 }
 
 export default function ChatMessage({
@@ -21,38 +27,91 @@ export default function ChatMessage({
   createdAt,
   agentIndex = 0,
   isSystem = false,
+  isElimination = false,
+  turnNumber,
+  isUser = false,
 }: ChatMessageProps) {
-  const bgColor = AVATAR_COLORS[agentIndex % AVATAR_COLORS.length];
+  const displayContent = typeof content === "string"
+    ? content
+    : (content as Record<string, unknown>)?.text
+      ? String((content as Record<string, unknown>).text)
+      : JSON.stringify(content);
 
-  if (isSystem) {
+  const bgColor = agentIndex >= 0
+    ? AVATAR_COLORS[agentIndex % AVATAR_COLORS.length]
+    : "bg-gray-600";
+
+  // System / elimination message
+  if (isSystem || isElimination) {
     return (
-      <div className="flex justify-center py-2">
-        <span className="text-xs text-gray-500 bg-gray-800/50 px-3 py-1 rounded-full">
-          {typeof content === "string" ? content : JSON.stringify(content)}
+      <div className="text-center">
+        <span
+          className={`text-xs px-3 py-1 rounded-full ${
+            isElimination
+              ? "bg-red-900/40 text-red-300"
+              : "bg-gray-800 text-gray-500"
+          }`}
+        >
+          {displayContent}
         </span>
       </div>
     );
   }
 
+  // User message (right-aligned, blue bubble)
+  if (isUser) {
+    return (
+      <div className="flex gap-3 flex-row-reverse">
+        <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0 bg-gray-600">
+          U
+        </div>
+        <div className="max-w-[70%] items-end flex flex-col">
+          <span className="text-xs text-gray-400 mb-1">
+            {agentName || "用户"} · {formatTime(createdAt)}
+          </span>
+          <div className="bg-blue-600 text-white rounded-xl px-4 py-2.5 text-sm">
+            <p className="whitespace-pre-wrap">{displayContent}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Agent message
   return (
-    <div className="flex gap-3 py-2">
-      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0 ${bgColor}`}>
+    <div className="flex gap-3">
+      <div
+        className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0 ${bgColor}`}
+      >
         {agentName ? getAvatarLetter(agentName) : "?"}
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-baseline gap-2 mb-1">
-          <span className="font-medium text-sm">{agentName || "未知"}</span>
-          <span className="text-xs text-gray-500">{formatTime(createdAt)}</span>
-        </div>
-        <div className="text-sm text-gray-300">
-          {contentType === "text" && (
-            <p className="whitespace-pre-wrap">{typeof content === "string" ? content : JSON.stringify(content)}</p>
-          )}
+      <div className="max-w-[80%] flex flex-col">
+        <span className="text-xs text-gray-400 mb-1">
+          {agentName || "未知"}
+          {turnNumber !== undefined && ` · 回合 ${turnNumber}`}
+          {` · ${formatTime(createdAt)}`}
+        </span>
+        <div className="bg-gray-800 rounded-xl px-4 py-2.5 text-sm">
           {contentType === "image" && imageUrl && (
-            <img src={imageUrl} alt="生成的图片" className="max-w-sm rounded-lg mt-1" />
+            <div>
+              <img
+                src={imageUrl}
+                alt="shared image"
+                className="rounded-lg max-w-full max-h-64 object-contain"
+              />
+              {displayContent && <p className="mt-2">{displayContent}</p>}
+            </div>
           )}
           {contentType === "audio" && audioUrl && (
-            <audio controls src={audioUrl} className="mt-1" />
+            <div>
+              <audio controls className="max-w-full">
+                <source src={audioUrl} />
+              </audio>
+              {displayContent && <p className="mt-2">{displayContent}</p>}
+            </div>
+          )}
+          {(!contentType || contentType === "text") && (
+            <p className="whitespace-pre-wrap">{displayContent}</p>
           )}
         </div>
       </div>

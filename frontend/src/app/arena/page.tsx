@@ -394,9 +394,9 @@ export default function ArenaPage() {
             还没有对决记录，点击上方按钮发起 PK
           </div>
         )}
+      </div>
       </>
       )}
-      </div>
 
       {/* Match Detail Modal */}
       {viewingMatch && (

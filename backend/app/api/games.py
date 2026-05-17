@@ -6,17 +6,13 @@ from sqlalchemy import select
 
 from app.core.database import get_db
 from app.models.game import Game, GamePlayer, GameType
-from app.models.agent import Agent
 from app.models.user import User
 from app.api.auth import get_current_user
 from app.schemas.game import (
     GameCreate, GameResponse, GameStateResponse, GameTurnResponse,
-    EndGameRequest, HierarchyCreate, HierarchyResponse,
+    EndGameRequest,
 )
-from app.schemas.agent import EvolutionResponse, ExperienceResponse
 from app.services.game_engine import game_engine
-from app.services.hierarchy_service import hierarchy_service
-from app.services.evolution_service import evolution_service
 
 router = APIRouter(tags=["games"])
 
@@ -115,51 +111,3 @@ async def end_game(
         return game
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-
-# ========== 层级指挥系统 ==========
-
-@router.post("/hierarchy")
-async def create_hierarchy(data: HierarchyCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    try:
-        relation = await hierarchy_service.create_hierarchy(
-            db, data.parent_agent_id, data.child_agent_id,
-            data.relation_type, data.context_id,
-        )
-        return {
-            "id": str(relation.id),
-            "parent_agent_id": str(relation.parent_agent_id),
-            "child_agent_id": str(relation.child_agent_id),
-            "relation_type": relation.relation_type,
-        }
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@router.get("/hierarchy/{agent_id}")
-async def get_hierarchy_tree(agent_id: UUID, db: AsyncSession = Depends(get_db)):
-    try:
-        tree = await hierarchy_service.get_hierarchy_tree(db, agent_id)
-        return tree
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-
-# ========== 进化系统 ==========
-
-@router.get("/agents/{agent_id}/evolution", response_model=EvolutionResponse)
-async def get_evolution(agent_id: UUID, db: AsyncSession = Depends(get_db)):
-    try:
-        info = await evolution_service.calculate_level(db, agent_id)
-        return info
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-
-@router.get("/agents/{agent_id}/experiences", response_model=List[ExperienceResponse])
-async def get_experiences(agent_id: UUID, db: AsyncSession = Depends(get_db)):
-    try:
-        log = await evolution_service.get_growth_log(db, agent_id)
-        return log
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))

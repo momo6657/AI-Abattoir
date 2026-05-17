@@ -3,15 +3,7 @@
 import { useEffect, useState } from "react";
 import { modelsApi } from "@/lib/api";
 import { ErrorBanner, LoadingSpinner, Badge } from "@/components";
-
-interface Model {
-  id: string;
-  name: string;
-  provider: string;
-  model_id: string;
-  is_active: boolean;
-  status: string;
-}
+import type { Model } from "@/types";
 
 export default function ModelsPage() {
   const [models, setModels] = useState<Model[]>([]);

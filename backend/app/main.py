@@ -1,12 +1,13 @@
 from uuid import UUID
 import os
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, Request
 from fastapi.exceptions import HTTPException as FastAPIHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api import models, agents, conversations, games, auth, arena, search
+from app.api import models, agents, conversations, games, auth, arena, search, hierarchy, evolution
 from app.core.database import get_db, engine, Base
 from app.core.config import settings
 from app.websocket.manager import ws_manager
@@ -15,14 +16,16 @@ from app.services.spectator_service import spectator_service
 # Import all models to register them with Base
 from app.models import *  # noqa: F401, F403
 
-app = FastAPI(title="AI Abattoir", version="0.1.0")
 
-
-@app.on_event("startup")
-async def startup():
+@asynccontextmanager
+async def lifespan(app):
     """Create database tables on startup if they don't exist."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    yield
+
+
+app = FastAPI(title="AI Abattoir", version="0.1.0", lifespan=lifespan)
 
 
 # CORS configuration: read allowed origins from settings instead of wildcard
@@ -56,6 +59,8 @@ app.include_router(games.router, prefix="/api")
 app.include_router(arena.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(search.router, prefix="/api")
+app.include_router(hierarchy.router, prefix="/api")
+app.include_router(evolution.router, prefix="/api")
 
 
 @app.get("/health")

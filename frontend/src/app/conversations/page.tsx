@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { conversationsApi, agentsApi } from "@/lib/api";
 import { useWebSocket } from "@/hooks/useWebSocket";
-import { ErrorBanner, LoadingSpinner } from "@/components";
+import { ErrorBanner, LoadingSpinner, ThinkingIndicator, ChatMessage } from "@/components";
 
 // ---- Types ----
 interface Agent {
@@ -41,33 +41,9 @@ const MODES = [
   { value: "interview", label: "采访", desc: "一问一答式对话" },
 ];
 
-const AVATAR_COLORS = [
-  "bg-blue-600", "bg-purple-600", "bg-green-600",
-  "bg-red-600", "bg-yellow-600", "bg-pink-600",
-  "bg-indigo-600", "bg-teal-600",
-];
-
-function getAgentColor(agentId: string, agents: Agent[]): string {
-  const idx = agents.findIndex((a) => a.id === agentId);
-  return AVATAR_COLORS[Math.max(0, idx) % AVATAR_COLORS.length];
-}
-
 function getAgentName(agentId: string, agents: Agent[]): string {
   const agent = agents.find((a) => a.id === agentId);
   return agent ? agent.name : "未知";
-}
-
-function getAvatarLetter(name: string): string {
-  return name.charAt(0).toUpperCase();
-}
-
-function formatTime(dateStr: string): string {
-  try {
-    const d = new Date(dateStr);
-    return d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
-  } catch {
-    return "";
-  }
 }
 
 // ---- Page Component ----
@@ -433,87 +409,31 @@ export default function ConversationsPage() {
                 const isUser = msg.role === "user";
                 const isSystem = msg.role === "system";
                 const agentName = msg.agent_name || (msg.agent_id ? getAgentName(msg.agent_id, agents) : "用户");
-                const agentColor = msg.agent_id ? getAgentColor(msg.agent_id, agents) : "bg-gray-600";
-
-                const displayContent = typeof msg.content === 'string'
-                  ? msg.content
-                  : (msg.content as Record<string, unknown>)?.text
-                    ? String((msg.content as Record<string, unknown>).text)
-                    : JSON.stringify(msg.content);
-
-                if (isSystem) {
-                  return (
-                    <div key={msg.id} className="text-center">
-                      <span className="text-xs text-gray-500 bg-gray-800 px-3 py-1 rounded-full">
-                        {displayContent}
-                      </span>
-                    </div>
-                  );
-                }
+                const agentIdx = msg.agent_id ? agents.findIndex((a) => a.id === msg.agent_id) : -1;
 
                 return (
-                  <div
+                  <ChatMessage
                     key={msg.id}
-                    className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""}`}
-                  >
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0 ${agentColor}`}
-                    >
-                      {isUser ? "U" : getAvatarLetter(agentName)}
-                    </div>
-                    <div className={`max-w-[70%] ${isUser ? "items-end" : "items-start"} flex flex-col`}>
-                      <span className="text-xs text-gray-400 mb-1">
-                        {agentName} · {formatTime(msg.created_at)}
-                      </span>
-                      <div
-                        className={`rounded-xl px-4 py-2.5 text-sm ${
-                          isUser ? "bg-blue-600 text-white" : "bg-gray-800"
-                        }`}
-                      >
-                        {(!msg.content_type || msg.content_type === "text") && <p className="whitespace-pre-wrap">{displayContent}</p>}
-                        {msg.content_type === "image" && msg.image_url && (
-                          <div>
-                            <img
-                              src={msg.image_url}
-                              alt="shared image"
-                              className="rounded-lg max-w-full max-h-64 object-contain"
-                            />
-                            {msg.content && <p className="mt-2 text-sm">{displayContent}</p>}
-                          </div>
-                        )}
-                        {msg.content_type === "audio" && msg.audio_url && (
-                          <div>
-                            <audio controls className="max-w-full">
-                              <source src={msg.audio_url} />
-                            </audio>
-                            {msg.content && <p className="mt-2 text-sm">{displayContent}</p>}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                    agentName={agentName}
+                    content={msg.content}
+                    contentType={msg.content_type}
+                    imageUrl={msg.image_url}
+                    audioUrl={msg.audio_url}
+                    createdAt={msg.created_at}
+                    agentIndex={agentIdx >= 0 ? agentIdx : 0}
+                    isSystem={isSystem}
+                    isUser={isUser}
+                  />
                 );
               })}
 
               {/* Thinking Indicator */}
               {thinkingAgent && (
-                <div className="flex gap-3">
-                  <div
-                    className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0 ${getAgentColor(thinkingAgent, agents)}`}
-                  >
-                    {getAvatarLetter(getAgentName(thinkingAgent, agents))}
-                  </div>
-                  <div>
-                    <span className="text-xs text-gray-400 mb-1 block">
-                      {getAgentName(thinkingAgent, agents)} 正在思考...
-                    </span>
-                    <div className="bg-gray-800 rounded-xl px-4 py-2.5 inline-flex gap-1">
-                      <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                      <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                      <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
-                    </div>
-                  </div>
-                </div>
+                <ThinkingIndicator
+                  agentName={getAgentName(thinkingAgent, agents)}
+                  showAvatar
+                  agentIndex={agents.findIndex((a) => a.id === thinkingAgent)}
+                />
               )}
 
               <div ref={messagesEndRef} />
