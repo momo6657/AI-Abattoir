@@ -1,6 +1,6 @@
 from uuid import UUID
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -15,8 +15,17 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 
 
 @router.get("/", response_model=List[AgentResponse])
-async def list_agents(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Agent).order_by(Agent.created_at.desc()))
+async def list_agents(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Agent)
+        .order_by(Agent.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )
     return result.scalars().all()
 
 

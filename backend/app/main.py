@@ -1,6 +1,7 @@
 from uuid import UUID
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import models, agents, conversations, games, auth, arena, search
@@ -23,6 +24,15 @@ if _allowed_origins:
     _cors_kwargs["allow_credentials"] = True
 
 app.add_middleware(CORSMiddleware, **_cors_kwargs)
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
+
 
 app.include_router(models.router, prefix="/api")
 app.include_router(agents.router, prefix="/api")
