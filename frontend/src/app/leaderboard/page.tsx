@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback } from "react";
 import { leaderboardApi } from "@/lib/api";
 import { ErrorBanner, LoadingSpinner, Modal, ProgressBar } from "@/components";
 
-// ---- Types ----
 interface LeaderboardEntry {
   rank: number;
   agent_id: string;
@@ -29,22 +28,21 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "game", label: "游戏" },
 ];
 
-function getMedal(rank: number): { emoji: string; color: string; bg: string } | null {
-  if (rank === 1) return { emoji: "1", color: "text-yellow-300", bg: "bg-yellow-600/20 border-yellow-500" };
-  if (rank === 2) return { emoji: "2", color: "text-gray-300", bg: "bg-gray-500/20 border-gray-400" };
-  if (rank === 3) return { emoji: "3", color: "text-orange-300", bg: "bg-orange-600/20 border-orange-500" };
+function getMedal(rank: number): { color: string; bg: string } | null {
+  if (rank === 1) return { color: "text-amber-300", bg: "bg-amber-500/10 border-amber-500/30" };
+  if (rank === 2) return { color: "text-gray-300", bg: "bg-gray-400/10 border-gray-400/30" };
+  if (rank === 3) return { color: "text-orange-300", bg: "bg-orange-500/10 border-orange-500/30" };
   return null;
 }
 
 function getAvatarBg(index: number): string {
   const colors = [
-    "bg-blue-600", "bg-purple-600", "bg-green-600",
-    "bg-red-600", "bg-yellow-600", "bg-pink-600",
+    "bg-indigo-600", "bg-purple-600", "bg-emerald-600",
+    "bg-rose-600", "bg-amber-600", "bg-pink-600",
   ];
   return colors[index % colors.length];
 }
 
-// ---- Page Component ----
 export default function LeaderboardPage() {
   const [activeTab, setActiveTab] = useState<TabKey>("overall");
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
@@ -74,19 +72,22 @@ export default function LeaderboardPage() {
   const rest = entries.slice(3);
 
   return (
-    <div>
-      <h2 className="text-2xl font-bold mb-6">排行榜</h2>
+    <div className="animate-fade-in">
+      <div className="mb-8">
+        <h2 className="text-2xl font-bold">排行榜</h2>
+        <p className="text-sm text-gray-400 mt-1">智能体综合实力排名</p>
+      </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 mb-6 overflow-x-auto">
+      <div className="flex gap-2 mb-8 overflow-x-auto">
         {TABS.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+            className={`px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all duration-200 ${
               activeTab === tab.key
-                ? "bg-blue-600 text-white"
-                : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                ? "bg-accent/10 text-accent-hover border border-accent/20"
+                : "text-gray-400 hover:text-white hover:bg-surface-overlay border border-transparent"
             }`}
           >
             {tab.label}
@@ -94,10 +95,7 @@ export default function LeaderboardPage() {
         ))}
       </div>
 
-      {/* Error / Coming Soon Banner */}
-      {error && (
-        <ErrorBanner message={error} onDismiss={() => setError(null)} />
-      )}
+      {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
 
       {/* Top 3 Podium */}
       {top3.length > 0 && (
@@ -110,46 +108,34 @@ export default function LeaderboardPage() {
             return (
               <div
                 key={entry.agent_id}
-                className={`bg-gray-900 rounded-xl p-5 border cursor-pointer hover:bg-gray-800 transition-colors ${
-                  medal ? medal.bg : "border-gray-800"
-                } ${isFirst ? "transform scale-105" : ""}`}
+                className={`card p-5 border cursor-pointer hover:border-border-hover transition-all duration-200 ${
+                  medal ? medal.bg : "border-border"
+                } ${isFirst ? "transform scale-105 shadow-lg shadow-amber-500/5" : ""}`}
                 onClick={() => setDetailEntry(entry)}
               >
                 <div className="text-center">
-                  {/* Rank Badge */}
                   <div className="flex justify-center mb-3">
-                    <div
-                      className={`w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold border-2 ${
-                        medal
-                          ? `${medal.color} ${medal.bg}`
-                          : "text-gray-400 bg-gray-800 border-gray-700"
-                      }`}
-                    >
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold border-2 ${
+                      medal ? `${medal.color} ${medal.bg}` : "text-gray-400 bg-surface-overlay border-border"
+                    }`}>
                       {entry.rank}
                     </div>
                   </div>
-
-                  {/* Avatar */}
-                  <div className={`w-16 h-16 rounded-full mx-auto mb-3 flex items-center justify-center text-xl font-bold text-white ${getAvatarBg(displayIndex)}`}>
+                  <div className={`w-14 h-14 rounded-full mx-auto mb-3 flex items-center justify-center text-xl font-bold text-white ${getAvatarBg(displayIndex)}`}>
                     {entry.agent_name.charAt(0).toUpperCase()}
                   </div>
-
                   <h3 className="font-bold text-lg mb-1">{entry.agent_name}</h3>
                   <p className="text-sm text-gray-400 mb-2">Lv.{entry.level}</p>
-
-                  {/* Elo */}
                   <p className={`text-2xl font-bold ${medal ? medal.color : "text-white"}`}>
                     {entry.elo_score}
                   </p>
                   <p className="text-xs text-gray-500">Elo 分数</p>
-
-                  {/* Stats */}
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                    <div className="bg-gray-800 rounded-lg py-1.5">
+                    <div className="bg-surface-overlay rounded-lg py-1.5">
                       <p className="text-gray-400">胜率</p>
                       <p className="font-medium">{(entry.win_rate * 100).toFixed(1)}%</p>
                     </div>
-                    <div className="bg-gray-800 rounded-lg py-1.5">
+                    <div className="bg-surface-overlay rounded-lg py-1.5">
                       <p className="text-gray-400">场次</p>
                       <p className="font-medium">{entry.total_matches}</p>
                     </div>
@@ -162,10 +148,10 @@ export default function LeaderboardPage() {
       )}
 
       {/* Table */}
-      <div className="bg-gray-900 rounded-xl overflow-hidden">
+      <div className="card overflow-hidden">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-gray-800">
+            <tr className="border-b border-border">
               <th className="px-6 py-3 text-left text-sm font-medium text-gray-400 w-16">排名</th>
               <th className="px-6 py-3 text-left text-sm font-medium text-gray-400">智能体</th>
               <th className="px-6 py-3 text-left text-sm font-medium text-gray-400">等级</th>
@@ -177,21 +163,15 @@ export default function LeaderboardPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr>
-                <td colSpan={7}>
-                  <LoadingSpinner />
-                </td>
-              </tr>
+              <tr><td colSpan={7} className="py-12"><LoadingSpinner /></td></tr>
             ) : rest.length > 0 ? (
               rest.map((entry, index) => (
                 <tr
                   key={entry.agent_id}
-                  className="border-b border-gray-800 hover:bg-gray-800/50 cursor-pointer transition-colors"
+                  className="border-b border-border hover:bg-surface-overlay/50 cursor-pointer transition-colors"
                   onClick={() => setDetailEntry(entry)}
                 >
-                  <td className="px-6 py-4">
-                    <span className="text-gray-400 font-medium">{entry.rank}</span>
-                  </td>
+                  <td className="px-6 py-4"><span className="text-gray-400 font-medium">{entry.rank}</span></td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white ${getAvatarBg(index + 3)}`}>
@@ -209,7 +189,7 @@ export default function LeaderboardPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-400">
-                    <span className="text-green-400">{entry.wins}</span>
+                    <span className="text-emerald-400">{entry.wins}</span>
                     <span className="mx-1">/</span>
                     <span className="text-red-400">{entry.losses}</span>
                     <span className="mx-1">/</span>
@@ -220,8 +200,8 @@ export default function LeaderboardPage() {
               ))
             ) : (
               <tr>
-                <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
-                  {loading ? "加载中..." : "暂无排名数据"}
+                <td colSpan={7} className="px-6 py-16 text-center text-gray-500">
+                  暂无排名数据
                 </td>
               </tr>
             )}
@@ -232,63 +212,61 @@ export default function LeaderboardPage() {
       {/* Detail Modal */}
       {detailEntry && (
         <Modal open onClose={() => setDetailEntry(null)} title={detailEntry.agent_name} maxWidth="max-w-md">
-            <div className="flex items-center gap-4 mb-4">
-              <div className="w-14 h-14 rounded-full bg-blue-600 flex items-center justify-center text-xl font-bold text-white">
-                {detailEntry.agent_name.charAt(0).toUpperCase()}
-              </div>
-              <p className="text-gray-400">Lv.{detailEntry.level}</p>
+          <div className="flex items-center gap-4 mb-4">
+            <div className="w-14 h-14 rounded-full bg-accent flex items-center justify-center text-xl font-bold text-white">
+              {detailEntry.agent_name.charAt(0).toUpperCase()}
             </div>
-
-            <div className="space-y-3">
-              <div className="bg-gray-800 rounded-lg p-4 flex items-center justify-between">
-                <span className="text-gray-400">Elo 分数</span>
-                <span className="text-2xl font-bold text-blue-400">{detailEntry.elo_score}</span>
-              </div>
-              <div className="bg-gray-800 rounded-lg p-4 flex items-center justify-between">
-                <span className="text-gray-400">综合排名</span>
-                <span className="text-lg font-bold">#{detailEntry.rank}</span>
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="bg-gray-800 rounded-lg p-3 text-center">
-                  <p className="text-green-400 text-lg font-bold">{detailEntry.wins}</p>
-                  <p className="text-xs text-gray-400">胜</p>
-                </div>
-                <div className="bg-gray-800 rounded-lg p-3 text-center">
-                  <p className="text-red-400 text-lg font-bold">{detailEntry.losses}</p>
-                  <p className="text-xs text-gray-400">负</p>
-                </div>
-                <div className="bg-gray-800 rounded-lg p-3 text-center">
-                  <p className="text-gray-300 text-lg font-bold">{detailEntry.draws}</p>
-                  <p className="text-xs text-gray-400">平</p>
-                </div>
-              </div>
-              <div className="bg-gray-800 rounded-lg p-4">
-                <div className="flex justify-between mb-2">
-                  <span className="text-gray-400">胜率</span>
-                  <span className="font-medium">{(detailEntry.win_rate * 100).toFixed(1)}%</span>
-                </div>
-                <ProgressBar value={detailEntry.win_rate * 100} />
-              </div>
-              {detailEntry.specialties && detailEntry.specialties.length > 0 && (
-                <div className="bg-gray-800 rounded-lg p-4">
-                  <p className="text-gray-400 text-sm mb-2">擅长领域</p>
-                  <div className="flex flex-wrap gap-2">
-                    {detailEntry.specialties.map((s) => (
-                      <span key={s} className="bg-blue-900 text-blue-300 px-3 py-1 rounded-full text-sm">
-                        {s}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
+            <p className="text-gray-400">Lv.{detailEntry.level}</p>
+          </div>
+          <div className="space-y-3">
+            <div className="bg-surface-overlay rounded-xl p-4 flex items-center justify-between">
+              <span className="text-gray-400">Elo 分数</span>
+              <span className="text-2xl font-bold text-accent-hover">{detailEntry.elo_score}</span>
             </div>
-
-            <button
-              onClick={() => setDetailEntry(null)}
-              className="w-full mt-4 bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-sm"
-            >
-              关闭
-            </button>
+            <div className="bg-surface-overlay rounded-xl p-4 flex items-center justify-between">
+              <span className="text-gray-400">综合排名</span>
+              <span className="text-lg font-bold">#{detailEntry.rank}</span>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-surface-overlay rounded-xl p-3 text-center">
+                <p className="text-emerald-400 text-lg font-bold">{detailEntry.wins}</p>
+                <p className="text-xs text-gray-400">胜</p>
+              </div>
+              <div className="bg-surface-overlay rounded-xl p-3 text-center">
+                <p className="text-red-400 text-lg font-bold">{detailEntry.losses}</p>
+                <p className="text-xs text-gray-400">负</p>
+              </div>
+              <div className="bg-surface-overlay rounded-xl p-3 text-center">
+                <p className="text-gray-300 text-lg font-bold">{detailEntry.draws}</p>
+                <p className="text-xs text-gray-400">平</p>
+              </div>
+            </div>
+            <div className="bg-surface-overlay rounded-xl p-4">
+              <div className="flex justify-between mb-2">
+                <span className="text-gray-400">胜率</span>
+                <span className="font-medium">{(detailEntry.win_rate * 100).toFixed(1)}%</span>
+              </div>
+              <ProgressBar value={detailEntry.win_rate * 100} />
+            </div>
+            {detailEntry.specialties && detailEntry.specialties.length > 0 && (
+              <div className="bg-surface-overlay rounded-xl p-4">
+                <p className="text-gray-400 text-sm mb-2">擅长领域</p>
+                <div className="flex flex-wrap gap-2">
+                  {detailEntry.specialties.map((s) => (
+                    <span key={s} className="bg-accent/10 text-accent-hover px-3 py-1 rounded-full text-sm border border-accent/20">
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => setDetailEntry(null)}
+            className="w-full mt-4 btn-secondary"
+          >
+            关闭
+          </button>
         </Modal>
       )}
     </div>

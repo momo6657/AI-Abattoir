@@ -151,12 +151,11 @@ export default function ArenaPage() {
     const typeInfo = getMatchTypeInfo(match.match_type);
     const totalVotes = match.votes_a + match.votes_b;
     const pctA = totalVotes > 0 ? Math.round((match.votes_a / totalVotes) * 100) : 50;
-    const pctB = totalVotes > 0 ? Math.round((match.votes_b / totalVotes) * 100) : 50;
 
     return (
       <div className="space-y-4">
         {/* Prompt */}
-        <div className="bg-gray-800 rounded-lg p-4">
+        <div className="bg-surface-overlay rounded-lg p-4">
           <p className="text-xs text-gray-400 mb-1">题目 / Prompt</p>
           <p className="text-sm">{match.prompt}</p>
         </div>
@@ -172,11 +171,11 @@ export default function ArenaPage() {
               )}
             </div>
             {typeInfo.value === "image" && match.image_a_url ? (
-              <img src={match.image_a_url} alt="Agent A" className="rounded-lg w-full max-h-64 object-contain bg-gray-800" />
+              <img src={match.image_a_url} alt="Agent A" className="rounded-lg w-full max-h-64 object-contain bg-surface-overlay" />
             ) : typeInfo.value === "voice" && match.audio_a_url ? (
               <audio controls className="w-full"><source src={match.audio_a_url} /></audio>
             ) : (
-              <div className="bg-gray-800 rounded-lg p-3 text-sm max-h-48 overflow-y-auto whitespace-pre-wrap">
+              <div className="bg-surface-overlay rounded-lg p-3 text-sm max-h-48 overflow-y-auto whitespace-pre-wrap">
                 {match.result_a || <span className="text-gray-500">等待结果...</span>}
               </div>
             )}
@@ -184,7 +183,7 @@ export default function ArenaPage() {
               {!votedMatches.has(match.id) && match.status === "completed" && (
                 <button
                   onClick={() => handleVote(match.id, "a")}
-                  className="w-full bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg text-xs"
+                  className="w-full btn-primary text-xs"
                 >
                   投票
                 </button>
@@ -201,11 +200,11 @@ export default function ArenaPage() {
               )}
             </div>
             {typeInfo.value === "image" && match.image_b_url ? (
-              <img src={match.image_b_url} alt="Agent B" className="rounded-lg w-full max-h-64 object-contain bg-gray-800" />
+              <img src={match.image_b_url} alt="Agent B" className="rounded-lg w-full max-h-64 object-contain bg-surface-overlay" />
             ) : typeInfo.value === "voice" && match.audio_b_url ? (
               <audio controls className="w-full"><source src={match.audio_b_url} /></audio>
             ) : (
-              <div className="bg-gray-800 rounded-lg p-3 text-sm max-h-48 overflow-y-auto whitespace-pre-wrap">
+              <div className="bg-surface-overlay rounded-lg p-3 text-sm max-h-48 overflow-y-auto whitespace-pre-wrap">
                 {match.result_b || <span className="text-gray-500">等待结果...</span>}
               </div>
             )}
@@ -213,7 +212,7 @@ export default function ArenaPage() {
               {!votedMatches.has(match.id) && match.status === "completed" && (
                 <button
                   onClick={() => handleVote(match.id, "b")}
-                  className="w-full bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg text-xs"
+                  className="w-full btn-primary text-xs"
                 >
                   投票
                 </button>
@@ -229,7 +228,7 @@ export default function ArenaPage() {
               <span>{match.votes_a} 票</span>
               <span>{match.votes_b} 票</span>
             </div>
-            <ProgressBar value={pctA} color="bg-blue-500" />
+            <ProgressBar value={pctA} color="bg-accent" />
           </div>
         )}
       </div>
@@ -237,13 +236,16 @@ export default function ArenaPage() {
   };
 
   return (
-    <div>
+    <div className="animate-fade-in">
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold">竞技场</h2>
+        <div>
+          <h2 className="text-2xl font-bold gradient-text">竞技场</h2>
+          <p className="text-sm text-gray-400 mt-1">让 AI 模型同台竞技，投票选出最强选手</p>
+        </div>
         <button
           onClick={() => setShowCreate(!showCreate)}
-          className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg"
+          className={showCreate ? "btn-secondary" : "btn-primary"}
         >
           {showCreate ? "取消" : "发起 PK"}
         </button>
@@ -260,7 +262,7 @@ export default function ArenaPage() {
 
       {/* Create Match Form */}
       {showCreate && (
-        <form onSubmit={handleCreateMatch} className="bg-gray-900 p-6 rounded-xl mb-6 space-y-4">
+        <form onSubmit={handleCreateMatch} className="card p-6 mb-6 space-y-4 animate-slide-up">
           <h3 className="text-lg font-semibold">发起对决</h3>
 
           {/* Match Type Selection */}
@@ -272,10 +274,10 @@ export default function ArenaPage() {
                   key={t.value}
                   type="button"
                   onClick={() => setSelectedType(t.value)}
-                  className={`p-3 rounded-lg text-left transition-all ${
+                  className={`p-3 rounded-xl text-left transition-all border ${
                     selectedType === t.value
-                      ? "ring-2 ring-blue-500 bg-gray-700"
-                      : "bg-gray-800 hover:bg-gray-700"
+                      ? "ring-2 ring-accent border-accent bg-surface-overlay"
+                      : "border-border bg-surface-overlay hover:border-border-hover"
                   }`}
                 >
                   <div className="flex items-center gap-2 mb-1">
@@ -297,7 +299,7 @@ export default function ArenaPage() {
               <select
                 value={agentAId}
                 onChange={(e) => setAgentAId(e.target.value)}
-                className="w-full bg-gray-800 rounded-lg px-4 py-2"
+                className="input-field"
                 required
               >
                 <option value="">选择智能体</option>
@@ -311,7 +313,7 @@ export default function ArenaPage() {
               <select
                 value={agentBId}
                 onChange={(e) => setAgentBId(e.target.value)}
-                className="w-full bg-gray-800 rounded-lg px-4 py-2"
+                className="input-field"
                 required
               >
                 <option value="">选择智能体</option>
@@ -328,18 +330,18 @@ export default function ArenaPage() {
               placeholder="输入对决题目..."
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              className="w-full bg-gray-800 rounded-lg px-4 py-2 h-24 resize-none"
+              className="input-field h-24 resize-none"
               required
             />
           </div>
 
-          <button type="submit" className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg">
+          <button type="submit" className="btn-primary">
             开始对决
           </button>
         </form>
       )}
 
-      {/* Match Type Cards */}
+      {/* Match Type Cards & Records */}
       {loading ? (
         <div className="flex justify-center py-16"><LoadingSpinner /></div>
       ) : (
@@ -350,7 +352,7 @@ export default function ArenaPage() {
           return (
             <div
               key={t.value}
-              className="bg-gray-900 p-5 rounded-xl cursor-pointer hover:bg-gray-800 transition-colors"
+              className="card-hover p-5 cursor-pointer"
               onClick={() => {
                 setSelectedType(t.value);
                 setShowCreate(true);
@@ -379,7 +381,7 @@ export default function ArenaPage() {
           return (
             <div
               key={match.id}
-              className="bg-gray-900 p-5 rounded-xl cursor-pointer hover:bg-gray-800 transition-colors"
+              className="card-hover p-5 cursor-pointer"
               onClick={() => setViewingMatch(match)}
             >
               <div className="flex justify-between items-start mb-3">
@@ -405,7 +407,7 @@ export default function ArenaPage() {
                 <div className="mt-2">
                   <ProgressBar
                     value={match.votes_a + match.votes_b > 0 ? (match.votes_a / (match.votes_a + match.votes_b)) * 100 : 50}
-                    color="bg-blue-500"
+                    color="bg-accent"
                     height="h-1.5"
                   />
                 </div>
@@ -414,8 +416,11 @@ export default function ArenaPage() {
           );
         })}
         {matches.length === 0 && (
-          <div className="text-center py-12 text-gray-500">
-            还没有对决记录，点击上方按钮发起 PK
+          <div className="text-center py-16 text-gray-500">
+            <svg className="w-12 h-12 mx-auto mb-3 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            <p>还没有对决记录，点击上方按钮发起 PK</p>
           </div>
         )}
       </div>
@@ -437,7 +442,7 @@ export default function ArenaPage() {
             <div className="mt-4 flex justify-end">
               <button
                 onClick={() => setViewingMatch(null)}
-                className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-sm"
+                className="btn-secondary text-sm"
               >
                 关闭
               </button>

@@ -5,17 +5,17 @@ interface BadgeProps {
 }
 
 const variants = {
-  default: "bg-gray-800 text-gray-300",
-  success: "bg-green-900 text-green-300",
-  warning: "bg-yellow-900 text-yellow-300",
-  danger: "bg-red-900 text-red-300",
-  info: "bg-blue-900 text-blue-300",
+  default: "bg-gray-500/10 text-gray-300 border-gray-500/20",
+  success: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  warning: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+  danger: "bg-red-500/10 text-red-400 border-red-500/20",
+  info: "bg-blue-500/10 text-blue-400 border-blue-500/20",
 };
 
 export default function Badge({ text, variant = "default", size = "sm" }: BadgeProps) {
-  const sizeClass = size === "sm" ? "px-2 py-0.5 text-xs" : "px-3 py-1 text-sm";
+  const sizeClass = size === "sm" ? "px-2 py-0.5 text-xs" : "px-2.5 py-1 text-sm";
   return (
-    <span role="status" className={`rounded-full ${sizeClass} ${variants[variant]}`}>
+    <span role="status" className={`rounded-lg border font-medium ${sizeClass} ${variants[variant]}`}>
       {text}
     </span>
   );

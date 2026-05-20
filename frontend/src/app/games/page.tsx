@@ -213,13 +213,16 @@ export default function GamesPage() {
   const filteredGames = filter === "all" ? games : games.filter((g) => g.status === filter);
 
   return (
-    <div>
+    <div className="animate-fade-in">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <h2 className="text-2xl font-bold">游戏房间</h2>
+        <div>
+          <h2 className="text-2xl font-bold gradient-text">游戏房间</h2>
+          <p className="text-sm text-gray-400 mt-1">让 AI 智能体在博弈中碰撞智慧</p>
+        </div>
         <button
           onClick={() => setShowCreate(!showCreate)}
-          className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg"
+          className={showCreate ? "btn-secondary" : "btn-primary"}
         >
           {showCreate ? "取消" : "创建游戏"}
         </button>
@@ -236,7 +239,7 @@ export default function GamesPage() {
 
       {/* Create Game Form */}
       {showCreate && (
-        <form onSubmit={handleCreate} className="bg-gray-900 p-6 rounded-xl mb-6 space-y-4">
+        <form onSubmit={handleCreate} className="card p-6 mb-6 space-y-4 animate-slide-up">
           <h3 className="text-lg font-semibold">创建游戏</h3>
 
           {/* Game Type */}
@@ -248,10 +251,10 @@ export default function GamesPage() {
                   key={t.value}
                   type="button"
                   onClick={() => setSelectedGameType(t.value)}
-                  className={`p-4 rounded-lg text-left transition-all ${
+                  className={`p-4 rounded-xl text-left transition-all ${
                     selectedGameType === t.value
-                      ? "ring-2 ring-blue-500 bg-gray-700"
-                      : "bg-gray-800 hover:bg-gray-700"
+                      ? "ring-2 ring-accent bg-surface-overlay"
+                      : "bg-surface-overlay hover:bg-surface-overlay/80 border border-border hover:border-border-hover"
                   }`}
                 >
                   <div className="flex items-center gap-2 mb-1">
@@ -274,7 +277,7 @@ export default function GamesPage() {
                 placeholder="给游戏取个名字"
                 value={gameTitle}
                 onChange={(e) => setGameTitle(e.target.value)}
-                className="w-full bg-gray-800 rounded-lg px-4 py-2"
+                className="input-field"
                 required
               />
             </div>
@@ -286,7 +289,7 @@ export default function GamesPage() {
                 max={100}
                 value={maxTurns}
                 onChange={(e) => setMaxTurns(parseInt(e.target.value) || 20)}
-                className="w-full bg-gray-800 rounded-lg px-4 py-2"
+                className="input-field"
               />
             </div>
           </div>
@@ -302,10 +305,10 @@ export default function GamesPage() {
                   key={a.id}
                   type="button"
                   onClick={() => toggleAgent(a.id)}
-                  className={`p-2 rounded-lg text-sm text-left transition-colors ${
+                  className={`p-2 rounded-xl text-sm text-left transition-colors ${
                     selectedAgentIds.includes(a.id)
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-800 text-gray-300 hover:bg-gray-700"
+                      ? "bg-accent text-white"
+                      : "bg-surface-overlay text-gray-300 hover:bg-surface-overlay/80 border border-border"
                   }`}
                 >
                   {a.name}
@@ -315,7 +318,7 @@ export default function GamesPage() {
             </div>
           </div>
 
-          <button type="submit" className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg">
+          <button type="submit" className="btn-primary">
             创建游戏
           </button>
         </form>
@@ -330,8 +333,8 @@ export default function GamesPage() {
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                className={`px-3 py-1.5 rounded-lg text-sm ${
-                  filter === f ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                className={`px-3 py-1.5 rounded-xl text-sm transition-all duration-200 ${
+                  filter === f ? "bg-accent text-white shadow-lg shadow-accent/25" : "btn-ghost"
                 }`}
               >
                 {f === "all" ? "全部" : getStatusLabel(f)}
@@ -353,8 +356,8 @@ export default function GamesPage() {
               return (
                 <div
                   key={game.id}
-                  className={`bg-gray-900 p-4 rounded-xl cursor-pointer transition-colors ${
-                    activeGameId === game.id ? "ring-2 ring-blue-500" : "hover:bg-gray-800"
+                  className={`card-hover p-4 cursor-pointer ${
+                    activeGameId === game.id ? "ring-2 ring-accent" : ""
                   }`}
                   onClick={() => setActiveGameId(game.id)}
                 >
@@ -375,12 +378,13 @@ export default function GamesPage() {
                     {typeInfo.label} · {game.players?.length || 0} 人 · 回合 {game.current_turn}/{game.max_turns}
                     {game.status === "active" && ` · 存活 ${alivePlayers}`}
                   </p>
+
                   <div className="flex gap-1 mt-2">
                     {game.players?.slice(0, 6).map((p) => (
                       <span
                         key={p.agent_id}
                         className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                          p.alive ? "bg-gray-700 text-white" : "bg-gray-800 text-gray-600 line-through"
+                          p.alive ? "bg-surface-overlay text-white" : "bg-surface text-gray-600 line-through"
                         }`}
                         title={`${p.agent_name} ${p.role}`}
                       >
@@ -388,7 +392,7 @@ export default function GamesPage() {
                       </span>
                     ))}
                     {(game.players?.length || 0) > 6 && (
-                      <span className="w-6 h-6 rounded-full bg-gray-800 flex items-center justify-center text-xs text-gray-400">
+                      <span className="w-6 h-6 rounded-full bg-surface-overlay flex items-center justify-center text-xs text-gray-400">
                         +{game.players!.length - 6}
                       </span>
                     )}
@@ -397,8 +401,13 @@ export default function GamesPage() {
               );
             })}
             {filteredGames.length === 0 && (
-              <div className="text-center py-12 text-gray-500">
-                {filter === "all" ? "还没有游戏，点击上方按钮创建" : `没有${getStatusLabel(filter)}的游戏`}
+              <div className="card p-12 text-center">
+                <div className="text-4xl mb-3 opacity-50">
+                  {filter === "all" ? "🎮" : filter === "waiting" ? "⏳" : filter === "active" ? "🎯" : "🏁"}
+                </div>
+                <p className="text-gray-500">
+                  {filter === "all" ? "还没有游戏，点击上方按钮创建" : `没有${getStatusLabel(filter)}的游戏`}
+                </p>
               </div>
             )}
           </div>
@@ -407,9 +416,9 @@ export default function GamesPage() {
 
         {/* Game Room (Right Panel) */}
         {activeGameId && activeGame && (
-          <div className="w-96 flex-shrink-0 bg-gray-900 rounded-xl flex flex-col overflow-hidden" style={{ height: "calc(100vh - 220px)" }}>
+          <div className="w-96 flex-shrink-0 card flex flex-col overflow-hidden" style={{ height: "calc(100vh - 220px)" }}>
             {/* Game Header */}
-            <div className="border-b border-gray-800 p-4">
+            <div className="border-b border-border p-4">
               <div className="flex justify-between items-start">
                 <div>
                   <h3 className="font-bold">{activeGame.title}</h3>
@@ -429,7 +438,7 @@ export default function GamesPage() {
                 {activeGame.status === "waiting" && (
                   <button
                     onClick={() => handleStartGame(activeGame.id)}
-                    className="bg-green-600 hover:bg-green-700 px-3 py-1.5 rounded-lg text-xs"
+                    className="bg-green-600 hover:bg-green-700 px-3 py-1.5 rounded-xl text-xs font-medium transition-all duration-200"
                   >
                     开始游戏
                   </button>
@@ -439,13 +448,13 @@ export default function GamesPage() {
                     <button
                       onClick={handleProcessTurn}
                       disabled={isProcessing}
-                      className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 px-3 py-1.5 rounded-lg text-xs"
+                      className="btn-primary text-xs !px-3 !py-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {isProcessing ? "处理中..." : "下一回合"}
                     </button>
                     <button
                       onClick={() => handleEndGame(activeGame.id)}
-                      className="bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg text-xs"
+                      className="bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-xl text-xs font-medium transition-all duration-200"
                     >
                       结束
                     </button>
@@ -455,7 +464,7 @@ export default function GamesPage() {
             </div>
 
             {/* Players */}
-            <div className="border-b border-gray-800 p-4">
+            <div className="border-b border-border p-4">
               <h4 className="text-xs text-gray-400 mb-2">玩家列表</h4>
               <div className="space-y-1">
                 {activeGame.players?.map((p) => (
@@ -477,7 +486,7 @@ export default function GamesPage() {
 
             {/* Game State */}
             {gameState && (
-              <div className="border-b border-gray-800 p-4">
+              <div className="border-b border-border p-4">
                 <h4 className="text-xs text-gray-400 mb-2">游戏状态</h4>
                 <div className="text-xs text-gray-300 space-y-1">
                   {Object.entries(gameState)
@@ -499,18 +508,18 @@ export default function GamesPage() {
               {gameLogs.map((log) => (
                 <div
                   key={log.id}
-                  className={`text-sm rounded-lg px-3 py-2 ${
+                  className={`text-sm rounded-xl px-3 py-2 ${
                     log.log_type === "system"
-                      ? "bg-gray-800 text-gray-400 text-center text-xs"
+                      ? "bg-surface-overlay text-gray-400 text-center text-xs"
                       : log.log_type === "elimination"
-                      ? "bg-red-900/30 text-red-300"
+                      ? "bg-red-900/30 text-red-300 border border-red-800/30"
                       : log.log_type === "vote"
-                      ? "bg-yellow-900/30 text-yellow-300"
-                      : "bg-gray-800"
+                      ? "bg-yellow-900/30 text-yellow-300 border border-yellow-800/30"
+                      : "bg-surface-overlay"
                   }`}
                 >
                   {log.agent_name && (
-                    <span className="font-medium text-blue-400">{log.agent_name}: </span>
+                    <span className="font-medium text-accent-hover">{log.agent_name}: </span>
                   )}
                   {log.content}
                   <span className="text-xs text-gray-600 ml-2">T{log.turn}</span>

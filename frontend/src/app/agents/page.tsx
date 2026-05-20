@@ -249,24 +249,27 @@ export default function AgentsPage() {
   };
 
   return (
-    <div>
+    <div className="animate-fade-in">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <h2 className="text-2xl font-bold">智能体管理</h2>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+        <div>
+          <h2 className="text-2xl font-bold gradient-text">智能体管理</h2>
+          <p className="text-sm text-gray-400 mt-1">创建和管理你的 AI 智能体，赋予它们独特的人格与能力</p>
+        </div>
         <div className="flex gap-3">
           <input
             type="text"
             placeholder="搜索智能体..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="bg-gray-800 rounded-lg px-4 py-2 text-sm w-48"
+            className="input-field w-48"
           />
           <button
             onClick={() => {
               resetForm();
               setShowTemplates(true);
             }}
-            className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg text-sm"
+            className="btn-secondary text-sm"
           >
             模板创建
           </button>
@@ -276,7 +279,7 @@ export default function AgentsPage() {
               setShowForm(!showForm);
               setShowTemplates(false);
             }}
-            className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm"
+            className="btn-primary text-sm"
           >
             {showForm ? "取消" : "创建智能体"}
           </button>
@@ -290,20 +293,20 @@ export default function AgentsPage() {
 
       {/* Templates */}
       {showTemplates && (
-        <div className="bg-gray-900 p-6 rounded-xl mb-6">
+        <div className="card p-6 mb-6 animate-slide-up">
           <h3 className="text-lg font-semibold mb-4">选择预设模板</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {Object.entries(TEMPLATES).map(([name, tpl]) => (
               <button
                 key={name}
                 onClick={() => applyTemplate(name)}
-                className="bg-gray-800 hover:bg-gray-700 p-4 rounded-lg text-left transition-colors"
+                className="bg-surface-overlay hover:bg-surface-overlay/80 border border-border hover:border-border-hover p-4 rounded-xl text-left transition-all duration-200"
               >
                 <h4 className="font-semibold text-white mb-1">{name}</h4>
                 <p className="text-sm text-gray-400">{tpl.description}</p>
                 <div className="flex gap-2 mt-2 flex-wrap">
                   {tpl.specialties?.map((s) => (
-                    <span key={s} className="text-xs bg-blue-900 text-blue-300 px-2 py-0.5 rounded-full">
+                    <span key={s} className="text-xs bg-accent/20 text-accent-hover px-2 py-0.5 rounded-full">
                       {s}
                     </span>
                   ))}
@@ -313,7 +316,7 @@ export default function AgentsPage() {
           </div>
           <button
             onClick={() => setShowTemplates(false)}
-            className="mt-4 text-sm text-gray-400 hover:text-white"
+            className="btn-ghost mt-4 text-sm"
           >
             取消
           </button>
@@ -322,7 +325,7 @@ export default function AgentsPage() {
 
       {/* Create / Edit Form */}
       {showForm && (
-        <form onSubmit={handleSubmit} className="bg-gray-900 p-6 rounded-xl mb-6 space-y-4">
+        <form onSubmit={handleSubmit} className="card p-6 mb-6 space-y-4 animate-slide-up">
           <h3 className="text-lg font-semibold">{editingId ? "编辑智能体" : "创建智能体"}</h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -332,7 +335,7 @@ export default function AgentsPage() {
                 placeholder="智能体名称"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="w-full bg-gray-800 rounded-lg px-4 py-2"
+                className="input-field"
                 required
               />
             </div>
@@ -341,7 +344,7 @@ export default function AgentsPage() {
               <select
                 value={form.model_id}
                 onChange={(e) => setForm({ ...form, model_id: e.target.value })}
-                className="w-full bg-gray-800 rounded-lg px-4 py-2"
+                className="input-field"
                 required
               >
                 <option value="">选择模型</option>
@@ -360,7 +363,7 @@ export default function AgentsPage() {
               placeholder="简短描述"
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
-              className="w-full bg-gray-800 rounded-lg px-4 py-2"
+              className="input-field"
             />
           </div>
 
@@ -370,7 +373,7 @@ export default function AgentsPage() {
               placeholder="角色扮演的基础设定..."
               value={form.persona}
               onChange={(e) => setForm({ ...form, persona: e.target.value })}
-              className="w-full bg-gray-800 rounded-lg px-4 py-2 h-20 resize-none"
+              className="input-field h-20 resize-none"
             />
           </div>
 
@@ -381,7 +384,7 @@ export default function AgentsPage() {
                 placeholder="冷静、理性、幽默..."
                 value={form.personality}
                 onChange={(e) => setForm({ ...form, personality: e.target.value })}
-                className="w-full bg-gray-800 rounded-lg px-4 py-2 h-20 resize-none"
+                className="input-field h-20 resize-none"
               />
             </div>
             <div>
@@ -390,7 +393,7 @@ export default function AgentsPage() {
                 placeholder="简洁明了、善用比喻..."
                 value={form.speaking_style}
                 onChange={(e) => setForm({ ...form, speaking_style: e.target.value })}
-                className="w-full bg-gray-800 rounded-lg px-4 py-2 h-20 resize-none"
+                className="input-field h-20 resize-none"
               />
             </div>
           </div>
@@ -401,7 +404,7 @@ export default function AgentsPage() {
               placeholder="智能体的背景故事..."
               value={form.backstory}
               onChange={(e) => setForm({ ...form, backstory: e.target.value })}
-              className="w-full bg-gray-800 rounded-lg px-4 py-2 h-20 resize-none"
+              className="input-field h-20 resize-none"
             />
           </div>
 
@@ -413,10 +416,10 @@ export default function AgentsPage() {
                   key={s}
                   type="button"
                   onClick={() => toggleSpecialty(s)}
-                  className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
+                  className={`px-3 py-1.5 rounded-full text-sm transition-all duration-200 ${
                     form.specialties.includes(s)
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                      ? "bg-accent text-white shadow-lg shadow-accent/25"
+                      : "bg-surface-overlay text-gray-400 border border-border hover:border-border-hover"
                   }`}
                 >
                   {s}
@@ -431,12 +434,12 @@ export default function AgentsPage() {
               placeholder="可选：覆盖默认的 system prompt..."
               value={form.system_prompt}
               onChange={(e) => setForm({ ...form, system_prompt: e.target.value })}
-              className="w-full bg-gray-800 rounded-lg px-4 py-2 h-24 resize-none"
+              className="input-field h-24 resize-none"
             />
           </div>
 
           <div className="flex gap-3">
-            <button type="submit" className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg">
+            <button type="submit" className="btn-primary">
               {editingId ? "保存修改" : "创建"}
             </button>
             <button
@@ -445,7 +448,7 @@ export default function AgentsPage() {
                 setShowForm(false);
                 resetForm();
               }}
-              className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg"
+              className="btn-secondary"
             >
               取消
             </button>
@@ -462,7 +465,7 @@ export default function AgentsPage() {
         {filteredAgents.map((agent, index) => (
           <div
             key={agent.id}
-            className="bg-gray-900 p-5 rounded-xl hover:bg-gray-850 transition-colors cursor-pointer"
+            className="card-hover p-5 cursor-pointer"
             onClick={() => setDetailAgent(agent)}
           >
             <div className="flex items-start gap-4">
@@ -493,7 +496,7 @@ export default function AgentsPage() {
               {agent.specialties && agent.specialties.length > 0 && (
                 <div className="flex gap-1">
                   {agent.specialties.slice(0, 2).map((s) => (
-                    <span key={s} className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">
+                    <span key={s} className="text-xs bg-surface-overlay text-gray-400 px-2 py-0.5 rounded-full">
                       {s}
                     </span>
                   ))}
@@ -518,13 +521,13 @@ export default function AgentsPage() {
             <div className="mt-3 flex gap-2" onClick={(e) => e.stopPropagation()}>
               <button
                 onClick={() => handleEdit(agent)}
-                className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded bg-gray-800 hover:bg-gray-700"
+                className="btn-ghost text-xs px-2 py-1"
               >
                 编辑
               </button>
               <button
                 onClick={() => handleDelete(agent.id)}
-                className="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded bg-gray-800 hover:bg-red-900"
+                className="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded-xl hover:bg-red-900/20 transition-all duration-200"
               >
                 删除
               </button>
@@ -534,8 +537,16 @@ export default function AgentsPage() {
       </div>
 
       {filteredAgents.length === 0 && (
-        <div className="text-center py-16 text-gray-500">
-          {searchQuery ? "没有找到匹配的智能体" : "还没有智能体，点击上方按钮创建"}
+        <div className="text-center py-20 text-gray-500">
+          <svg className="w-16 h-16 mx-auto mb-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+          </svg>
+          <p className="text-lg">
+            {searchQuery ? "没有找到匹配的智能体" : "还没有智能体"}
+          </p>
+          <p className="text-sm mt-1 text-gray-600">
+            {searchQuery ? "试试其他关键词" : "点击上方按钮创建你的第一个智能体"}
+          </p>
         </div>
       )}
       </>
@@ -545,7 +556,7 @@ export default function AgentsPage() {
       {detailAgent && (
         <Modal open onClose={() => setDetailAgent(null)} title={detailAgent.name} maxWidth="max-w-2xl">
             <div className="flex items-center gap-4 mb-4">
-              <div className="w-16 h-16 rounded-full bg-blue-600 flex items-center justify-center text-2xl font-bold text-white">
+              <div className="w-16 h-16 rounded-full bg-accent flex items-center justify-center text-2xl font-bold text-white">
                 {getAvatarLetter(detailAgent.name)}
               </div>
               <p className="text-gray-400">{detailAgent.description}</p>
@@ -553,7 +564,7 @@ export default function AgentsPage() {
 
             <div className="space-y-4">
               {/* Level & XP */}
-              <div className="bg-gray-800 rounded-lg p-4">
+              <div className="bg-surface-overlay rounded-xl p-4 border border-border">
                 <div className="flex items-center justify-between mb-2">
                   <span className={`text-lg font-bold ${getLevelColor(detailAgent.level || 1)}`}>
                     等级 {detailAgent.level || 1}
@@ -568,18 +579,18 @@ export default function AgentsPage() {
               </div>
 
               {/* Model */}
-              <div className="bg-gray-800 rounded-lg p-4">
+              <div className="bg-surface-overlay rounded-xl p-4 border border-border">
                 <h4 className="text-sm text-gray-400 mb-1">绑定模型</h4>
                 <p>{getModelName(detailAgent.model_id)}</p>
               </div>
 
               {/* Specialties */}
               {detailAgent.specialties && detailAgent.specialties.length > 0 && (
-                <div className="bg-gray-800 rounded-lg p-4">
+                <div className="bg-surface-overlay rounded-xl p-4 border border-border">
                   <h4 className="text-sm text-gray-400 mb-2">擅长领域</h4>
                   <div className="flex flex-wrap gap-2">
                     {detailAgent.specialties.map((s) => (
-                      <span key={s} className="bg-blue-900 text-blue-300 px-3 py-1 rounded-full text-sm">
+                      <span key={s} className="bg-accent/20 text-accent-hover px-3 py-1 rounded-full text-sm">
                         {s}
                       </span>
                     ))}
@@ -588,35 +599,35 @@ export default function AgentsPage() {
               )}
 
               {detailAgent.persona && (
-                <div className="bg-gray-800 rounded-lg p-4">
+                <div className="bg-surface-overlay rounded-xl p-4 border border-border">
                   <h4 className="text-sm text-gray-400 mb-1">人设描述</h4>
                   <p className="text-sm">{detailAgent.persona}</p>
                 </div>
               )}
 
               {detailAgent.personality && (
-                <div className="bg-gray-800 rounded-lg p-4">
+                <div className="bg-surface-overlay rounded-xl p-4 border border-border">
                   <h4 className="text-sm text-gray-400 mb-1">性格特征</h4>
                   <p className="text-sm">{detailAgent.personality}</p>
                 </div>
               )}
 
               {detailAgent.speaking_style && (
-                <div className="bg-gray-800 rounded-lg p-4">
+                <div className="bg-surface-overlay rounded-xl p-4 border border-border">
                   <h4 className="text-sm text-gray-400 mb-1">说话风格</h4>
                   <p className="text-sm">{detailAgent.speaking_style}</p>
                 </div>
               )}
 
               {detailAgent.backstory && (
-                <div className="bg-gray-800 rounded-lg p-4">
+                <div className="bg-surface-overlay rounded-xl p-4 border border-border">
                   <h4 className="text-sm text-gray-400 mb-1">背景故事</h4>
                   <p className="text-sm">{detailAgent.backstory}</p>
                 </div>
               )}
 
               {detailAgent.system_prompt && (
-                <div className="bg-gray-800 rounded-lg p-4">
+                <div className="bg-surface-overlay rounded-xl p-4 border border-border">
                   <h4 className="text-sm text-gray-400 mb-1">自定义 System Prompt</h4>
                   <pre className="text-sm text-gray-300 whitespace-pre-wrap font-mono">
                     {detailAgent.system_prompt}
@@ -631,13 +642,13 @@ export default function AgentsPage() {
                   setDetailAgent(null);
                   handleEdit(detailAgent);
                 }}
-                className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm"
+                className="btn-primary text-sm"
               >
                 编辑
               </button>
               <button
                 onClick={() => setDetailAgent(null)}
-                className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-sm"
+                className="btn-secondary text-sm"
               >
                 关闭
               </button>

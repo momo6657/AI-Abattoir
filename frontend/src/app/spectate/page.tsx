@@ -18,7 +18,7 @@ interface ReplayData {
 const MODE_LABELS: Record<string, string> = { free: "自由对话", debate: "辩论", relay: "接力", interview: "采访" };
 const EVENT_LABELS: Record<string, string> = { vote_result: "投票结果", game_started: "游戏开始", game_ended: "游戏结束" };
 const BackBtn = ({ onClick }: { onClick: () => void }) => (
-  <button onClick={onClick} className="text-gray-400 hover:text-white text-sm mb-3 flex items-center gap-1"><span>&larr;</span> 返回列表</button>
+  <button onClick={onClick} className="btn-ghost text-sm mb-3 flex items-center gap-1"><span>&larr;</span> 返回列表</button>
 );
 function formatDate(d: string) { try { return new Date(d).toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }); } catch { return ""; } }
 function getStatusBadgeVariant(s: string): "success" | "warning" | "danger" | "default" | "info" {
@@ -83,8 +83,8 @@ function LiveSpectateView({
   return (
     <div className="flex flex-col md:flex-row gap-4" style={{ height: "calc(100vh - 180px)" }}>
       {/* Left Sidebar */}
-      <div className="w-full md:w-64 flex-shrink-0 flex flex-col bg-gray-900 rounded-xl overflow-hidden">
-        <div className="border-b border-gray-800 p-4">
+      <div className="w-full md:w-64 flex-shrink-0 flex flex-col card overflow-hidden">
+        <div className="border-b border-border p-4">
           <BackBtn onClick={handleBack} />
           <h3 className="font-bold truncate">{title}</h3>
           <div className="flex items-center gap-2 mt-2">
@@ -114,8 +114,8 @@ function LiveSpectateView({
       </div>
 
       {/* Right - Message Stream */}
-      <div className="flex-1 flex flex-col bg-gray-900 rounded-xl overflow-hidden">
-        <div className="border-b border-gray-800 px-4 py-3">
+      <div className="flex-1 flex flex-col card overflow-hidden">
+        <div className="border-b border-border px-4 py-3">
           <h3 className="font-semibold text-sm">
             {type === "conversation" ? "对话实时流" : "游戏实时流"}
             <span className="text-xs text-gray-500 ml-2">{messages.length} 条消息</span>
@@ -243,8 +243,8 @@ function ReplayView({
   return (
     <div className="flex flex-col md:flex-row gap-4" style={{ height: "calc(100vh - 180px)" }}>
       {/* Left Sidebar */}
-      <div className="w-full md:w-64 flex-shrink-0 flex flex-col bg-gray-900 rounded-xl overflow-hidden">
-        <div className="border-b border-gray-800 p-4">
+      <div className="w-full md:w-64 flex-shrink-0 flex flex-col card overflow-hidden">
+        <div className="border-b border-border p-4">
           <BackBtn onClick={onBack} />
           <h3 className="font-bold truncate">{replayData.title}</h3>
           <div className="flex items-center gap-2 mt-2">
@@ -290,8 +290,8 @@ function ReplayView({
       </div>
 
       {/* Right - Replay Stream */}
-      <div className="flex-1 flex flex-col bg-gray-900 rounded-xl overflow-hidden">
-        <div className="border-b border-gray-800 px-4 py-3 space-y-3">
+      <div className="flex-1 flex flex-col card overflow-hidden">
+        <div className="border-b border-border px-4 py-3 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold text-sm">
               回放
@@ -402,16 +402,19 @@ export default function SpectatePage() {
 
   const tabLabel = (t: "live" | "replay") => t === "live" ? "实时观战" : "历史回放";
   const tabCount = (t: "live" | "replay") => t === "live" ? activeConvs.length + activeGms.length : endedConvs.length + endedGms.length;
-  const convBtnClass = (active: boolean) => `px-4 py-2 rounded-lg text-sm font-medium ${active ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`;
+  const convBtnClass = (active: boolean) => `px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${active ? "bg-accent/10 text-accent-hover border border-accent/20" : "text-gray-400 hover:text-white hover:bg-surface-overlay border border-transparent"}`;
   const actionBtn = (onClick: () => void, color: string, label: string) => (
-    <button onClick={onClick} className={`${color} hover:${color.replace("600", "700")} px-3 py-1.5 rounded-lg text-xs`}>{label}</button>
+    <button onClick={onClick} className={`${color} hover:opacity-80 px-3 py-1.5 rounded-xl text-xs font-medium transition-all`}>{label}</button>
   );
 
   return (
-    <div>
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <h2 className="text-2xl font-bold">观战中心</h2>
-        <button onClick={loadData} className="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded-lg text-sm">刷新</button>
+    <div className="animate-fade-in">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+        <div>
+          <h2 className="text-2xl font-bold">观战中心</h2>
+          <p className="text-sm text-gray-400 mt-1">实时观看对话和游戏，或回放历史对局</p>
+        </div>
+        <button onClick={loadData} className="btn-secondary text-sm">刷新</button>
       </div>
       {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
       <div className="flex gap-2 mb-6">
@@ -429,7 +432,7 @@ export default function SpectatePage() {
             <h3 className="text-lg font-semibold mb-4">{isLive ? "进行中的对话" : "已结束的对话"}</h3>
             <div className="space-y-3">
               {(isLive ? activeConvs : endedConvs).map((conv) => (
-                <div key={conv.id} className="bg-gray-900 p-4 rounded-xl hover:bg-gray-800 transition-colors">
+                <div key={conv.id} className="card-hover p-4">
                   <div className="flex justify-between items-start mb-2">
                     <h4 className="font-medium">{conv.title || "未命名对话"}</h4>
                     <Badge text={getStatusLabel(conv.status)} variant={getStatusBadgeVariant(conv.status)} />
@@ -443,7 +446,7 @@ export default function SpectatePage() {
                 </div>
               ))}
               {(isLive ? activeConvs : endedConvs).length === 0 && (
-                <div className="text-center py-8 text-gray-500 bg-gray-900 rounded-xl">
+                <div className="text-center py-8 text-gray-500 card">
                   {isLive ? "没有进行中的对话" : "没有已结束的对话"}
                 </div>
               )}
@@ -456,7 +459,7 @@ export default function SpectatePage() {
               {(isLive ? activeGms : endedGms).map((game) => {
                 const ti = getGameTypeInfo(game.game_type);
                 return (
-                  <div key={game.id} className="bg-gray-900 p-4 rounded-xl hover:bg-gray-800 transition-colors">
+                  <div key={game.id} className="card-hover p-4">
                     <div className="flex justify-between items-start mb-2">
                       <div className="flex items-center gap-2">
                         <span className={`w-6 h-6 rounded flex items-center justify-center text-xs font-bold text-white ${ti.color}`}>{ti.icon}</span>
@@ -486,7 +489,7 @@ export default function SpectatePage() {
                 );
               })}
               {(isLive ? activeGms : endedGms).length === 0 && (
-                <div className="text-center py-8 text-gray-500 bg-gray-900 rounded-xl">
+                <div className="text-center py-8 text-gray-500 card">
                   {isLive ? "没有进行中的游戏" : "没有已结束的游戏"}
                 </div>
               )}

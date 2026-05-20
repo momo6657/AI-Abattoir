@@ -1,6 +1,19 @@
 import axios from "axios";
 
-const baseURL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+const PRODUCTION_API = "https://backend-production-b399b.up.railway.app/api";
+const LOCAL_API = "http://localhost:8000/api";
+
+function resolveBaseURL(): string {
+  const envUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (envUrl && envUrl.length > 0) return envUrl;
+  // In browser: detect protocol from current page
+  if (typeof window !== "undefined") {
+    return window.location.protocol === "https:" ? PRODUCTION_API : LOCAL_API;
+  }
+  return LOCAL_API;
+}
+
+const baseURL = resolveBaseURL();
 
 const api = axios.create({ baseURL, timeout: 30000 });
 

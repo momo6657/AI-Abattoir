@@ -142,7 +142,6 @@ export default function ConversationsPage() {
       const id = msg.id as string | undefined;
       if (id && !seen.has(id)) {
         seen.add(id);
-        // WS messages have a subset of Message fields; fill defaults for missing fields
         merged.push({
           id,
           conversation_id: selectedConvId || "",
@@ -232,9 +231,7 @@ export default function ConversationsPage() {
         role: "user",
         content_type: "text",
       });
-      // AI response and thinking state come via WebSocket (agent_thinking / new_message events)
     } catch (err) {
-      // Restore input on failure so user can retry
       setInputText(messageText);
       setError(extractErrorMessage(err, "发送消息失败，请重试"));
     }
@@ -249,7 +246,7 @@ export default function ConversationsPage() {
   const selectedConv = conversations.find((c) => c.id === selectedConvId);
 
   return (
-    <div className="flex gap-4" style={{ height: "calc(100vh - 180px)" }}>
+    <div className="flex gap-4 animate-fade-in" style={{ height: "calc(100vh - 180px)" }}>
       {/* Error Banner */}
       {error && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-40 shadow-lg">
@@ -264,10 +261,10 @@ export default function ConversationsPage() {
       {/* Left Sidebar - Conversation List */}
       <div className="w-80 flex-shrink-0 flex flex-col">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold">对话</h2>
+          <h2 className="text-xl font-bold gradient-text">对话</h2>
           <button
             onClick={() => setShowCreateForm(!showCreateForm)}
-            className="bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg text-sm"
+            className={showCreateForm ? "btn-ghost text-sm" : "btn-primary text-sm px-3 py-1.5"}
           >
             {showCreateForm ? "取消" : "新建"}
           </button>
@@ -275,18 +272,18 @@ export default function ConversationsPage() {
 
         {/* Create Form */}
         {showCreateForm && (
-          <form onSubmit={handleCreate} className="bg-gray-900 p-4 rounded-xl mb-4 space-y-3">
+          <form onSubmit={handleCreate} className="card p-4 mb-4 space-y-3 animate-slide-up">
             <input
               placeholder="对话标题"
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
-              className="w-full bg-gray-800 rounded-lg px-3 py-2 text-sm"
+              className="input-field"
               required
             />
             <select
               value={newMode}
               onChange={(e) => setNewMode(e.target.value)}
-              className="w-full bg-gray-800 rounded-lg px-3 py-2 text-sm"
+              className="input-field"
             >
               {MODES.map((m) => (
                 <option key={m.value} value={m.value}>
@@ -298,12 +295,12 @@ export default function ConversationsPage() {
               <p className="text-xs text-gray-400 mb-2">选择参与智能体：</p>
               <div className="space-y-1 max-h-32 overflow-y-auto">
                 {agents.map((a) => (
-                  <label key={a.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                  <label key={a.id} className="flex items-center gap-2 text-sm cursor-pointer hover:text-white transition-colors">
                     <input
                       type="checkbox"
                       checked={selectedAgentIds.includes(a.id)}
                       onChange={() => toggleAgent(a.id)}
-                      className="rounded bg-gray-800"
+                      className="rounded bg-surface-overlay border-border accent-accent"
                     />
                     {a.name}
                   </label>
@@ -312,7 +309,7 @@ export default function ConversationsPage() {
             </div>
             <button
               type="submit"
-              className="w-full bg-green-600 hover:bg-green-700 px-3 py-2 rounded-lg text-sm"
+              className="btn-primary w-full text-sm"
             >
               创建对话
             </button>
@@ -331,10 +328,10 @@ export default function ConversationsPage() {
             <button
               key={conv.id}
               onClick={() => setSelectedConvId(conv.id)}
-              className={`w-full text-left p-3 rounded-lg transition-colors ${
+              className={`w-full text-left p-3 rounded-xl transition-all duration-200 ${
                 selectedConvId === conv.id
-                  ? "bg-blue-900/50 border border-blue-600"
-                  : "bg-gray-900 hover:bg-gray-800"
+                  ? "bg-accent/10 border border-accent/50 shadow-md shadow-accent/5"
+                  : "card-hover"
               }`}
             >
               <div className="flex justify-between items-start">
@@ -342,10 +339,10 @@ export default function ConversationsPage() {
                 <span
                   className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ml-2 ${
                     conv.status === "active"
-                      ? "bg-green-900 text-green-300"
+                      ? "bg-green-500/10 text-green-400 border border-green-500/20"
                       : conv.status === "paused"
-                      ? "bg-yellow-900 text-yellow-300"
-                      : "bg-gray-800 text-gray-400"
+                      ? "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20"
+                      : "bg-surface-overlay text-gray-400 border border-border"
                   }`}
                 >
                   {conv.status === "active" ? "进行中" : conv.status === "paused" ? "已暂停" : conv.status === "ended" ? "已结束" : conv.status}
@@ -364,17 +361,17 @@ export default function ConversationsPage() {
       </div>
 
       {/* Right - Chat Area */}
-      <div className="flex-1 flex flex-col bg-gray-900 rounded-xl overflow-hidden">
+      <div className="flex-1 flex flex-col card overflow-hidden">
         {selectedConvId ? (
           <>
             {/* Chat Header */}
-            <div className="border-b border-gray-800 px-4 py-3 flex justify-between items-center">
+            <div className="border-b border-border px-5 py-3 flex justify-between items-center bg-surface-overlay/50">
               <div>
                 <h3 className="font-semibold flex items-center gap-2">
                   {selectedConv?.title || "对话"}
                   <span
                     className={`w-2 h-2 rounded-full inline-block ${
-                      wsConnected ? "bg-green-500" : "bg-gray-500"
+                      wsConnected ? "bg-green-500 animate-pulse-slow" : "bg-gray-500"
                     }`}
                     title={wsConnected ? "实时连接已建立" : "未连接"}
                   />
@@ -388,34 +385,22 @@ export default function ConversationsPage() {
               </div>
               <div className="flex gap-2">
                 {convStatus === "idle" && (
-                  <button
-                    onClick={handleStart}
-                    className="bg-green-600 hover:bg-green-700 px-3 py-1.5 rounded-lg text-xs"
-                  >
+                  <button onClick={handleStart} className="btn-primary text-xs px-3 py-1.5">
                     开始
                   </button>
                 )}
                 {convStatus === "active" && (
-                  <button
-                    onClick={handlePause}
-                    className="bg-yellow-600 hover:bg-yellow-700 px-3 py-1.5 rounded-lg text-xs"
-                  >
+                  <button onClick={handlePause} className="btn-secondary text-xs px-3 py-1.5 !bg-yellow-500/10 !text-yellow-400 !border-yellow-500/30 hover:!bg-yellow-500/20">
                     暂停
                   </button>
                 )}
                 {convStatus === "paused" && (
-                  <button
-                    onClick={handleResume}
-                    className="bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg text-xs"
-                  >
+                  <button onClick={handleResume} className="btn-primary text-xs px-3 py-1.5">
                     继续
                   </button>
                 )}
                 {(convStatus === "active" || convStatus === "paused") && (
-                  <button
-                    onClick={handleEnd}
-                    className="bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg text-xs"
-                  >
+                  <button onClick={handleEnd} className="btn-secondary text-xs px-3 py-1.5 !bg-red-500/10 !text-red-400 !border-red-500/30 hover:!bg-red-500/20">
                     结束
                   </button>
                 )}
@@ -423,7 +408,12 @@ export default function ConversationsPage() {
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              {allMessages.length === 0 && (
+                <div className="flex items-center justify-center h-full text-gray-600 text-sm">
+                  对话尚无消息，发送第一条消息开始吧
+                </div>
+              )}
               {allMessages.map((msg) => {
                 const isUser = msg.role === "user";
                 const isSystem = msg.role === "system";
@@ -459,17 +449,17 @@ export default function ConversationsPage() {
             </div>
 
             {/* Input */}
-            <form onSubmit={handleSendMessage} className="border-t border-gray-800 p-3 flex gap-2">
+            <form onSubmit={handleSendMessage} className="border-t border-border p-4 flex gap-3 bg-surface-overlay/30">
               <input
                 type="text"
                 placeholder="输入消息..."
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                className="flex-1 bg-gray-800 rounded-lg px-4 py-2 text-sm"
+                className="input-field flex-1"
               />
               <button
                 type="submit"
-                className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm"
+                className="btn-primary text-sm px-5"
               >
                 发送
               </button>
@@ -478,8 +468,13 @@ export default function ConversationsPage() {
         ) : (
           <div className="flex-1 flex items-center justify-center text-gray-500">
             <div className="text-center">
-              <p className="text-lg mb-2">选择一个对话开始</p>
-              <p className="text-sm">或创建新的对话</p>
+              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-surface-overlay border border-border flex items-center justify-center">
+                <svg className="w-8 h-8 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+              </div>
+              <p className="text-lg mb-1 font-medium">选择一个对话开始</p>
+              <p className="text-sm text-gray-600">或创建新的对话</p>
             </div>
           </div>
         )}
