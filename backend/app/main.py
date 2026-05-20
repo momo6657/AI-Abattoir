@@ -25,7 +25,7 @@ async def lifespan(app):
     yield
 
 
-app = FastAPI(title="AI Abattoir", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="AI Abattoir", version="0.1.0", lifespan=lifespan, redirect_slashes=False)
 
 
 # CORS configuration: read allowed origins from settings instead of wildcard
