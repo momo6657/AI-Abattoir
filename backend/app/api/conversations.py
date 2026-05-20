@@ -14,7 +14,7 @@ from app.schemas.conversation import ConversationCreate, ConversationResponse, M
 from app.services.conversation_engine import ConversationEngine
 from app.services.message_router import MessageRouter
 from app.websocket.manager import ws_manager
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, get_optional_user
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ async def list_conversations(
 
 
 @router.post("/", response_model=ConversationResponse)
-async def create_conversation(data: ConversationCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def create_conversation(data: ConversationCreate, db: AsyncSession = Depends(get_db), current_user: User | None = Depends(get_optional_user)):
     # Validate mode
     valid_modes = {m.value for m in ConversationMode}
     if data.mode not in valid_modes:
@@ -117,7 +117,7 @@ async def start_conversation(
     conversation_id: UUID,
     body: StartConversationRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_optional_user),
 ):
     conversation = await db.get(Conversation, conversation_id)
     if not conversation:
@@ -143,7 +143,7 @@ async def send_message(
     conversation_id: UUID,
     body: SendMessageRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_optional_user),
 ):
     conversation = await db.get(Conversation, conversation_id)
     if not conversation:
@@ -166,7 +166,7 @@ async def send_message(
 
 
 @router.post("/{conversation_id}/pause")
-async def pause_conversation(conversation_id: UUID, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def pause_conversation(conversation_id: UUID, db: AsyncSession = Depends(get_db), current_user: User | None = Depends(get_optional_user)):
     conversation = await db.get(Conversation, conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -180,7 +180,7 @@ async def pause_conversation(conversation_id: UUID, db: AsyncSession = Depends(g
 
 
 @router.post("/{conversation_id}/resume")
-async def resume_conversation(conversation_id: UUID, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def resume_conversation(conversation_id: UUID, db: AsyncSession = Depends(get_db), current_user: User | None = Depends(get_optional_user)):
     conversation = await db.get(Conversation, conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -194,7 +194,7 @@ async def resume_conversation(conversation_id: UUID, db: AsyncSession = Depends(
 
 
 @router.post("/{conversation_id}/end")
-async def end_conversation(conversation_id: UUID, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def end_conversation(conversation_id: UUID, db: AsyncSession = Depends(get_db), current_user: User | None = Depends(get_optional_user)):
     conversation = await db.get(Conversation, conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")

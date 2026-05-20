@@ -7,7 +7,7 @@ from sqlalchemy import select
 from app.core.database import get_db
 from app.models.game import Game, GamePlayer, GameType
 from app.models.user import User
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, get_optional_user
 from app.schemas.game import (
     GameCreate, GameResponse, GameStateResponse, GameTurnResponse,
     EndGameRequest,
@@ -33,7 +33,7 @@ async def list_games(
 
 
 @router.post("/games", response_model=GameResponse)
-async def create_game(data: GameCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def create_game(data: GameCreate, db: AsyncSession = Depends(get_db), current_user: User | None = Depends(get_optional_user)):
     # Validate game_type
     valid_types = {t.value for t in GameType}
     if data.game_type not in valid_types:
@@ -73,7 +73,7 @@ async def get_game(game_id: UUID, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/games/{game_id}/start", response_model=GameResponse)
-async def start_game(game_id: UUID, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def start_game(game_id: UUID, db: AsyncSession = Depends(get_db), current_user: User | None = Depends(get_optional_user)):
     try:
         game = await game_engine.start_game(db, game_id)
         return game
@@ -82,7 +82,7 @@ async def start_game(game_id: UUID, db: AsyncSession = Depends(get_db), current_
 
 
 @router.post("/games/{game_id}/turn", response_model=GameTurnResponse)
-async def process_turn(game_id: UUID, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def process_turn(game_id: UUID, db: AsyncSession = Depends(get_db), current_user: User | None = Depends(get_optional_user)):
     try:
         result = await game_engine.process_turn(db, game_id)
         return result
@@ -102,7 +102,7 @@ async def get_game_state(game_id: UUID, db: AsyncSession = Depends(get_db)):
 @router.post("/games/{game_id}/end", response_model=GameResponse)
 async def end_game(
     game_id: UUID, data: EndGameRequest, db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_optional_user),
 ):
     try:
         game = await game_engine.end_game(

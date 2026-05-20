@@ -8,7 +8,7 @@ from app.core.database import get_db
 from app.models.agent import Agent, AgentProfile
 from app.models.user import User
 from app.schemas.agent import AgentCreate, AgentUpdate, AgentResponse
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, get_optional_user
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -29,7 +29,7 @@ async def list_agents(
 
 
 @router.post("/", response_model=AgentResponse)
-async def create_agent(data: AgentCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def create_agent(data: AgentCreate, db: AsyncSession = Depends(get_db), current_user: User | None = Depends(get_optional_user)):
     agent = Agent(
         name=data.name,
         description=data.description,
@@ -61,7 +61,7 @@ async def get_agent(agent_id: UUID, db: AsyncSession = Depends(get_db)):
 
 
 @router.put("/{agent_id}", response_model=AgentResponse)
-async def update_agent(agent_id: UUID, data: AgentUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def update_agent(agent_id: UUID, data: AgentUpdate, db: AsyncSession = Depends(get_db), current_user: User | None = Depends(get_optional_user)):
     agent = await db.get(Agent, agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -73,7 +73,7 @@ async def update_agent(agent_id: UUID, data: AgentUpdate, db: AsyncSession = Dep
 
 
 @router.delete("/{agent_id}")
-async def delete_agent(agent_id: UUID, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def delete_agent(agent_id: UUID, db: AsyncSession = Depends(get_db), current_user: User | None = Depends(get_optional_user)):
     agent = await db.get(Agent, agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
