@@ -5,62 +5,69 @@ describe("ChatMessage", () => {
   it("renders text content", () => {
     render(
       <ChatMessage
-        agentName="谋略家"
-        content="这是一条消息"
-        createdAt="2025-01-01T12:00:00Z"
+        agentName="Alice"
+        content="Hello world"
+        createdAt="2026-01-01T00:00:00Z"
       />
     );
-    expect(screen.getByText("谋略家")).toBeInTheDocument();
-    expect(screen.getByText("这是一条消息")).toBeInTheDocument();
+    expect(screen.getByText("Hello world")).toBeInTheDocument();
+  });
+
+  it("renders agent name in info span", () => {
+    const { container } = render(
+      <ChatMessage
+        agentName="Alice"
+        content="Hello"
+        createdAt="2026-01-01T00:00:00Z"
+      />
+    );
+    const infoSpan = container.querySelector(".text-gray-400");
+    expect(infoSpan?.textContent).toContain("Alice");
   });
 
   it("renders system message", () => {
     render(
       <ChatMessage
-        content="系统消息"
-        createdAt="2025-01-01T12:00:00Z"
+        content="System message"
+        createdAt="2026-01-01T00:00:00Z"
         isSystem
       />
     );
-    expect(screen.getByText("系统消息")).toBeInTheDocument();
+    expect(screen.getByText("System message")).toBeInTheDocument();
   });
 
-  it("renders image content", () => {
+  it("renders elimination message", () => {
     render(
       <ChatMessage
-        agentName="创意大师"
-        content=""
-        contentType="image"
-        imageUrl="https://example.com/image.png"
-        createdAt="2025-01-01T12:00:00Z"
+        content="Player eliminated"
+        createdAt="2026-01-01T00:00:00Z"
+        isElimination
       />
     );
-    const img = screen.getByAltText("生成的图片");
-    expect(img).toBeInTheDocument();
-    expect(img).toHaveAttribute("src", "https://example.com/image.png");
+    expect(screen.getByText("Player eliminated")).toBeInTheDocument();
   });
 
-  it("renders audio content", () => {
-    render(
+  it("renders turn number in info span", () => {
+    const { container } = render(
       <ChatMessage
-        agentName="配音师"
-        content=""
-        contentType="audio"
-        audioUrl="https://example.com/audio.mp3"
-        createdAt="2025-01-01T12:00:00Z"
+        agentName="Alice"
+        content="Hello"
+        createdAt="2026-01-01T00:00:00Z"
+        turnNumber={5}
       />
     );
-    const audio = document.querySelector("audio");
-    expect(audio).toBeInTheDocument();
+    const infoSpan = container.querySelector(".text-gray-400");
+    expect(infoSpan?.textContent).toContain("5");
   });
 
-  it("renders unknown agent when no name", () => {
-    render(
+  it("renders unknown when no agent name", () => {
+    const { container } = render(
       <ChatMessage
-        content="匿名消息"
-        createdAt="2025-01-01T12:00:00Z"
+        content="Anonymous"
+        createdAt="2026-01-01T00:00:00Z"
       />
     );
-    expect(screen.getByText("未知")).toBeInTheDocument();
+    const infoSpan = container.querySelector(".text-gray-400");
+    expect(infoSpan?.textContent).toContain("未知");
   });
 });

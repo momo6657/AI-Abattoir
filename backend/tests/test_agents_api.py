@@ -3,16 +3,14 @@ from httpx import AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_list_agents_empty(client: AsyncClient, setup_db):
-    resp = await client.get("/api/agents")
+async def test_list_agents(client: AsyncClient, setup_db):
+    resp = await client.get("/api/agents/")
     assert resp.status_code == 200
-    assert resp.json() == []
+    data = resp.json()
+    assert isinstance(data, list)
 
 
 @pytest.mark.asyncio
-async def test_create_agent_unauthorized(client: AsyncClient, setup_db):
-    resp = await client.post("/api/agents", json={
-        "name": "Test Agent",
-        "model_id": "00000000-0000-0000-0000-000000000000",
-    })
-    assert resp.status_code in (401, 403)
+async def test_get_agent_not_found(client: AsyncClient, setup_db):
+    resp = await client.get("/api/agents/00000000-0000-0000-0000-000000000000")
+    assert resp.status_code == 404

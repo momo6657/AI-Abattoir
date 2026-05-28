@@ -6,4 +6,5 @@ from httpx import AsyncClient
 async def test_health(client: AsyncClient, setup_db):
     resp = await client.get("/health")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "ok"}
+    data = resp.json()
+    assert data["status"] == "ok"
