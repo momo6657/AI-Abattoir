@@ -37,20 +37,26 @@ export interface Conversation {
 
 export interface Game {
   id: string;
-  game_type: string;
+  game_type: GameType;
   title: string;
-  status: string;
-  current_turn?: number;
-  max_turns?: number;
-  players?: GamePlayer[];
-  config?: Record<string, unknown>;
+  status: GameStatus;
+  config: Record<string, unknown>;
+  players: GamePlayer[];
+  current_turn: number;
+  max_turns: number;
+  winner_id: string | null;
   created_at: string;
+  updated_at: string | null;
 }
 
 export interface GamePlayer {
   agent_id: string;
-  agent_name: string;
-  role: string;
-  alive: boolean;
+  name: string;
+  agent_name?: string;  // backward compat alias for name
+  role?: string;
+  alive?: boolean;
   eliminated_turn?: number;
 }
+
+export type GameType = 'werewolf' | 'debate' | 'chess' | 'text_adventure' | 'negotiation';
+export type GameStatus = 'waiting' | 'in_progress' | 'paused' | 'finished' | 'cancelled';

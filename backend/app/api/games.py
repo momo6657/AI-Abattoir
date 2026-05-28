@@ -1,113 +1,244 @@
-from uuid import UUID
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from uuid import UUID
+from datetime import datetime, timezone
+import asyncio
 
 from app.core.database import get_db
-from app.models.game import Game, GamePlayer, GameType
-from app.models.user import User
-from app.api.auth import get_current_user, get_optional_user
-from app.schemas.game import (
-    GameCreate, GameResponse, GameStateResponse, GameTurnResponse,
-    EndGameRequest,
-)
-from app.services.game_engine import game_engine
+from app.models.game import Game, GameType, GameStatus
+from app.models.agent import Agent
+from app.schemas.game import GameCreate, GameResponse, EndGameRequest
 
-router = APIRouter(tags=["games"])
+router = APIRouter(prefix="/api/games", tags=["games"])
+
+# 内存中的运行中游戏引擎实例
+_running_games: dict[str, "GameEngine"] = {}
 
 
-@router.get("/games", response_model=List[GameResponse])
+def _enrich_game_response(game: Game) -> GameResponse:
+    """从 Game ORM 对象构建完整 GameResponse"""
+    config = game.config or {}
+    return GameResponse(
+        id=str(game.id),
+        game_type=game.game_type,
+        title=game.title or "",
+        status=game.status,
+        config=config,
+        players=config.get("players", []),
+        current_turn=config.get("current_turn", 0),
+        max_turns=config.get("max_turns", 20),
+        winner_id=config.get("winner_id"),
+        created_at=game.created_at,
+        updated_at=game.updated_at,
+    )
+
+
+@router.get("", response_model=list[GameResponse])
 async def list_games(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
+    game_type: GameType | None = None,
+    status: GameStatus | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Game)
-        .order_by(Game.created_at.desc())
-        .offset(skip)
-        .limit(limit)
+    query = select(Game)
+    if game_type:
+        query = query.where(Game.game_type == game_type)
+    if status:
+        query = query.where(Game.status == status)
+    query = query.order_by(Game.created_at.desc())
+    result = await db.execute(query)
+    games = result.scalars().all()
+    return [_enrich_game_response(g) for g in games]
+
+
+@router.post("", response_model=GameResponse)
+async def create_game(game_data: GameCreate, db: AsyncSession = Depends(get_db)):
+    game_dict = game_data.model_dump()
+    agent_ids = game_dict.pop("agent_ids", [])
+    max_turns = game_dict.pop("max_turns", 20)
+
+    # 将 UUID 转为字符串
+    agent_id_strs = [str(aid) for aid in agent_ids]
+
+    game = Game(
+        game_type=game_dict["game_type"],
+        title=game_dict["title"],
+        status=GameStatus.WAITING,
+        config={
+            **game_dict.get("config", {}),
+            "max_turns": max_turns,
+            "agent_ids": agent_id_strs,
+        },
     )
-    return result.scalars().all()
+
+    # 获取 agent 信息填充 players
+    players = []
+    if agent_id_strs:
+        result = await db.execute(select(Agent).where(Agent.id.in_(agent_ids)))
+        agents = result.scalars().all()
+        for agent in agents:
+            players.append({"agent_id": str(agent.id), "name": agent.name})
+
+    game.config["players"] = players
+    db.add(game)
+    await db.commit()
+    await db.refresh(game)
+
+    return _enrich_game_response(game)
 
 
-@router.post("/games", response_model=GameResponse)
-async def create_game(data: GameCreate, db: AsyncSession = Depends(get_db), current_user: User | None = Depends(get_optional_user)):
-    # Validate game_type
-    valid_types = {t.value for t in GameType}
-    if data.game_type not in valid_types:
-        raise HTTPException(status_code=400, detail=f"Invalid game_type '{data.game_type}'. Must be one of: {', '.join(sorted(valid_types))}")
-
-    # Validate agent count per game type
-    num_agents = len(data.agent_ids)
-    game_type = data.game_type
-    if game_type == GameType.WEREWOLF.value:
-        if num_agents < 4 or num_agents > 12:
-            raise HTTPException(status_code=400, detail="Werewolf requires 4-12 agents")
-    elif game_type == GameType.DEBATE.value:
-        if num_agents < 2 or num_agents > 3:
-            raise HTTPException(status_code=400, detail="Debate requires 2-3 agents")
-    elif game_type == GameType.CHESS.value:
-        if num_agents != 2:
-            raise HTTPException(status_code=400, detail="Chess requires exactly 2 agents")
-    elif game_type == GameType.TEXT_ADVENTURE.value:
-        if num_agents < 2 or num_agents > 6:
-            raise HTTPException(status_code=400, detail="Text adventure requires 2-6 agents")
-    elif game_type == GameType.NEGOTIATION.value:
-        if num_agents < 2:
-            raise HTTPException(status_code=400, detail="Negotiation requires at least 2 agents")
-
-    game = await game_engine.create_game(
-        db, data.game_type, data.config, [str(a) for a in data.agent_ids]
-    )
-    return game
-
-
-@router.get("/games/{game_id}", response_model=GameResponse)
-async def get_game(game_id: UUID, db: AsyncSession = Depends(get_db)):
-    game = await db.get(Game, game_id)
+@router.get("/{game_id}", response_model=GameResponse)
+async def get_game(game_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Game).where(Game.id == game_id))
+    game = result.scalar_one_or_none()
     if not game:
-        raise HTTPException(status_code=404, detail="Game not found")
-    return game
+        raise HTTPException(status_code=404, detail="游戏不存在")
+    return _enrich_game_response(game)
 
 
-@router.post("/games/{game_id}/start", response_model=GameResponse)
-async def start_game(game_id: UUID, db: AsyncSession = Depends(get_db), current_user: User | None = Depends(get_optional_user)):
-    try:
-        game = await game_engine.start_game(db, game_id)
-        return game
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@router.post("/games/{game_id}/turn", response_model=GameTurnResponse)
-async def process_turn(game_id: UUID, db: AsyncSession = Depends(get_db), current_user: User | None = Depends(get_optional_user)):
-    try:
-        result = await game_engine.process_turn(db, game_id)
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@router.get("/games/{game_id}/state", response_model=GameStateResponse)
-async def get_game_state(game_id: UUID, db: AsyncSession = Depends(get_db)):
-    try:
-        state = await game_engine.get_game_state(db, game_id)
-        return state
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-
-@router.post("/games/{game_id}/end", response_model=GameResponse)
-async def end_game(
-    game_id: UUID, data: EndGameRequest, db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user),
+@router.put("/{game_id}", response_model=GameResponse)
+async def update_game(
+    game_id: str,
+    status: GameStatus | None = None,
+    winner_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
 ):
-    try:
-        game = await game_engine.end_game(
-            db, game_id, str(data.winner_id) if data.winner_id else None
+    result = await db.execute(select(Game).where(Game.id == game_id))
+    game = result.scalar_one_or_none()
+    if not game:
+        raise HTTPException(status_code=404, detail="游戏不存在")
+
+    if status is not None:
+        game.status = status
+    if winner_id is not None:
+        game.config["winner_id"] = winner_id
+
+    await db.commit()
+    await db.refresh(game)
+    return _enrich_game_response(game)
+
+
+@router.post("/{game_id}/end", response_model=GameResponse)
+async def end_game(
+    game_id: str,
+    request: EndGameRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Game).where(Game.id == game_id))
+    game = result.scalar_one_or_none()
+    if not game:
+        raise HTTPException(status_code=404, detail="游戏不存在")
+
+    game.status = GameStatus.FINISHED
+    if request and request.winner_id:
+        game.config["winner_id"] = str(request.winner_id)
+
+    # 停止运行中的引擎
+    if game_id in _running_games:
+        _running_games[game_id].stop()
+
+    await db.commit()
+    await db.refresh(game)
+    return _enrich_game_response(game)
+
+
+@router.post("/{game_id}/start", response_model=GameResponse)
+async def start_game(game_id: str, db: AsyncSession = Depends(get_db)):
+    """启动游戏，自动运行所有回合"""
+    result = await db.execute(select(Game).where(Game.id == game_id))
+    game = result.scalar_one_or_none()
+    if not game:
+        raise HTTPException(status_code=404, detail="游戏不存在")
+
+    if game.status == GameStatus.IN_PROGRESS:
+        raise HTTPException(status_code=400, detail="游戏已在进行中")
+
+    game.status = GameStatus.IN_PROGRESS
+    await db.commit()
+    await db.refresh(game)
+
+    # 创建引擎并在后台运行
+    from app.services.game_engine import GameEngine
+    from app.services.spectator_service import SpectatorService
+
+    spectator_service = SpectatorService()
+    engine = GameEngine(
+        game_type=game.game_type,
+        agent_ids=game.config.get("agent_ids", []),
+        config=game.config,
+        llm_service=None,
+        spectator_service=spectator_service,
+    )
+    _running_games[game_id] = engine
+
+    asyncio.create_task(_run_game_background(game_id, engine))
+
+    return _enrich_game_response(game)
+
+
+@router.post("/{game_id}/pause", response_model=GameResponse)
+async def pause_game(game_id: str, db: AsyncSession = Depends(get_db)):
+    """暂停游戏"""
+    if game_id in _running_games:
+        _running_games[game_id].pause()
+
+    result = await db.execute(select(Game).where(Game.id == game_id))
+    game = result.scalar_one_or_none()
+    if not game:
+        raise HTTPException(status_code=404, detail="游戏不存在")
+
+    game.status = GameStatus.PAUSED
+    game.paused_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(game)
+    return _enrich_game_response(game)
+
+
+@router.post("/{game_id}/resume", response_model=GameResponse)
+async def resume_game(game_id: str, db: AsyncSession = Depends(get_db)):
+    """恢复游戏"""
+    if game_id in _running_games:
+        _running_games[game_id].resume()
+
+    result = await db.execute(select(Game).where(Game.id == game_id))
+    game = result.scalar_one_or_none()
+    if not game:
+        raise HTTPException(status_code=404, detail="游戏不存在")
+
+    game.status = GameStatus.IN_PROGRESS
+    game.paused_at = None
+    await db.commit()
+    await db.refresh(game)
+    return _enrich_game_response(game)
+
+
+async def _run_game_background(game_id: str, engine: "GameEngine"):
+    """后台运行游戏，通过 WebSocket 推送事件"""
+    from app.services.spectator_service import SpectatorService
+
+    spectator_service = SpectatorService()
+
+    async for event in engine.auto_run():
+        # 广播事件给观战者
+        await spectator_service.broadcast_game_event(
+            game_id, event.get("type", "unknown"), event
         )
-        return game
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+
+        # 更新数据库
+        from app.core.database import async_session
+        async with async_session() as db:
+            result = await db.execute(select(Game).where(Game.id == game_id))
+            game = result.scalar_one_or_none()
+            if game:
+                game.config["current_turn"] = engine.current_turn
+                if event.get("type") == "game_over":
+                    game.status = GameStatus.FINISHED
+                    winner_id = event.get("data", {}).get("winner_id")
+                    if winner_id:
+                        game.config["winner_id"] = winner_id
+                elif event.get("type") == "max_turns_reached":
+                    game.status = GameStatus.FINISHED
+                await db.commit()
+
+    # 清理
+    _running_games.pop(game_id, None)

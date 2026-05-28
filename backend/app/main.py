@@ -10,8 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api import models, agents, conversations, games, auth, arena, search, hierarchy, evolution, leaderboard
 from app.core.database import get_db, engine, Base
 from app.core.config import settings
-from app.websocket.manager import ws_manager
+from app.websocket.manager import manager as ws_manager
 from app.services.spectator_service import spectator_service
+from app.websocket.game_ws import router as game_ws_router
 
 # Import all models to register them with Base
 from app.models import *  # noqa: F401, F403
@@ -55,13 +56,14 @@ async def global_exception_handler(request: Request, exc: Exception):
 app.include_router(models.router, prefix="/api")
 app.include_router(agents.router, prefix="/api")
 app.include_router(conversations.router, prefix="/api")
-app.include_router(games.router, prefix="/api")
+app.include_router(games.router)
 app.include_router(arena.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(search.router, prefix="/api")
 app.include_router(hierarchy.router, prefix="/api")
 app.include_router(evolution.router, prefix="/api")
 app.include_router(leaderboard.router, prefix="/api")
+app.include_router(game_ws_router)
 
 
 @app.get("/health")

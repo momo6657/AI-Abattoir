@@ -9,8 +9,9 @@ logger = logging.getLogger(__name__)
 
 class ConnectionManager:
     def __init__(self):
-        self._connections: Dict[str, List[WebSocket]] = {}
+        self._connections: Dict[str, List[WebSocket]] = {}  # conversation_id -> [ws]
         self._agent_info: Dict[str, Dict[str, str]] = {}  # ws id -> {agent_id, agent_name}
+        self.game_connections: Dict[str, List[WebSocket]] = {}  # game_id -> [ws]
 
     async def connect(self, websocket: WebSocket, conversation_id: UUID):
         await websocket.accept()
@@ -52,10 +53,7 @@ class ConnectionManager:
     async def broadcast_to_conversation(
         self, conversation_id, event_type: str, data: dict
     ):
-        """Send a typed event to all clients watching a conversation.
-
-        *conversation_id* may be a UUID or a string.
-        """
+        """Send a typed event to all clients watching a conversation."""
         cid = UUID(str(conversation_id)) if not isinstance(conversation_id, UUID) else conversation_id
         await self.broadcast(cid, {"type": event_type, "data": data})
 
@@ -63,5 +61,40 @@ class ConnectionManager:
         key = str(conversation_id)
         return len(self._connections.get(key, []))
 
+    # ========== 游戏 WebSocket 管理 ==========
 
-ws_manager = ConnectionManager()
+    async def connect_to_game(self, game_id: str, websocket: WebSocket):
+        """连接到游戏 WebSocket 通道"""
+        await websocket.accept()
+        if game_id not in self.game_connections:
+            self.game_connections[game_id] = []
+        self.game_connections[game_id].append(websocket)
+
+    def disconnect_from_game(self, game_id: str, websocket: WebSocket):
+        """从游戏 WebSocket 通道断开"""
+        if game_id in self.game_connections:
+            self.game_connections[game_id] = [
+                ws for ws in self.game_connections[game_id] if ws is not websocket
+            ]
+            if not self.game_connections[game_id]:
+                del self.game_connections[game_id]
+
+    async def broadcast_to_game(self, game_id: str, message: dict):
+        """向游戏通道的所有连接广播消息"""
+        if game_id not in self.game_connections:
+            return
+        payload = json.dumps(message, default=str)
+        dead: List[WebSocket] = []
+        for ws in self.game_connections[game_id]:
+            try:
+                await ws.send_text(payload)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            self.game_connections[game_id].remove(ws)
+        if not self.game_connections[game_id]:
+            del self.game_connections[game_id]
+
+
+manager = ConnectionManager()
+ws_manager = manager  # backward compatible alias

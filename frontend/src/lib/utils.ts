@@ -23,9 +23,11 @@ export function formatTime(dateStr: string): string {
 export const STATUS_LABELS: Record<string, string> = {
   waiting: "等待中",
   active: "进行中",
-  finished: "已结束",
-  paused: "已暂停",
   in_progress: "进行中",
+  finished: "已结束",
+  completed: "已完成",
+  paused: "已暂停",
+  cancelled: "已取消",
   voting: "投票中",
 };
 

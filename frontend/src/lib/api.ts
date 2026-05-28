@@ -60,15 +60,18 @@ export const arenaApi = {
     api.post(`/arena/matches/${matchId}/vote`, data),
 };
 
-// ---- Games ---- (backend: /api/games without slash)
+// ---- Games ---- (backend: /api/games with new endpoints)
 export const gamesApi = {
   list: () => api.get("/games"),
   create: (data: Record<string, unknown>) => api.post("/games", data),
   get: (id: string) => api.get(`/games/${id}`),
   start: (id: string) => api.post(`/games/${id}/start`),
+  pause: (id: string) => api.post(`/games/${id}/pause`),
+  resume: (id: string) => api.post(`/games/${id}/resume`),
   processTurn: (id: string) => api.post(`/games/${id}/turn`),
   getState: (id: string) => api.get(`/games/${id}/state`),
-  end: (id: string) => api.post(`/games/${id}/end`),
+  end: (id: string, winnerId?: string) =>
+    api.post(`/games/${id}/end`, winnerId ? { winner_id: winnerId } : {}),
 };
 
 // ---- Hierarchy ---- (backend: /api/hierarchy without slash)

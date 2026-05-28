@@ -18,6 +18,7 @@ class GameType(str, enum.Enum):
 class GameStatus(str, enum.Enum):
     WAITING = "waiting"
     IN_PROGRESS = "in_progress"
+    PAUSED = "paused"
     FINISHED = "finished"
     CANCELLED = "cancelled"
 
@@ -35,6 +36,7 @@ class Game(Base):
     winner_id = Column(UUID(as_uuid=True), ForeignKey("agents.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    paused_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class GamePlayer(Base):

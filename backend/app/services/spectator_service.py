@@ -1,186 +1,153 @@
+"""Spectator and replay service for conversations and games."""
+
+from __future__ import annotations
+
 import json
 import logging
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 from uuid import UUID
-from typing import Dict, List, Optional, Any
-from fastapi import WebSocket, WebSocketDisconnect
+
+from fastapi import WebSocket
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import async_session
 from app.models.conversation import Conversation, Message
 from app.models.game import Game, GamePlayer
 from app.models.agent import Agent
+from app.websocket.manager import manager as ws_manager
 
 logger = logging.getLogger(__name__)
 
 
 class SpectatorService:
-    """观战服务 - 允许用户以只读方式观看对话和游戏"""
+    """Handles real-time spectator broadcasts and replay retrieval."""
 
     def __init__(self):
-        self._spectators: Dict[str, List[WebSocket]] = {}
+        self.ws_manager = ws_manager
+        self._spectate_connections: Dict[str, List[WebSocket]] = {}
 
-    async def join_as_spectator(self, websocket: WebSocket, conversation_id: UUID):
-        """以观战者身份加入对话（只接收消息，不发送）"""
-        await websocket.accept()
-        key = f"conv:{conversation_id}"
-        if key not in self._spectators:
-            self._spectators[key] = []
-        self._spectators[key].append(websocket)
+    # ==================== Conversation Spectating ====================
 
-        try:
-            # 观战者只接收消息，不发送
-            while True:
-                data = await websocket.receive_json()
-                if data.get("type") == "ping":
-                    await websocket.send_json({"type": "pong"})
-        except WebSocketDisconnect:
-            pass
-        except Exception as e:
-            logger.warning("Spectator websocket error for %s: %s", key, e)
-        finally:
-            self._remove_spectator(websocket, key)
-
-    async def join_game_as_spectator(self, websocket: WebSocket, game_id: UUID):
-        """以观战者身份加入游戏（只接收消息，不发送）"""
-        await websocket.accept()
-        key = f"game:{game_id}"
-        if key not in self._spectators:
-            self._spectators[key] = []
-        self._spectators[key].append(websocket)
-
-        try:
-            # 观战者只接收消息，不发送
-            while True:
-                data = await websocket.receive_json()
-                if data.get("type") == "ping":
-                    await websocket.send_json({"type": "pong"})
-        except WebSocketDisconnect:
-            pass
-        except Exception as e:
-            logger.warning("Spectator websocket error for %s: %s", key, e)
-        finally:
-            self._remove_spectator(websocket, key)
-
-    async def broadcast_to_spectators(self, target_key: str, data: dict):
-        """向指定目标的所有观战者广播消息"""
-        if target_key not in self._spectators:
-            return
-        payload = json.dumps(data, default=str)
-        dead: List[WebSocket] = []
-        for ws in self._spectators[target_key]:
-            try:
-                await ws.send_text(payload)
-            except Exception:
-                dead.append(ws)
-        for ws in dead:
-            self._spectators[target_key].remove(ws)
+    async def broadcast_to_spectators(
+        self, conversation_id: str, event_type: str, data: dict
+    ):
+        """Broadcast a conversation event to all spectators."""
+        message = {
+            "type": event_type,
+            "conversation_id": str(conversation_id),
+            "data": data,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        channel = f"spectate_conv_{conversation_id}"
+        if channel in self._spectate_connections:
+            payload = json.dumps(message, default=str)
+            dead: List[WebSocket] = []
+            for ws in self._spectate_connections[channel]:
+                try:
+                    await ws.send_text(payload)
+                except Exception:
+                    dead.append(ws)
+            for ws in dead:
+                self._spectate_connections[channel].remove(ws)
 
     async def broadcast_conversation_to_spectators(
-        self, conversation_id: UUID, data: dict
+        self, conversation_id: str, event_type: str, data: dict
     ):
-        """向对话观战者广播"""
-        await self.broadcast_to_spectators(f"conv:{conversation_id}", data)
+        """Alias for broadcast_to_spectators."""
+        await self.broadcast_to_spectators(conversation_id, event_type, data)
 
-    async def broadcast_game_to_spectators(self, game_id: UUID, data: dict):
-        """向游戏观战者广播"""
-        await self.broadcast_to_spectators(f"game:{game_id}", data)
+    # ==================== Game Spectating ====================
 
-    async def replay_conversation(
-        self, db: AsyncSession, conversation_id: UUID
-    ) -> Dict[str, Any]:
-        """获取对话回放（完整消息历史）"""
-        conversation = await db.get(Conversation, conversation_id)
-        if not conversation:
-            raise ValueError("Conversation not found")
-
-        result = await db.execute(
-            select(Message)
-            .where(Message.conversation_id == conversation_id)
-            .order_by(Message.created_at.asc())
-        )
-        messages = result.scalars().all()
-
-        # Batch load agents to avoid N+1 queries
-        agent_ids = {msg.agent_id for msg in messages if msg.agent_id}
-        agents_map: Dict[str, Agent] = {}
-        if agent_ids:
-            agents_result = await db.execute(select(Agent).where(Agent.id.in_(agent_ids)))
-            agents_map = {str(a.id): a for a in agents_result.scalars().all()}
-
-        message_list = []
-        for msg in messages:
-            agent = agents_map.get(str(msg.agent_id)) if msg.agent_id else None
-            message_list.append({
-                "id": str(msg.id),
-                "agent_id": str(msg.agent_id) if msg.agent_id else None,
-                "agent_name": agent.name if agent else "System",
-                "role": msg.role,
-                "content": msg.content,
-                "turn_number": msg.turn_number,
-                "created_at": msg.created_at.isoformat() if msg.created_at else None,
-            })
-
-        return {
-            "conversation_id": str(conversation.id),
-            "title": conversation.title,
-            "mode": conversation.mode.value if conversation.mode else None,
-            "status": conversation.status.value if conversation.status else None,
-            "message_count": len(message_list),
-            "messages": message_list,
-            "created_at": conversation.created_at.isoformat() if conversation.created_at else None,
+    async def broadcast_game_event(
+        self, game_id: str, event_type: str, data: dict
+    ):
+        """Broadcast a game event to all spectators and game WebSocket connections."""
+        message = {
+            "type": event_type,
+            "game_id": str(game_id),
+            "data": data,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
+        # 广播给游戏 WebSocket 通道
+        await self.ws_manager.broadcast_to_game(game_id, message)
 
-    async def replay_game(
-        self, db: AsyncSession, game_id: UUID
-    ) -> Dict[str, Any]:
-        """获取游戏回放"""
-        game = await db.get(Game, game_id)
-        if not game:
-            raise ValueError("Game not found")
+        # 广播给 spectate 通道
+        channel = f"spectate_game_{game_id}"
+        if channel in self._spectate_connections:
+            payload = json.dumps(message, default=str)
+            dead: List[WebSocket] = []
+            for ws in self._spectate_connections[channel]:
+                try:
+                    await ws.send_text(payload)
+                except Exception:
+                    dead.append(ws)
+            for ws in dead:
+                self._spectate_connections[channel].remove(ws)
 
-        result = await db.execute(
-            select(GamePlayer).where(GamePlayer.game_id == game.id)
-        )
-        players = result.scalars().all()
+    # ==================== Connection Management ====================
 
-        # Batch load agents to avoid N+1 queries
-        agent_ids = {p.agent_id for p in players if p.agent_id}
-        agents_map: Dict[str, Agent] = {}
-        if agent_ids:
-            agents_result = await db.execute(select(Agent).where(Agent.id.in_(agent_ids)))
-            agents_map = {str(a.id): a for a in agents_result.scalars().all()}
+    async def connect_spectator(
+        self, channel: str, websocket: WebSocket
+    ):
+        """Accept and register a spectator WebSocket connection."""
+        await websocket.accept()
+        if channel not in self._spectate_connections:
+            self._spectate_connections[channel] = []
+        self._spectate_connections[channel].append(websocket)
 
-        player_list = []
-        for p in players:
-            agent = agents_map.get(str(p.agent_id)) if p.agent_id else None
-            player_list.append({
-                "agent_id": str(p.agent_id),
-                "agent_name": agent.name if agent else "Unknown",
-                "role": p.role,
-                "is_alive": bool(p.is_alive),
-                "config": p.config or {},
-            })
-
-        return {
-            "game_id": str(game.id),
-            "game_type": game.game_type.value if game.game_type else None,
-            "title": game.title,
-            "status": game.status.value if game.status else None,
-            "state": game.state or {},
-            "players": player_list,
-            "winner_id": str(game.winner_id) if game.winner_id else None,
-            "created_at": game.created_at.isoformat() if game.created_at else None,
-            "updated_at": game.updated_at.isoformat() if game.updated_at else None,
-        }
-
-    def _remove_spectator(self, websocket: WebSocket, key: str):
-        """移除观战者连接"""
-        if key in self._spectators:
-            self._spectators[key] = [
-                ws for ws in self._spectators[key] if ws is not websocket
+    def disconnect_spectator(self, channel: str, websocket: WebSocket):
+        """Remove a spectator WebSocket connection."""
+        if channel in self._spectate_connections:
+            self._spectate_connections[channel] = [
+                ws
+                for ws in self._spectate_connections[channel]
+                if ws is not websocket
             ]
-            if not self._spectators[key]:
-                del self._spectators[key]
+            if not self._spectate_connections[channel]:
+                del self._spectate_connections[channel]
+
+    # ==================== Replay ====================
+
+    async def get_conversation_replay(
+        self, conversation_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """Retrieve a full conversation replay."""
+        async with async_session() as db:
+            result = await db.execute(
+                select(Conversation).where(
+                    Conversation.id == UUID(conversation_id)
+                )
+            )
+            conv = result.scalar_one_or_none()
+            if not conv:
+                return None
+            return {
+                "id": str(conv.id),
+                "mode": conv.mode,
+                "messages": conv.messages or [],
+                "participants": conv.participants or [],
+                "created_at": conv.created_at.isoformat() if conv.created_at else None,
+            }
+
+    async def get_game_replay(self, game_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve a full game replay."""
+        async with async_session() as db:
+            result = await db.execute(
+                select(Game).where(Game.id == game_id)
+            )
+            game = result.scalar_one_or_none()
+            if not game:
+                return None
+            return {
+                "id": str(game.id),
+                "game_type": game.game_type,
+                "status": game.status,
+                "config": game.config or {},
+                "created_at": game.created_at.isoformat() if game.created_at else None,
+            }
 
 
+# Module-level singleton
 spectator_service = SpectatorService()

@@ -266,7 +266,7 @@ function ReplayView({
               <div className="space-y-2">
                 {replayData.players.map((p) => (
                   <div key={p.agent_id} className="flex items-center justify-between text-sm">
-                    <span className={p.alive ? "" : "text-gray-600 line-through"}>{p.agent_name}</span>
+                    <span className={p.alive ?? true ? "" : "text-gray-600 line-through"}>{p.agent_name || p.name}</span>
                     <span className="text-xs text-gray-500">{p.role}</span>
                   </div>
                 ))}
@@ -387,10 +387,10 @@ export default function SpectatePage() {
   };
   const handleBack = () => { setViewMode("list"); setSelectedId(null); };
 
-  const activeConvs = conversations.filter((c) => c.status === "active");
-  const endedConvs = conversations.filter((c) => c.status === "ended");
-  const activeGms = games.filter((g) => g.status === "active");
-  const endedGms = games.filter((g) => g.status === "finished" || g.status === "ended");
+  const activeConvs = conversations.filter((c) => c.status === "active" || c.status === "in_progress");
+  const endedConvs = conversations.filter((c) => c.status === "ended" || c.status === "finished");
+  const activeGms = games.filter((g) => g.status === "in_progress");
+  const endedGms = games.filter((g) => g.status === "finished");
   const isLive = tab === "live";
 
   if (viewMode === "spectate" && selectedId) {
@@ -473,15 +473,15 @@ export default function SpectatePage() {
                     <div className="flex items-center justify-between">
                       <div className="flex gap-1">
                         {game.players?.slice(0, 6).map((p) => (
-                          <span key={p.agent_id} className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${p.alive ? "bg-gray-700 text-white" : "bg-gray-800 text-gray-600 line-through"}`} title={`${p.agent_name} ${p.role}`}>
-                            {p.agent_name?.charAt(0) || "?"}
+                          <span key={p.agent_id} className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${p.alive ?? true ? "bg-gray-700 text-white" : "bg-gray-800 text-gray-600 line-through"}`} title={`${p.agent_name || p.name} ${p.role}`}>
+                            {(p.agent_name || p.name)?.charAt(0) || "?"}
                           </span>
                         ))}
                         {(game.players?.length || 0) > 6 && (
                           <span className="w-6 h-6 rounded-full bg-gray-800 flex items-center justify-center text-xs text-gray-400">+{game.players!.length - 6}</span>
                         )}
                       </div>
-                      {isLive && game.status === "active"
+                      {isLive && game.status === "in_progress"
                         ? actionBtn(() => handleSpectate(game.id, "game"), "bg-green-600", "进入观战")
                         : actionBtn(() => handleReplay(game.id, "game"), "bg-blue-600", "观看回放")}
                     </div>
