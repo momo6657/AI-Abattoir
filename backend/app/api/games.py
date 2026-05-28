@@ -157,18 +157,44 @@ async def start_game(game_id: str, db: AsyncSession = Depends(get_db)):
     await db.commit()
     await db.refresh(game)
 
+    # 加载 agent 对象
+    agent_ids = game.config.get("agent_ids", [])
+    agents = []
+    if agent_ids:
+        from uuid import UUID as _UUID
+        uuid_ids = []
+        for aid in agent_ids:
+            try:
+                uuid_ids.append(_UUID(aid) if isinstance(aid, str) else aid)
+            except (ValueError, TypeError):
+                continue
+        if uuid_ids:
+            agents_result = await db.execute(select(Agent).where(Agent.id.in_(uuid_ids)))
+            agents = agents_result.scalars().all()
+
     # 创建引擎并在后台运行
     from app.services.game_engine import GameEngine
-    from app.services.spectator_service import SpectatorService
+    from app.services.llm_adapter import llm_adapter
+    from app.services.spectator_service import spectator_service
 
-    spectator_service = SpectatorService()
     engine = GameEngine(
         game_type=game.game_type,
-        agent_ids=game.config.get("agent_ids", []),
+        agent_ids=agent_ids,
         config=game.config,
-        llm_service=None,
+        llm_service=llm_adapter,
         spectator_service=spectator_service,
     )
+    engine.agents = agents  # 注入 agent 对象供游戏引擎使用
+
+    # 预加载模型信息供 LLM 调用
+    if agents:
+        from app.models.model import Model as ModelORM
+        model_ids = list({a.model_id for a in agents if a.model_id})
+        if model_ids:
+            models_result = await db.execute(select(ModelORM).where(ModelORM.id.in_(model_ids)))
+            models_list = models_result.scalars().all()
+            engine._models_cache = {str(m.id): m for m in models_list}
+
     _running_games[game_id] = engine
 
     asyncio.create_task(_run_game_background(game_id, engine))

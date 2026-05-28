@@ -287,31 +287,53 @@ class GameEngine:
     # ==================== 自动运行引擎 ====================
 
     async def auto_run(self) -> AsyncGenerator[dict, None]:
-        """自动运行游戏，yield 每个回合的事件"""
-        while self.current_turn < self.max_turns and not self.is_stopped:
-            # 暂停等待
-            if self.is_paused:
-                yield {"type": "paused", "turn": self.current_turn}
-                while self.is_paused and not self.is_stopped:
-                    await asyncio.sleep(0.5)
-                if self.is_stopped:
-                    break
-                yield {"type": "resumed", "turn": self.current_turn}
+        """自动运行游戏，yield 每个回合的事件。各 run_* 方法内部处理自己的循环。"""
+        # 暂停等待
+        if self.is_paused:
+            yield {"type": "paused", "turn": self.current_turn}
+            while self.is_paused and not self.is_stopped:
+                await asyncio.sleep(0.5)
+            if self.is_stopped:
+                return
+            yield {"type": "resumed", "turn": self.current_turn}
 
-            self.current_turn += 1
-            try:
-                async for event in self._execute_game_turn():
+        agents = getattr(self, "agents", []) or []
+        game_type = str(self.game_type)
+
+        try:
+            if game_type in ("werewolf", GameType.WEREWOLF):
+                async for event in self.run_werewolf(agents):
+                    if self.is_stopped:
+                        break
                     yield event
-            except asyncio.TimeoutError:
-                yield {"type": "turn_timeout", "turn": self.current_turn}
-            except Exception as e:
-                yield {"type": "turn_error", "turn": self.current_turn, "error": str(e)}
+            elif game_type in ("chess", GameType.CHESS):
+                async for event in self.run_chess():
+                    if self.is_stopped:
+                        break
+                    yield event
+            elif game_type in ("debate", GameType.DEBATE):
+                async for event in self.run_debate(agents):
+                    if self.is_stopped:
+                        break
+                    yield event
+            elif game_type in ("text_adventure", GameType.TEXT_ADVENTURE):
+                async for event in self.run_text_adventure(agents):
+                    if self.is_stopped:
+                        break
+                    yield event
+            elif game_type in ("negotiation", GameType.NEGOTIATION):
+                async for event in self.run_negotiation(agents):
+                    if self.is_stopped:
+                        break
+                    yield event
+            else:
+                yield {"type": "error", "data": {"message": f"Unknown game type: {self.game_type}"}}
+        except asyncio.TimeoutError:
+            yield {"type": "turn_timeout", "turn": self.current_turn}
+        except Exception as e:
+            yield {"type": "turn_error", "turn": self.current_turn, "error": str(e)}
 
-            # 回合间延迟
-            if self.turn_delay > 0 and not self.is_stopped:
-                await asyncio.sleep(self.turn_delay)
-
-        if self.current_turn >= self.max_turns and not self.is_stopped:
+        if not self.is_stopped:
             yield {"type": "max_turns_reached", "turn": self.current_turn}
 
     def pause(self):
@@ -325,32 +347,85 @@ class GameEngine:
 
     async def _execute_game_turn(self) -> AsyncGenerator[dict, None]:
         """执行一个游戏回合，由具体游戏类型实现"""
-        if self.game_type == GameType.WEREWOLF or self.game_type == "werewolf":
-            # 狼人杀整个流程在一个 turn 中处理
-            raise NotImplementedError("Use _run_werewolf directly")
-        elif self.game_type == GameType.CHESS or self.game_type == "chess":
-            raise NotImplementedError("Use _run_chess directly")
-        elif self.game_type == GameType.DEBATE or self.game_type == "debate":
-            raise NotImplementedError("Use _run_debate directly")
-        elif self.game_type == GameType.TEXT_ADVENTURE or self.game_type == "text_adventure":
-            raise NotImplementedError("Use _run_text_adventure directly")
-        elif self.game_type == GameType.NEGOTIATION or self.game_type == "negotiation":
-            raise NotImplementedError("Use _run_negotiation directly")
+        agents = getattr(self, "agents", []) or []
+        game_type = str(self.game_type)
+
+        if game_type in ("werewolf", GameType.WEREWOLF):
+            async for event in self.run_werewolf(agents):
+                yield event
+        elif game_type in ("chess", GameType.CHESS):
+            async for event in self.run_chess():
+                yield event
+        elif game_type in ("debate", GameType.DEBATE):
+            async for event in self.run_debate(agents):
+                yield event
+        elif game_type in ("text_adventure", GameType.TEXT_ADVENTURE):
+            async for event in self.run_text_adventure(agents):
+                yield event
+        elif game_type in ("negotiation", GameType.NEGOTIATION):
+            async for event in self.run_negotiation(agents):
+                yield event
         else:
             yield {"type": "error", "data": {"message": f"Unknown game type: {self.game_type}"}}
 
     # ==================== LLM 辅助 ====================
 
     async def _call_llm(self, agent_id: str, prompt: str) -> str:
-        """调用 LLM，带超时保护"""
+        """调用 LLM，带超时保护。通过 agent_id 查找模型配置。"""
         if not self.llm_service:
             return ""
+
+        # 从 agents 列表查找 agent
+        agents = getattr(self, "agents", []) or []
+        agent = next((a for a in agents if str(a.id) == agent_id), None)
+        if not agent:
+            logger.warning("Agent %s not found, skipping LLM call", agent_id)
+            return ""
+
+        # 从 models 缓存查找模型配置
+        models_cache = getattr(self, "_models_cache", {})
+        model = models_cache.get(str(agent.model_id))
+
+        if not model:
+            # 从数据库加载模型
+            try:
+                from app.core.database import async_session
+                from app.models.model import Model as ModelORM
+                from sqlalchemy import select
+                async with async_session() as db:
+                    result = await db.execute(
+                        select(ModelORM).where(ModelORM.id == agent.model_id)
+                    )
+                    model = result.scalar_one_or_none()
+                    if model:
+                        if not hasattr(self, "_models_cache"):
+                            self._models_cache = {}
+                        self._models_cache[str(agent.model_id)] = model
+            except Exception as e:
+                logger.error("Failed to load model for agent %s: %s", agent_id, e)
+                return ""
+
+        if not model:
+            return ""
+
         try:
-            return await asyncio.wait_for(
-                self.llm_service.call_agent(agent_id, prompt),
-                timeout=30.0,
+            response = await asyncio.wait_for(
+                self.llm_service.chat(
+                    model_id=model.model_id,
+                    messages=[{"role": "user", "content": prompt}],
+                    api_key=model.api_key,
+                    api_base=model.api_base,
+                    temperature=0.8,
+                    max_tokens=1024,
+                ),
+                timeout=60.0,
             )
+            return response.get("content", "").strip()
         except asyncio.TimeoutError:
+            logger.warning("LLM call timeout for agent %s", agent_id)
+            return ""
+        except Exception as e:
+            logger.error("LLM call failed for agent %s: %s", agent_id, str(e)[:200])
             return ""
 
     def _extract_target_id(self, response: str, candidates: list[str]) -> str | None:
