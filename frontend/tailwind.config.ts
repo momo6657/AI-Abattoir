@@ -6,14 +6,14 @@ const config: Config = {
     extend: {
       colors: {
         surface: {
-          DEFAULT: "#111118",
-          raised: "#1a1a24",
-          overlay: "#222230",
+          DEFAULT: "#10131a",
+          raised: "#171b24",
+          overlay: "#222836",
         },
         accent: {
-          DEFAULT: "#6366f1",
-          hover: "#818cf8",
-          muted: "#4f46e5",
+          DEFAULT: "#5bb5ff",
+          hover: "#9bd5ff",
+          muted: "#2c7bd1",
         },
         border: {
           DEFAULT: "#2a2a3a",

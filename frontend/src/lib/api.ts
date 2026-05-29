@@ -5,14 +5,22 @@ const LOCAL_API = "http://localhost:8000/api";
 
 function resolveBaseURL(): string {
   const envUrl = process.env.NEXT_PUBLIC_API_URL;
-  if (envUrl && envUrl.length > 0) return envUrl;
   if (typeof window !== "undefined") {
+    const localHostnames = new Set(["localhost", "127.0.0.1", "::1"]);
+    const isLocalFrontend = localHostnames.has(window.location.hostname);
+    if (isLocalFrontend) {
+      if (envUrl?.includes("localhost") || envUrl?.includes("127.0.0.1")) return envUrl;
+      return LOCAL_API;
+    }
+    if (envUrl && envUrl.length > 0) return envUrl;
     return window.location.protocol === "https:" ? PRODUCTION_API : LOCAL_API;
   }
+  if (envUrl && envUrl.length > 0) return envUrl;
   return LOCAL_API;
 }
 
 const baseURL = resolveBaseURL();
+const appRootURL = baseURL.replace(/\/api\/?$/, "");
 
 const api = axios.create({ baseURL, timeout: 30000 });
 
@@ -105,4 +113,9 @@ export const modelsApi = {
   create: (data: Record<string, unknown>) => api.post("/models/", data),
   update: (id: string, data: Record<string, unknown>) => api.put(`/models/${id}`, data),
   delete: (id: string) => api.delete(`/models/${id}`),
+};
+
+// ---- System ----
+export const healthApi = {
+  get: () => axios.get(`${appRootURL}/health`, { timeout: 8000 }),
 };

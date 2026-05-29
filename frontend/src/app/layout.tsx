@@ -6,6 +6,9 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "AI Abattoir",
   description: "Multi-model AI interaction platform",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({

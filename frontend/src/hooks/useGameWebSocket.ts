@@ -20,7 +20,12 @@ export function useGameWebSocket(gameId: string | null) {
     if (!gameId) return;
 
     const protocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsBase = process.env.NEXT_PUBLIC_WS_URL || `${protocol}//${window.location.hostname}:8000`;
+    const envWsBase = process.env.NEXT_PUBLIC_WS_URL;
+    const localHostnames = new Set(['localhost', '127.0.0.1', '::1']);
+    const isLocalFrontend = typeof window !== 'undefined' && localHostnames.has(window.location.hostname);
+    const wsBase = isLocalFrontend && !envWsBase?.includes('localhost') && !envWsBase?.includes('127.0.0.1')
+      ? `${protocol}//${window.location.hostname}:8000`
+      : envWsBase || `${protocol}//${window.location.hostname}:8000`;
     const ws = new WebSocket(`${wsBase}/ws/games/${gameId}`);
 
     ws.onopen = () => {

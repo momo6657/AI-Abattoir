@@ -293,10 +293,10 @@ export default function GamesPage() {
         </form>
       )}
 
-      <div className="flex gap-6">
+      <div className="flex flex-col gap-6 lg:flex-row">
         {/* Game List */}
-        <div className="flex-1">
-          <div className="flex gap-2 mb-4">
+        <div className="min-w-0 flex-1">
+          <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
             {(["all", "waiting", "in_progress", "paused", "finished"] as const).map(f => (
               <button
                 key={f}
@@ -367,7 +367,7 @@ export default function GamesPage() {
 
         {/* Game Room (Right Panel) */}
         {activeGameId && activeGame && (
-          <div className="w-[480px] flex-shrink-0 card flex flex-col overflow-hidden" style={{ height: "calc(100vh - 220px)" }}>
+          <div className="card flex max-h-[760px] min-h-[520px] w-full flex-col overflow-hidden lg:sticky lg:top-24 lg:w-[480px] lg:flex-shrink-0" style={{ height: "calc(100vh - 220px)" }}>
             {/* Game Control Bar */}
             <GameControlBar
               status={activeGame.status as 'waiting' | 'in_progress' | 'paused' | 'finished' | 'cancelled'}
