@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { conversationsApi, agentsApi } from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { ErrorBanner, LoadingSpinner, ThinkingIndicator, ChatMessage } from "@/components";
 
@@ -44,14 +45,6 @@ const MODES = [
 function getAgentName(agentId: string, agents: Agent[]): string {
   const agent = agents.find((a) => a.id === agentId);
   return agent ? agent.name : "未知";
-}
-
-function extractErrorMessage(err: unknown, fallback: string): string {
-  if (typeof err === "object" && err !== null) {
-    const axiosErr = err as { response?: { data?: { detail?: string } } };
-    if (axiosErr.response?.data?.detail) return axiosErr.response.data.detail;
-  }
-  return fallback;
 }
 
 // ---- Page Component ----

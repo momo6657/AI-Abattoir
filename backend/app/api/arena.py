@@ -19,24 +19,108 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["arena"])
 
 
+MATCH_TYPE_ALIASES = {
+    "qa": MatchType.QA_PK.value,
+    "image": MatchType.IMAGE_GEN.value,
+}
+
+
+def _normalize_match_type(match_type: str) -> str:
+    return MATCH_TYPE_ALIASES.get(match_type, match_type)
+
+
+def _content_text(content) -> str | None:
+    if content is None:
+        return None
+    if isinstance(content, dict):
+        if content.get("error"):
+            return f"生成失败：{content['error']}"
+        return content.get("content") or content.get("text") or content.get("prompt_used")
+    return str(content)
+
+
+def _image_url(content) -> str | None:
+    if not isinstance(content, dict):
+        return None
+    if content.get("image_url"):
+        return content["image_url"]
+    if content.get("image_b64"):
+        return f"data:image/png;base64,{content['image_b64']}"
+    return None
+
+
+def _audio_url(content) -> str | None:
+    if not isinstance(content, dict):
+        return None
+    if content.get("audio_url"):
+        return content["audio_url"]
+    if content.get("audio_b64"):
+        return f"data:audio/mpeg;base64,{content['audio_b64']}"
+    return None
+
+
+async def _enrich_match(db: AsyncSession, match: ArenaMatch) -> dict:
+    result = await db.execute(
+        select(ArenaParticipant)
+        .where(ArenaParticipant.match_id == match.id)
+        .order_by(ArenaParticipant.created_at.asc())
+    )
+    participants = result.scalars().all()
+
+    enriched = {
+        "id": match.id,
+        "match_type": match.match_type.value if hasattr(match.match_type, "value") else match.match_type,
+        "status": match.status.value if hasattr(match.status, "value") else match.status,
+        "title": match.title,
+        "prompt": match.prompt,
+        "config": match.config or {},
+        "creator_id": match.creator_id,
+        "winner_id": match.winner_id,
+        "created_at": match.created_at,
+        "updated_at": match.updated_at,
+        "votes_a": 0,
+        "votes_b": 0,
+    }
+
+    slots = ("a", "b")
+    for index, participant in enumerate(participants[:2]):
+        slot = slots[index]
+        agent = await db.get(Agent, participant.agent_id)
+        content = participant.response_content
+        enriched[f"participant_{slot}_id"] = participant.id
+        enriched[f"agent_{slot}_id"] = participant.agent_id
+        enriched[f"agent_{slot}_name"] = agent.name if agent else "Unknown"
+        enriched[f"result_{slot}"] = _content_text(content)
+        enriched[f"image_{slot}_url"] = _image_url(content)
+        enriched[f"audio_{slot}_url"] = _audio_url(content)
+        enriched[f"votes_{slot}"] = participant.vote_count or 0
+
+    return enriched
+
+
 @router.post("/arena/matches", response_model=ArenaMatchResponse)
 async def create_match(data: ArenaMatchCreate, db: AsyncSession = Depends(get_db)):
+    match_type = _normalize_match_type(data.match_type)
+    agent_ids = list(data.agent_ids)
+    if not agent_ids and data.agent_a_id and data.agent_b_id:
+        agent_ids = [data.agent_a_id, data.agent_b_id]
+
     # Validate match_type
     valid_types = {t.value for t in MatchType}
-    if data.match_type not in valid_types:
+    if match_type not in valid_types:
         raise HTTPException(status_code=400, detail=f"Invalid match_type '{data.match_type}'. Must be one of: {', '.join(sorted(valid_types))}")
 
     # Validate at least 2 agents
-    if len(data.agent_ids) < 2:
+    if len(agent_ids) < 2:
         raise HTTPException(status_code=400, detail="At least 2 agents are required for a match")
 
     # For voice type, ensure TTS config is provided
-    if data.match_type == MatchType.VOICE.value:
+    if match_type == MatchType.VOICE.value:
         if not data.config.get("tts_config"):
             raise HTTPException(status_code=400, detail="Voice matches require 'tts_config' in config")
 
     # For image_gen type, validate config if provided
-    if data.match_type == MatchType.IMAGE_GEN.value:
+    if match_type == MatchType.IMAGE_GEN.value:
         image_provider = data.config.get("image_provider", "openai")
         supported_providers = {"openai", "stability"}
         if image_provider not in supported_providers:
@@ -48,13 +132,13 @@ async def create_match(data: ArenaMatchCreate, db: AsyncSession = Depends(get_db
     try:
         match = await arena_engine.create_match(
             db,
-            match_type=data.match_type,
+            match_type=match_type,
             prompt=data.prompt,
-            agent_ids=[str(a) for a in data.agent_ids],
+            agent_ids=[str(a) for a in agent_ids],
             config=data.config,
             title=data.title,
         )
-        return match
+        return await _enrich_match(db, match)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -71,7 +155,8 @@ async def list_matches(
         .offset(skip)
         .limit(limit)
     )
-    return result.scalars().all()
+    matches = result.scalars().all()
+    return [await _enrich_match(db, match) for match in matches]
 
 
 @router.get("/arena/matches/{match_id}")
@@ -119,7 +204,7 @@ async def get_match(match_id: UUID, db: AsyncSession = Depends(get_db)):
 async def start_match(match_id: UUID, db: AsyncSession = Depends(get_db)):
     try:
         match = await arena_engine.start_match(db, str(match_id))
-        return match
+        return await _enrich_match(db, match)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -127,10 +212,25 @@ async def start_match(match_id: UUID, db: AsyncSession = Depends(get_db)):
 @router.post("/arena/matches/{match_id}/vote")
 async def vote(match_id: UUID, data: ArenaVoteRequest, db: AsyncSession = Depends(get_db)):
     try:
+        participant_id = data.participant_id
+        if participant_id is None and data.side in {"a", "b"}:
+            result = await db.execute(
+                select(ArenaParticipant)
+                .where(ArenaParticipant.match_id == match_id)
+                .order_by(ArenaParticipant.created_at.asc())
+            )
+            participants = result.scalars().all()
+            index = 0 if data.side == "a" else 1
+            if len(participants) <= index:
+                raise ValueError("Participant not found for selected side")
+            participant_id = participants[index].id
+        if participant_id is None:
+            raise ValueError("participant_id or side is required")
+
         vote_obj = await arena_engine.vote(
             db,
             match_id=str(match_id),
-            participant_id=str(data.participant_id),
+            participant_id=str(participant_id),
             voter_session=data.voter_session,
         )
         return {

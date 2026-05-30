@@ -5,6 +5,7 @@ import { gamesApi, agentsApi } from "@/lib/api";
 import { GAME_TYPES } from "@/lib/constants";
 import { getGameTypeInfo } from "@/lib/constants";
 import { getStatusLabel } from "@/lib/utils";
+import { extractErrorMessage } from "@/lib/errors";
 import { ErrorBanner, Badge, LoadingSpinner } from "@/components";
 import { useGameWebSocket } from "@/hooks/useGameWebSocket";
 import GameControlBar from "@/components/games/GameControlBar";
@@ -32,14 +33,6 @@ interface Game {
   config: Record<string, unknown>;
   winner_id: string | null;
   created_at: string;
-}
-
-function extractErrorMessage(err: unknown, fallback: string): string {
-  if (typeof err === "object" && err !== null) {
-    const axiosErr = err as { response?: { data?: { detail?: string } } };
-    if (axiosErr.response?.data?.detail) return axiosErr.response.data.detail;
-  }
-  return fallback;
 }
 
 function getGameStatusLabel(status: string): string {

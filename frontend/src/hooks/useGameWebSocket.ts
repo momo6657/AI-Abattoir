@@ -23,7 +23,7 @@ export function useGameWebSocket(gameId: string | null) {
     const envWsBase = process.env.NEXT_PUBLIC_WS_URL;
     const localHostnames = new Set(['localhost', '127.0.0.1', '::1']);
     const isLocalFrontend = typeof window !== 'undefined' && localHostnames.has(window.location.hostname);
-    const wsBase = isLocalFrontend && !envWsBase?.includes('localhost') && !envWsBase?.includes('127.0.0.1')
+    const wsBase = isLocalFrontend && !envWsBase
       ? `${protocol}//${window.location.hostname}:8000`
       : envWsBase || `${protocol}//${window.location.hostname}:8000`;
     const ws = new WebSocket(`${wsBase}/ws/games/${gameId}`);

@@ -10,6 +10,7 @@ function resolveBaseURL(): string {
     const isLocalFrontend = localHostnames.has(window.location.hostname);
     if (isLocalFrontend) {
       if (envUrl?.includes("localhost") || envUrl?.includes("127.0.0.1")) return envUrl;
+      if (envUrl && envUrl.length > 0) return "/api/backend/api";
       return LOCAL_API;
     }
     if (envUrl && envUrl.length > 0) return envUrl;

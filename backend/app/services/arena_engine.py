@@ -1,5 +1,6 @@
 import base64
 import logging
+from uuid import UUID
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,8 +31,9 @@ class ArenaEngine:
         title: Optional[str] = None,
         creator_id: Optional[str] = None,
     ) -> ArenaMatch:
+        normalized_match_type = MatchType(match_type) if isinstance(match_type, str) else match_type
         match = ArenaMatch(
-            match_type=match_type,
+            match_type=normalized_match_type,
             title=title or f"{match_type} Arena Match",
             prompt=prompt,
             config=config or {},
@@ -43,7 +45,7 @@ class ArenaEngine:
         for agent_id in agent_ids:
             participant = ArenaParticipant(
                 match_id=match.id,
-                agent_id=agent_id,
+                agent_id=UUID(agent_id) if isinstance(agent_id, str) else agent_id,
             )
             db.add(participant)
 

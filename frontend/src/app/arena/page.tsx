@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { arenaApi, agentsApi } from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { ErrorBanner, Badge, ProgressBar, Modal, LoadingSpinner } from "@/components";
 
 // ---- Types ----
@@ -25,6 +26,8 @@ interface ArenaMatch {
   image_b_url?: string;
   audio_a_url?: string;
   audio_b_url?: string;
+  participant_a_id?: string;
+  participant_b_id?: string;
   status: string;
   votes_a: number;
   votes_b: number;
@@ -33,11 +36,11 @@ interface ArenaMatch {
 }
 
 const MATCH_TYPES = [
-  { value: "qa", label: "问答 PK", icon: "Q", desc: "同一问题，分别作答，投票选出最佳", color: "bg-blue-600" },
+  { value: "qa_pk", label: "问答 PK", icon: "Q", desc: "同一问题，分别作答，投票选出最佳", color: "bg-blue-600" },
   { value: "code", label: "代码竞赛", icon: "C", desc: "编程题自动评测，运行测试用例评分", color: "bg-green-600" },
   { value: "creative", label: "创意比拼", icon: "A", desc: "同一主题，各自创作，比拼创意", color: "bg-purple-600" },
   { value: "reasoning", label: "推理挑战", icon: "R", desc: "逻辑推理题，考验思维深度", color: "bg-yellow-600" },
-  { value: "image", label: "生图对决", icon: "I", desc: "同一 prompt，各模型生成图片，投票评选", color: "bg-pink-600" },
+  { value: "image_gen", label: "生图对决", icon: "I", desc: "同一 prompt，各模型生成图片，投票评选", color: "bg-pink-600" },
   { value: "voice", label: "配音 PK", icon: "V", desc: "同一文本，各 TTS 模型生成语音，比较效果", color: "bg-red-600" },
 ];
 
@@ -45,12 +48,8 @@ function getMatchTypeInfo(type: string) {
   return MATCH_TYPES.find((t) => t.value === type) || MATCH_TYPES[0];
 }
 
-function extractErrorMessage(err: unknown, fallback: string): string {
-  if (typeof err === "object" && err !== null) {
-    const axiosErr = err as { response?: { data?: { detail?: string } } };
-    if (axiosErr.response?.data?.detail) return axiosErr.response.data.detail;
-  }
-  return fallback;
+function isVoteReady(status: string): boolean {
+  return status === "voting" || status === "completed" || status === "finished";
 }
 
 // ---- Page Component ----
@@ -108,8 +107,7 @@ export default function ArenaPage() {
       const res = await arenaApi.createMatch({
         match_type: selectedType,
         prompt,
-        agent_a_id: agentAId,
-        agent_b_id: agentBId,
+        agent_ids: [agentAId, agentBId],
       });
       const matchId = res.data?.id;
       // Auto-start the match after creation
@@ -170,7 +168,7 @@ export default function ArenaPage() {
                 <span className="text-xs bg-yellow-600 text-white px-2 py-0.5 rounded-full">胜</span>
               )}
             </div>
-            {typeInfo.value === "image" && match.image_a_url ? (
+            {typeInfo.value === "image_gen" && match.image_a_url ? (
               <img src={match.image_a_url} alt="Agent A" className="rounded-lg w-full max-h-64 object-contain bg-surface-overlay" />
             ) : typeInfo.value === "voice" && match.audio_a_url ? (
               <audio controls className="w-full"><source src={match.audio_a_url} /></audio>
@@ -180,7 +178,7 @@ export default function ArenaPage() {
               </div>
             )}
             <div className="mt-3">
-              {!votedMatches.has(match.id) && match.status === "completed" && (
+              {!votedMatches.has(match.id) && isVoteReady(match.status) && (
                 <button
                   onClick={() => handleVote(match.id, "a")}
                   className="w-full btn-primary text-xs"
@@ -199,7 +197,7 @@ export default function ArenaPage() {
                 <span className="text-xs bg-yellow-600 text-white px-2 py-0.5 rounded-full">胜</span>
               )}
             </div>
-            {typeInfo.value === "image" && match.image_b_url ? (
+            {typeInfo.value === "image_gen" && match.image_b_url ? (
               <img src={match.image_b_url} alt="Agent B" className="rounded-lg w-full max-h-64 object-contain bg-surface-overlay" />
             ) : typeInfo.value === "voice" && match.audio_b_url ? (
               <audio controls className="w-full"><source src={match.audio_b_url} /></audio>
@@ -209,7 +207,7 @@ export default function ArenaPage() {
               </div>
             )}
             <div className="mt-3">
-              {!votedMatches.has(match.id) && match.status === "completed" && (
+              {!votedMatches.has(match.id) && isVoteReady(match.status) && (
                 <button
                   onClick={() => handleVote(match.id, "b")}
                   className="w-full btn-primary text-xs"
@@ -392,8 +390,8 @@ export default function ArenaPage() {
                   <span className="text-sm font-medium">{typeInfo.label}</span>
                 </div>
                 <Badge
-                  text={match.status === "active" ? "进行中" : match.status === "completed" ? "已完成" : match.status}
-                  variant={match.status === "active" ? "success" : match.status === "completed" ? "info" : "default"}
+                  text={match.status === "in_progress" ? "进行中" : match.status === "voting" ? "投票中" : match.status === "finished" ? "已完成" : match.status}
+                  variant={match.status === "in_progress" ? "success" : match.status === "voting" || match.status === "finished" ? "info" : "default"}
                   size="sm"
                 />
               </div>
