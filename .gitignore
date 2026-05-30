@@ -32,3 +32,5 @@ redisdata/
 miniodata/
 *.db
 .env.models
+
+.vercel

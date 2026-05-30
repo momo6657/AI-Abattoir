@@ -25,6 +25,7 @@ class ConversationEngine:
     def __init__(self):
         self._running: Dict[str, bool] = {}
         self._cancelled: Dict[str, bool] = {}
+        self._paused: Dict[str, bool] = {}
 
     def cancel(self, conversation_id: UUID):
         """Request graceful cancellation of a running conversation."""
@@ -51,6 +52,7 @@ class ConversationEngine:
         key = str(conversation_id)
         self._running[key] = True
         self._cancelled[key] = False
+        self._paused[key] = False
 
         await ws_manager.broadcast_to_conversation(
             conversation_id, "conversation_started", {"conversation_id": str(conversation_id)}
@@ -366,6 +368,10 @@ class ConversationEngine:
         """Check if the conversation loop should continue."""
         return self._running.get(key, False) and not self._cancelled.get(key, False) and turn < max_turns
 
+    async def _wait_if_paused(self, key: str):
+        while self._running.get(key, False) and self._paused.get(key, False) and not self._cancelled.get(key, False):
+            await asyncio.sleep(0.25)
+
     async def _finalize_conversation(
         self,
         conversation: Conversation,
@@ -400,6 +406,7 @@ class ConversationEngine:
         # Clean up state dicts
         self._running.pop(key, None)
         self._cancelled.pop(key, None)
+        self._paused.pop(key, None)
 
         await ws_manager.broadcast_to_conversation(
             conversation.id, "conversation_ended", {"conversation_id": str(conversation.id)}
@@ -413,6 +420,10 @@ class ConversationEngine:
         key = str(conversation.id)
 
         while self._should_continue(key, turn, max_turns):
+            await self._wait_if_paused(key)
+            if not self._should_continue(key, turn, max_turns):
+                break
+
             current = participants[turn % len(participants)]
             agent = current["agent"]
             profile = current["profile"]
@@ -456,6 +467,10 @@ class ConversationEngine:
         key = str(conversation.id)
 
         while self._should_continue(key, turn, max_turns):
+            await self._wait_if_paused(key)
+            if not self._should_continue(key, turn, max_turns):
+                break
+
             idx = turn % len(participants)
             current = participants[idx]
             agent = current["agent"]
@@ -501,6 +516,10 @@ class ConversationEngine:
         key = str(conversation.id)
 
         while self._should_continue(key, turn, max_turns):
+            await self._wait_if_paused(key)
+            if not self._should_continue(key, turn, max_turns):
+                break
+
             current = participants[turn % len(participants)]
             agent = current["agent"]
             profile = current["profile"]
@@ -546,6 +565,10 @@ class ConversationEngine:
         key = str(conversation.id)
 
         while self._should_continue(key, turn, max_turns):
+            await self._wait_if_paused(key)
+            if not self._should_continue(key, turn, max_turns):
+                break
+
             async with async_session() as db:
                 try:
                     if turn % 2 == 0:
@@ -590,7 +613,11 @@ class ConversationEngine:
         await self._finalize_conversation(conversation, participants, turn)
 
     def pause(self, conversation_id: UUID):
-        self._running[str(conversation_id)] = False
+        key = str(conversation_id)
+        if self._running.get(key, False):
+            self._paused[key] = True
 
     def resume(self, conversation_id: UUID):
-        self._running[str(conversation_id)] = True
+        key = str(conversation_id)
+        if self._running.get(key, False):
+            self._paused[key] = False
