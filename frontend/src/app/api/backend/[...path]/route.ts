@@ -23,6 +23,8 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path?: s
   headers.delete("host");
   headers.delete("connection");
   headers.delete("content-length");
+  headers.delete("origin");
+  headers.delete("referer");
 
   const method = request.method.toUpperCase();
   const body = method === "GET" || method === "HEAD" ? undefined : await request.arrayBuffer();

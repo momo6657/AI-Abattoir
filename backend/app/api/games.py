@@ -19,11 +19,12 @@ _running_games: dict[str, "GameEngine"] = {}
 def _enrich_game_response(game: Game) -> GameResponse:
     """从 Game ORM 对象构建完整 GameResponse"""
     config = game.config or {}
+    status = GameStatus.PAUSED if config.get("paused_at") and game.status == GameStatus.IN_PROGRESS else game.status
     return GameResponse(
         id=str(game.id),
         game_type=game.game_type,
         title=game.title or "",
-        status=game.status,
+        status=status,
         config=config,
         players=config.get("players", []),
         current_turn=config.get("current_turn", 0),
@@ -43,12 +44,15 @@ async def list_games(
     query = select(Game)
     if game_type:
         query = query.where(Game.game_type == game_type)
-    if status:
+    if status and status != GameStatus.PAUSED:
         query = query.where(Game.status == status)
     query = query.order_by(Game.created_at.desc())
     result = await db.execute(query)
     games = result.scalars().all()
-    return [_enrich_game_response(g) for g in games]
+    responses = [_enrich_game_response(g) for g in games]
+    if status == GameStatus.PAUSED:
+        return [game for game in responses if game.status == GameStatus.PAUSED]
+    return responses
 
 
 @router.post("", response_model=GameResponse)
@@ -130,6 +134,11 @@ async def end_game(
         raise HTTPException(status_code=404, detail="游戏不存在")
 
     game.status = GameStatus.FINISHED
+    game.config = {
+        key: value
+        for key, value in (game.config or {}).items()
+        if key != "paused_at"
+    }
     if request and request.winner_id:
         game.config["winner_id"] = str(request.winner_id)
 
@@ -213,8 +222,10 @@ async def pause_game(game_id: str, db: AsyncSession = Depends(get_db)):
     if not game:
         raise HTTPException(status_code=404, detail="游戏不存在")
 
-    game.status = GameStatus.PAUSED
-    game.paused_at = datetime.now(timezone.utc)
+    game.config = {
+        **(game.config or {}),
+        "paused_at": datetime.now(timezone.utc).isoformat(),
+    }
     await db.commit()
     await db.refresh(game)
     return _enrich_game_response(game)
@@ -232,7 +243,11 @@ async def resume_game(game_id: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="游戏不存在")
 
     game.status = GameStatus.IN_PROGRESS
-    game.paused_at = None
+    game.config = {
+        key: value
+        for key, value in (game.config or {}).items()
+        if key != "paused_at"
+    }
     await db.commit()
     await db.refresh(game)
     return _enrich_game_response(game)

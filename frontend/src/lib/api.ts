@@ -2,6 +2,7 @@ import axios from "axios";
 
 const PRODUCTION_API = "https://backend-production-b399b.up.railway.app/api";
 const LOCAL_API = "http://localhost:8000/api";
+const PROXY_API = "/api/backend/api";
 
 function resolveBaseURL(): string {
   const envUrl = process.env.NEXT_PUBLIC_API_URL;
@@ -10,10 +11,10 @@ function resolveBaseURL(): string {
     const isLocalFrontend = localHostnames.has(window.location.hostname);
     if (isLocalFrontend) {
       if (envUrl?.includes("localhost") || envUrl?.includes("127.0.0.1")) return envUrl;
-      if (envUrl && envUrl.length > 0) return "/api/backend/api";
+      if (envUrl && envUrl.length > 0) return PROXY_API;
       return LOCAL_API;
     }
-    if (envUrl && envUrl.length > 0) return envUrl;
+    if (envUrl && envUrl.length > 0) return PROXY_API;
     return window.location.protocol === "https:" ? PRODUCTION_API : LOCAL_API;
   }
   if (envUrl && envUrl.length > 0) return envUrl;
