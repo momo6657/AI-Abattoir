@@ -61,6 +61,37 @@ describe("WerewolfPanel", () => {
     expect(screen.getByText("投票结果")).toBeInTheDocument();
   });
 
+  it("renders day discussion speeches", () => {
+    render(
+      <WerewolfPanel
+        players={players}
+        phase="day"
+        currentTurn={1}
+        discussion={{
+          speeches: [
+            { agent_id: "p1", name: "Alice", content: "我昨晚没有看到直接证据。" },
+            { agent_id: "p2", name: "Bob", content: "我倾向先观察投票。" },
+          ],
+        }}
+      />
+    );
+    expect(screen.getByText("白天讨论")).toBeInTheDocument();
+    expect(screen.getByText(/没有看到直接证据/)).toBeInTheDocument();
+    expect(screen.getByText(/倾向先观察投票/)).toBeInTheDocument();
+  });
+
+  it("renders expanded roles after game over", () => {
+    render(
+      <WerewolfPanel
+        players={[{ agent_id: "p4", name: "Diana", role: "witch", alive: true }]}
+        phase="day"
+        currentTurn={1}
+        gameOver={{ winner: "village", roles: { p4: "witch" } }}
+      />
+    );
+    expect(screen.getByText("女巫")).toBeInTheDocument();
+  });
+
   it("renders game over with werewolf win", () => {
     render(
       <WerewolfPanel

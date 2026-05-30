@@ -16,6 +16,38 @@ interface UseSpectateWebSocketOptions {
   type: "conversation" | "game";
 }
 
+const GAME_EVENT_TYPES = new Set([
+  "game_start",
+  "night_result",
+  "day_discussion",
+  "vote_result",
+  "game_over",
+  "max_turns_reached",
+  "turn_error",
+  "turn_timeout",
+  "error",
+]);
+
+function getGameEventData(message: Record<string, unknown>): Record<string, unknown> {
+  const payload = (message.data || {}) as Record<string, unknown>;
+  const nested = payload.data;
+  return nested && typeof nested === "object" ? nested as Record<string, unknown> : payload;
+}
+
+function formatGameEventContent(type: string, data: Record<string, unknown>): string {
+  if (typeof data.message === "string" && data.message.trim()) return data.message;
+  if (type === "game_start") return `游戏开始：${data.player_count || 0} 名玩家入场`;
+  if (type === "night_result") {
+    const names = Array.isArray(data.death_names) ? data.death_names : data.deaths;
+    return Array.isArray(names) && names.length > 0 ? `昨晚 ${names.join("、")} 死亡` : "昨晚是平安夜";
+  }
+  if (type === "day_discussion") return "白天讨论完成";
+  if (type === "vote_result") return `投票结果：${data.exiled_name || data.exiled || "玩家"} 被放逐`;
+  if (type === "game_over") return data.winner === "werewolf" ? "游戏结束：狼人阵营获胜" : "游戏结束：村民阵营获胜";
+  if (type === "max_turns_reached") return "游戏达到最大回合数";
+  return String(data.message || type);
+}
+
 export function useSpectateWebSocket({ targetId, type }: UseSpectateWebSocketOptions) {
   const wsRef = useRef<WebSocket | null>(null);
   const [messages, setMessages] = useState<SpectateMessage[]>([]);
@@ -43,6 +75,36 @@ export function useSpectateWebSocket({ targetId, type }: UseSpectateWebSocketOpt
       try {
         const msg = JSON.parse(event.data);
         const payload = msg.data || {};
+        if (type === "game" && GAME_EVENT_TYPES.has(msg.type)) {
+          const eventData = getGameEventData(msg);
+          setGameEvents((prev) => [...prev, { type: msg.type, ...eventData, timestamp: msg.timestamp || new Date().toISOString() }]);
+
+          if (msg.type === "day_discussion" && Array.isArray(eventData.speeches)) {
+            setMessages((prev) => [
+              ...prev,
+              ...(eventData.speeches as { agent_id?: string; name?: string; content?: string; role?: string }[]).map((speech) => ({
+                id: crypto.randomUUID(),
+                agent_id: speech.agent_id,
+                agent_name: speech.name || "玩家",
+                role: speech.role || "agent",
+                content: speech.content || "",
+                turn_number: Number(payload.turn || eventData.turn || 0) || undefined,
+                log_type: "speech",
+                created_at: msg.timestamp || new Date().toISOString(),
+              })),
+            ]);
+          } else {
+            setMessages((prev) => [...prev, {
+              id: crypto.randomUUID(),
+              role: "system",
+              content: formatGameEventContent(msg.type, eventData),
+              turn_number: Number(payload.turn || eventData.turn || 0) || undefined,
+              log_type: msg.type === "night_result" || msg.type === "vote_result" ? "elimination" : "system",
+              created_at: msg.timestamp || new Date().toISOString(),
+            }]);
+          }
+          return;
+        }
         switch (msg.type) {
           case "new_message":
             setMessages((prev) => [...prev, {

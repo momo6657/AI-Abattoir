@@ -55,13 +55,26 @@ def _apply_game_event_to_config(config: dict, event: dict, engine: "GameEngine")
     if event_type == "game_start":
         config["phase"] = "night"
         config["game_started_at"] = datetime.now(timezone.utc).isoformat()
+        config["players"] = data.get("players", config.get("players", []))
+        config["roles_hidden"] = data.get("roles_hidden", True)
+        config["role_names"] = data.get("role_names", config.get("role_names", {}))
     elif event_type == "night_result":
         config["phase"] = data.get("phase", "day")
-        config["last_deaths"] = data.get("deaths", [])
+        config["last_deaths"] = data.get("death_names", data.get("deaths", []))
+        config["last_death_details"] = data.get("deaths_detail", [])
         config["night_result"] = data
+        if data.get("players"):
+            config["players"] = data["players"]
+    elif event_type == "day_discussion":
+        config["phase"] = data.get("phase", "day")
+        config["discussion"] = data
+        if data.get("players"):
+            config["players"] = data["players"]
     elif event_type == "vote_result":
         config["phase"] = "night"
         config["vote_result"] = data
+        if data.get("players"):
+            config["players"] = data["players"]
     elif event_type in {"turn_result", "invalid_move"}:
         board = data.get("board")
         if board:
@@ -124,6 +137,11 @@ def _apply_game_event_to_config(config: dict, event: dict, engine: "GameEngine")
         config["scores"] = data
     elif event_type == "game_over":
         config["game_over"] = data
+        config["phase"] = "day"
+        if data.get("players"):
+            config["players"] = data["players"]
+        if data.get("role_names"):
+            config["role_names"] = data["role_names"]
         winner_id = data.get("winner_id") or data.get("winner")
         if winner_id:
             config["winner_id"] = winner_id
@@ -382,9 +400,8 @@ async def resume_game(game_id: str, db: AsyncSession = Depends(get_db)):
 
 async def _run_game_background(game_id: str, engine: "GameEngine"):
     """后台运行游戏，通过 WebSocket 推送事件"""
-    from app.services.spectator_service import SpectatorService
+    from app.services.spectator_service import spectator_service
 
-    spectator_service = SpectatorService()
     game_uuid = UUID(game_id)
 
     async for event in engine.auto_run():

@@ -1,4 +1,5 @@
 import pytest
+from types import SimpleNamespace
 
 from app.api.games import _apply_game_event_to_config
 from app.models.game import GameType
@@ -110,6 +111,11 @@ class TestWerewolfRules:
         werewolves = [p for p, r in roles.items() if r == "werewolf"]
         assert len(werewolves) >= 1
 
+    def test_assign_roles_four_player_has_core_special_roles(self):
+        rules = WerewolfRules()
+        roles = set(rules.assign_roles([f"p{i}" for i in range(4)]).values())
+        assert {"werewolf", "seer", "guard", "villager"} == roles
+
     def test_guard_cannot_self_guard(self):
         rules = WerewolfRules()
         assert rules.is_valid_guard_target("guard_1", "guard_1") is False
@@ -183,6 +189,30 @@ class TestGameEngineRuntime:
 
         assert [event["type"] for event in events] == ["error"]
 
+    @pytest.mark.asyncio
+    async def test_werewolf_has_discussion_and_readable_names(self):
+        agents = [
+            SimpleNamespace(id=f"p{i}", name=f"玩家{i}", model_id=None)
+            for i in range(4)
+        ]
+        engine = GameEngine(
+            game_type="werewolf",
+            agent_ids=[str(a.id) for a in agents],
+            config={"max_turns": 1, "turn_delay": 0},
+        )
+        engine.agents = agents
+
+        events = [event async for event in engine.auto_run()]
+        event_types = [event["type"] for event in events]
+
+        assert "day_discussion" in event_types
+        night_result = next(event for event in events if event["type"] == "night_result")
+        assert "death_names" in night_result["data"]
+        assert "players" in night_result["data"]
+        discussion = next(event for event in events if event["type"] == "day_discussion")
+        assert discussion["data"]["speeches"]
+        assert discussion["data"]["speeches"][0]["name"].startswith("玩家")
+
     def test_game_event_config_snapshot_includes_adventure_state(self):
         engine = GameEngine(
             game_type="text_adventure",
@@ -209,6 +239,32 @@ class TestGameEngineRuntime:
         assert config["scene"] == "洞口有微光。"
         assert config["adventure_state"]["hp"] == 100
         assert config["events"][0]["type"] == "scene"
+
+    def test_game_event_config_snapshot_includes_werewolf_discussion(self):
+        engine = GameEngine(
+            game_type="werewolf",
+            agent_ids=["p1", "p2"],
+            config={"max_turns": 1},
+        )
+        engine.current_turn = 1
+
+        config = _apply_game_event_to_config(
+            {"players": []},
+            {
+                "type": "day_discussion",
+                "turn": 1,
+                "data": {
+                    "phase": "day",
+                    "speeches": [{"agent_id": "p1", "name": "玩家1", "content": "我先发言。"}],
+                    "players": [{"agent_id": "p1", "name": "玩家1", "alive": True}],
+                },
+            },
+            engine,
+        )
+
+        assert config["phase"] == "day"
+        assert config["discussion"]["speeches"][0]["name"] == "玩家1"
+        assert config["players"][0]["name"] == "玩家1"
 
 
 # ========== Schema ==========

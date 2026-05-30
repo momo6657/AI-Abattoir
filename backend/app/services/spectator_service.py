@@ -16,6 +16,7 @@ from app.core.database import async_session
 from app.models.conversation import Conversation, Message
 from app.models.game import Game, GamePlayer
 from app.models.agent import Agent
+from app.services.game_engine import WEREWOLF_ROLE_NAMES
 from app.websocket.manager import manager as ws_manager
 
 logger = logging.getLogger(__name__)
@@ -192,6 +193,66 @@ class SpectatorService:
             "created_at": conv.created_at.isoformat() if conv.created_at else None,
         }
 
+    def _format_game_event_message(self, event: dict) -> tuple[str, str]:
+        """把游戏事件转成回放和观战能读懂的中文。"""
+        event_type = event.get("type", "unknown")
+        data = event.get("data") or {}
+        if data.get("message"):
+            log_type = "elimination" if event_type in {"night_result", "vote_result"} and (
+                data.get("deaths") or data.get("exiled")
+            ) else "system"
+            return str(data["message"]), log_type
+
+        if event_type == "game_start":
+            return f"游戏开始：{data.get('player_count', 0)} 名玩家入场。", "system"
+        if event_type == "day_discussion":
+            speeches = data.get("speeches") or []
+            if speeches:
+                lines = [f"{s.get('name', '玩家')}：{s.get('content', '')}" for s in speeches]
+                return "白天讨论\n" + "\n".join(lines), "system"
+            return "白天讨论完成。", "system"
+        if event_type == "night_result":
+            names = data.get("death_names") or data.get("deaths") or []
+            return f"昨晚 {'、'.join(names)} 死亡。" if names else "昨晚是平安夜。", "elimination" if names else "system"
+        if event_type == "vote_result":
+            exiled = data.get("exiled_name") or data.get("exiled") or "玩家"
+            return f"投票结果：{exiled} 被放逐。", "elimination"
+        if event_type == "game_over":
+            winner = data.get("winner")
+            return "游戏结束：狼人阵营获胜。" if winner == "werewolf" else "游戏结束：村民阵营获胜。", "system"
+        return str(event_type), "system"
+
+    def _messages_from_game_events(self, events: list[dict]) -> list[dict]:
+        messages: list[dict] = []
+        for idx, event in enumerate(events):
+            data = event.get("data") or {}
+            if event.get("type") == "day_discussion" and data.get("speeches"):
+                for speech in data["speeches"]:
+                    messages.append({
+                        "id": f"{event.get('type')}-{event.get('turn', 0)}-{speech.get('agent_id', idx)}",
+                        "agent_id": speech.get("agent_id"),
+                        "agent_name": speech.get("name") or "玩家",
+                        "role": "agent",
+                        "content": speech.get("content") or "",
+                        "turn_number": event.get("turn"),
+                        "log_type": "speech",
+                        "created_at": event.get("timestamp"),
+                    })
+                continue
+
+            content, log_type = self._format_game_event_message(event)
+            messages.append({
+                "id": f"{event.get('type')}-{event.get('turn', 0)}-{idx}",
+                "agent_id": None,
+                "agent_name": "系统",
+                "role": "system",
+                "content": content,
+                "turn_number": event.get("turn"),
+                "log_type": log_type,
+                "created_at": event.get("timestamp"),
+            })
+        return messages
+
     async def replay_game(
         self, db: AsyncSession, game_id: UUID
     ) -> Dict[str, Any]:
@@ -200,6 +261,8 @@ class SpectatorService:
         game = result.scalar_one_or_none()
         if not game:
             raise ValueError("Game not found")
+
+        config = game.config or {}
 
         # 加载玩家
         players_result = await db.execute(
@@ -220,18 +283,40 @@ class SpectatorService:
             player_list.append({
                 "agent_id": str(p.agent_id),
                 "agent_name": agent.name if agent else "Unknown",
+                "name": agent.name if agent else "Unknown",
                 "role": p.role,
+                "role_name": WEREWOLF_ROLE_NAMES.get(p.role or "", p.role),
                 "is_alive": p.is_alive,
+                "alive": p.is_alive,
                 "config": p.config or {},
             })
+
+        if not player_list:
+            for player in config.get("players", []) or []:
+                role = player.get("role")
+                player_list.append({
+                    "agent_id": str(player.get("agent_id") or player.get("id") or ""),
+                    "agent_name": player.get("agent_name") or player.get("name") or "Unknown",
+                    "name": player.get("name") or player.get("agent_name") or "Unknown",
+                    "role": role,
+                    "role_name": player.get("role_name") or WEREWOLF_ROLE_NAMES.get(role or "", role),
+                    "is_alive": player.get("alive", player.get("is_alive", True)),
+                    "alive": player.get("alive", player.get("is_alive", True)),
+                    "config": player.get("config") or {},
+                })
+
+        events = config.get("events") or []
+        messages = self._messages_from_game_events(events)
 
         return {
             "game_id": str(game.id),
             "game_type": game.game_type.value if game.game_type else None,
             "title": game.title,
             "status": game.status.value if game.status else None,
-            "state": game.state or {},
+            "state": config or game.state or {},
             "players": player_list,
+            "messages": messages,
+            "message_count": len(messages),
             "winner_id": str(game.winner_id) if game.winner_id else None,
             "created_at": game.created_at.isoformat() if game.created_at else None,
             "updated_at": game.updated_at.isoformat() if game.updated_at else None,

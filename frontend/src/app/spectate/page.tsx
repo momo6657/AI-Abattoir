@@ -16,7 +16,15 @@ interface ReplayData {
   players?: GamePlayer[]; state?: Record<string, unknown>; created_at?: string;
 }
 const MODE_LABELS: Record<string, string> = { free: "自由对话", debate: "辩论", relay: "接力", interview: "采访" };
-const EVENT_LABELS: Record<string, string> = { vote_result: "投票结果", game_started: "游戏开始", game_ended: "游戏结束" };
+const EVENT_LABELS: Record<string, string> = {
+  game_start: "游戏开始",
+  night_result: "夜晚结算",
+  day_discussion: "白天讨论",
+  vote_result: "投票结果",
+  game_over: "游戏结束",
+  game_started: "游戏开始",
+  game_ended: "游戏结束",
+};
 const BackBtn = ({ onClick }: { onClick: () => void }) => (
   <button onClick={onClick} className="btn-ghost text-sm mb-3 flex items-center gap-1"><span>&larr;</span> 返回列表</button>
 );
@@ -32,9 +40,15 @@ function buildParticipants(messages: SpectateMessage[]) {
 }
 function getEventLabel(evt: Record<string, unknown>): string {
   const t = evt.type as string;
+  if (typeof evt.message === "string") return evt.message;
   if (t === "phase_change") return `阶段: ${evt.phase || "切换"}`;
   if (t === "elimination") return `${evt.agent_name || "玩家"} 被淘汰`;
   if (t === "turn_start") return `回合 ${evt.turn || "?"} 开始`;
+  if (t === "night_result") {
+    const names = Array.isArray(evt.death_names) ? evt.death_names : [];
+    return names.length > 0 ? `昨晚 ${names.join("、")} 死亡` : "昨晚是平安夜";
+  }
+  if (t === "vote_result") return `投票：${evt.exiled_name || evt.exiled || "玩家"} 被放逐`;
   return EVENT_LABELS[t] || String(t);
 }
 
@@ -65,12 +79,14 @@ function LiveSpectateView({
   const { messages, connected, thinkingAgent, gameEvents, disconnect } = useSpectateWebSocket({ targetId, type });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [title, setTitle] = useState<string>("");
+  const [targetPlayers, setTargetPlayers] = useState<GamePlayer[]>([]);
 
   useEffect(() => {
     (async () => {
       try {
         const r = type === "conversation" ? await conversationsApi.get(targetId) : await gamesApi.get(targetId);
         setTitle(r.data.title || (type === "conversation" ? "对话" : "游戏"));
+        setTargetPlayers(type === "game" ? (r.data.players || []) : []);
       } catch { setTitle(type === "conversation" ? "对话" : "游戏"); }
     })();
   }, [targetId, type]);
@@ -78,7 +94,12 @@ function LiveSpectateView({
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
   const handleBack = () => { disconnect(); onBack(); };
 
-  const participants = useMemo(() => buildParticipants(messages), [messages]);
+  const participants = useMemo(() => {
+    if (type === "game" && targetPlayers.length > 0) {
+      return targetPlayers.map((p) => ({ id: p.agent_id, name: p.agent_name || p.name || "玩家" }));
+    }
+    return buildParticipants(messages);
+  }, [messages, targetPlayers, type]);
 
   return (
     <div className="flex flex-col md:flex-row gap-4" style={{ height: "calc(100vh - 180px)" }}>
@@ -174,7 +195,12 @@ function ReplayView({
   const playTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const messages = replayData?.messages || [];
-  const participants = useMemo(() => buildParticipants(messages), [messages]);
+  const participants = useMemo(() => {
+    if (type === "game" && replayData?.players?.length) {
+      return replayData.players.map((p) => ({ id: p.agent_id, name: p.agent_name || p.name || "玩家" }));
+    }
+    return buildParticipants(messages);
+  }, [messages, replayData?.players, type]);
 
   useEffect(() => {
     const loadReplay = async () => {
@@ -468,7 +494,7 @@ export default function SpectatePage() {
                       <Badge text={getStatusLabel(game.status)} variant={getStatusBadgeVariant(game.status)} />
                     </div>
                     <p className="text-xs text-gray-400 mb-3">
-                      {ti.label}{" . "}{game.players?.length || 0} 人{" . 回合 "}{game.current_turn}/{game.max_turns}{" . "}{formatDate(game.created_at)}
+                      {ti.label}{" · "}{game.players?.length || 0} 人{" · 回合 "}{game.current_turn}/{game.max_turns}{" · "}{formatDate(game.created_at)}
                     </p>
                     <div className="flex items-center justify-between">
                       <div className="flex gap-1">

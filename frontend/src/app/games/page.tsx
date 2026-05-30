@@ -35,8 +35,73 @@ interface Game {
   created_at: string;
 }
 
+type GamePlayer = { agent_id: string; name: string; role?: string; role_name?: string; alive?: boolean };
+type GameEventLike = { type: string; turn?: number; data?: Record<string, unknown> };
+
 function getGameStatusLabel(status: string): string {
   return getStatusLabel(status);
+}
+
+function getNestedEventData(evt: GameEventLike): Record<string, unknown> {
+  const data = evt.data || {};
+  if (
+    data &&
+    typeof data === "object" &&
+    "data" in data &&
+    data.data &&
+    typeof data.data === "object"
+  ) {
+    return data.data as Record<string, unknown>;
+  }
+  return data;
+}
+
+function formatGameEvent(evt: GameEventLike, players: GamePlayer[]): string {
+  const data = getNestedEventData(evt);
+  const playerName = (id: unknown) => {
+    const key = String(id || "");
+    return players.find(p => p.agent_id === key)?.name || key.slice(0, 8) || "玩家";
+  };
+
+  if (typeof data.message === "string" && data.message.trim()) return data.message;
+
+  if (evt.type === "game_start") return `游戏开始：${data.player_count || players.length || 0} 名玩家入场`;
+  if (evt.type === "night_result") {
+    const names = Array.isArray(data.death_names) ? data.death_names : data.deaths;
+    if (Array.isArray(names) && names.length > 0) return `昨晚 ${names.map(playerName).join("、")} 死亡`;
+    return "昨晚是平安夜";
+  }
+  if (evt.type === "day_discussion") {
+    const speeches = Array.isArray(data.speeches) ? data.speeches as { name?: string }[] : [];
+    return speeches.length > 0
+      ? `白天讨论：${speeches.map(s => s.name || "玩家").join("、")} 已发言`
+      : "白天讨论完成";
+  }
+  if (evt.type === "vote_result") {
+    const exiled = data.exiled_name || playerName(data.exiled);
+    return `投票结果：${exiled} 被放逐`;
+  }
+  if (evt.type === "game_over") return data.winner === "werewolf" ? "游戏结束：狼人阵营获胜" : "游戏结束：村民阵营获胜";
+  if (evt.type === "paused") return "游戏已暂停";
+  if (evt.type === "resumed") return "游戏已恢复";
+  if (evt.type === "error" || evt.type === "turn_error") return String(data.message || "游戏运行出错");
+  return evt.type;
+}
+
+function getGameEventLabel(type: string): string {
+  const labels: Record<string, string> = {
+    game_start: "开始",
+    night_result: "夜晚",
+    day_discussion: "讨论",
+    vote_result: "投票",
+    game_over: "结束",
+    max_turns_reached: "回合上限",
+    error: "错误",
+    turn_error: "错误",
+    paused: "暂停",
+    resumed: "恢复",
+  };
+  return labels[type] || type;
 }
 
 // ---- Page Component ----
@@ -211,6 +276,7 @@ export default function GamesPage() {
   const liveEvents = events.filter(e => e.type !== "game_state" && e.type !== "pong");
   const storedEvents = Array.isArray(gameConfig.events) ? gameConfig.events as typeof liveEvents : [];
   const gameEventsList = liveEvents.length > 0 ? liveEvents : storedEvents;
+  const activePlayers = (Array.isArray(gameConfig.players) ? gameConfig.players : activeGame?.players || []) as GamePlayer[];
 
   return (
     <div className="animate-fade-in">
@@ -396,15 +462,17 @@ export default function GamesPage() {
               {/* Werewolf */}
               {activeGame.game_type === "werewolf" && (
                 <WerewolfPanel
-                  players={(activeGame.players || []).map(p => ({
+                  players={activePlayers.map(p => ({
                     ...p,
                     alive: p.alive ?? true,
                   }))}
                   phase={gameConfig.phase as 'night' | 'day' || 'night'}
                   currentTurn={activeGame.current_turn}
                   lastDeath={gameConfig.last_deaths as string[]}
-                  voteResult={gameConfig.vote_result as { votes: Record<string, string>; vote_counts: Record<string, number>; exiled: string }}
-                  gameOver={gameConfig.game_over as { winner: string; roles: Record<string, string> } | null}
+                  discussion={gameConfig.discussion as { speeches?: { agent_id: string; name: string; content: string; role?: string; role_name?: string }[]; summary?: string }}
+                  voteResult={gameConfig.vote_result as { votes: Record<string, string>; vote_counts: Record<string, number>; vote_count_names?: Record<string, number>; vote_details?: { voter_id: string; voter_name: string; target_id: string; target_name: string }[]; exiled: string; exiled_name?: string; exiled_role_name?: string; message?: string }}
+                  gameOver={gameConfig.game_over as { winner: string; roles: Record<string, string>; role_names?: Record<string, string>; message?: string } | null}
+                  roleNames={gameConfig.role_names as Record<string, string>}
                 />
               )}
 
@@ -445,19 +513,19 @@ export default function GamesPage() {
                 <h4 className="text-xs text-gray-400 mb-2">事件日志</h4>
                 <div className="space-y-1 max-h-48 overflow-y-auto">
                   {gameEventsList.map((evt, i) => {
-                    const eventData = (evt.data?.data as Record<string, unknown> | undefined) || evt.data;
                     return (
                       <div key={i} className={`text-sm rounded-xl px-3 py-2 ${
                         evt.type === "game_over" ? "bg-green-900/30 text-green-300" :
                         evt.type === "night_result" ? "bg-gray-800 text-gray-200" :
+                        evt.type === "day_discussion" ? "bg-blue-900/30 text-blue-200" :
                         evt.type === "vote_result" ? "bg-yellow-900/30 text-yellow-200" :
                         evt.type === "error" || evt.type === "turn_error" ? "bg-red-900/30 text-red-300" :
                         evt.type === "paused" ? "bg-yellow-900/20 text-yellow-300" :
                         evt.type === "resumed" ? "bg-green-900/20 text-green-300" :
                         "bg-surface-overlay text-gray-200"
                       }`}>
-                        <span className="font-medium text-accent-hover">{evt.type}</span>
-                        {eventData && <span className="text-gray-300 ml-2">{JSON.stringify(eventData).slice(0, 120)}</span>}
+                        <span className="font-medium text-accent-hover">{getGameEventLabel(evt.type)}</span>
+                        <span className="text-gray-300 ml-2">{formatGameEvent(evt as GameEventLike, activePlayers)}</span>
                       </div>
                     );
                   })}

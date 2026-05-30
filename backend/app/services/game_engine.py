@@ -25,6 +25,15 @@ TERMINAL_EVENT_TYPES = {
 
 ERROR_EVENT_TYPES = {"error", "turn_error", "turn_timeout"}
 
+WEREWOLF_ROLE_NAMES = {
+    "werewolf": "狼人",
+    "seer": "预言家",
+    "guard": "守卫",
+    "witch": "女巫",
+    "hunter": "猎人",
+    "villager": "村民",
+}
+
 
 # ==================== 辩题库 ====================
 
@@ -238,19 +247,29 @@ class ChessRules:
 
 class WerewolfRules:
     def assign_roles(self, player_ids: list[str]) -> dict[str, str]:
-        """随机分配角色"""
+        """随机分配角色。小局也保留核心神职，避免只有村民和狼人。"""
         n = len(player_ids)
-        werewolf_count = max(1, n // 4)
-        seer_count = min(1, n // 5) if n >= 5 else 0
-        guard_count = min(1, n // 5) if n >= 6 else 0
-        villager_count = n - werewolf_count - seer_count - guard_count
+        if n <= 0:
+            return {}
 
-        roles = (
-            ["werewolf"] * werewolf_count
-            + ["seer"] * seer_count
-            + ["guard"] * guard_count
-            + ["villager"] * villager_count
-        )
+        werewolf_count = 1 if n < 7 else max(2, n // 4)
+        roles = ["werewolf"] * min(werewolf_count, n)
+
+        specials: list[str] = []
+        if n >= 4:
+            specials.extend(["seer", "guard"])
+        elif n >= 3:
+            specials.append("seer")
+        if n >= 5:
+            specials.append("witch")
+        if n >= 6:
+            specials.append("hunter")
+
+        for role in specials:
+            if len(roles) < n:
+                roles.append(role)
+
+        roles.extend(["villager"] * (n - len(roles)))
         random.shuffle(roles)
         return dict(zip(player_ids, roles))
 
@@ -497,10 +516,20 @@ class GameEngine:
             return "VOTE: "
         if "KILL:" in prompt:
             return "KILL: "
+        if "TARGET:" in prompt:
+            return "TARGET: "
         if "GUARD:" in prompt:
             return "GUARD: "
         if "CHECK:" in prompt:
             return "CHECK: "
+        if "SAVE:" in prompt:
+            return "SAVE: NO"
+        if "POISON:" in prompt:
+            return "POISON: NONE"
+        if "SHOOT:" in prompt:
+            return "SHOOT: NONE"
+        if "SPEAK:" in prompt:
+            return "SPEAK: 我会结合昨晚信息、发言逻辑和投票动机谨慎判断。"
         return "我会采取稳妥策略，先观察局势，再做下一步行动。"
 
     def _extract_target_id(self, response: str, candidates: list[str]) -> str | None:
@@ -520,6 +549,64 @@ class GameEngine:
                     return candidate
         # 回退：随机选择
         return random.choice(candidates) if candidates else None
+
+    def _player_name_map(self, agents: list, player_ids: list[str]) -> dict[str, str]:
+        """构建玩家 ID 到可读名称的映射。"""
+        names: dict[str, str] = {}
+        for player in self.config.get("players", []) or []:
+            player_id = str(player.get("agent_id") or player.get("id") or "")
+            if player_id:
+                names[player_id] = str(player.get("name") or player.get("agent_name") or player_id[:8])
+        for agent in agents or []:
+            names[str(agent.id)] = getattr(agent, "name", None) or str(agent.id)[:8]
+        for player_id in player_ids:
+            names.setdefault(player_id, player_id[:8])
+        return names
+
+    def _player_snapshot(
+        self,
+        player_ids: list[str],
+        roles: dict[str, str],
+        alive_players: dict[str, str],
+        player_names: dict[str, str],
+    ) -> list[dict[str, Any]]:
+        """生成前端和回放可直接消费的玩家快照。"""
+        return [
+            {
+                "agent_id": player_id,
+                "name": player_names.get(player_id, player_id[:8]),
+                "role": roles.get(player_id, "unknown"),
+                "role_name": WEREWOLF_ROLE_NAMES.get(roles.get(player_id, ""), roles.get(player_id, "unknown")),
+                "alive": player_id in alive_players,
+            }
+            for player_id in player_ids
+        ]
+
+    def _format_candidates(self, candidates: list[str], player_names: dict[str, str]) -> str:
+        return "；".join(f"{player_names.get(player_id, player_id[:8])}({player_id})" for player_id in candidates)
+
+    def _target_details(
+        self,
+        target_ids: list[str],
+        roles: dict[str, str],
+        player_names: dict[str, str],
+        reason: str = "",
+    ) -> list[dict[str, str]]:
+        return [
+            {
+                "agent_id": player_id,
+                "name": player_names.get(player_id, player_id[:8]),
+                "role": roles.get(player_id, "unknown"),
+                "role_name": WEREWOLF_ROLE_NAMES.get(roles.get(player_id, ""), roles.get(player_id, "unknown")),
+                "reason": reason,
+            }
+            for player_id in target_ids
+        ]
+
+    def _parse_speech(self, response: str) -> str:
+        match = re.search(r"SPEAK:\s*(.+)", response or "", re.IGNORECASE | re.DOTALL)
+        content = match.group(1).strip() if match else (response or "").strip()
+        return content[:280] or "我会继续观察局势，结合发言和投票再做判断。"
 
     # ==================== 国际象棋 ====================
 
@@ -674,11 +761,19 @@ Example: MOVE: e2 e4"""
         player_ids = [str(a.id) for a in agents] if agents else self.agent_ids
         roles = rules.assign_roles(player_ids)
         alive_players: dict[str, str] = dict(roles)
+        player_names = self._player_name_map(agents, player_ids)
+        role_state = {"witch_antidote": True, "witch_poison": True}
 
         yield {
             "type": "game_start",
             "turn": 0,
-            "data": {"player_count": len(player_ids), "roles_hidden": True},
+            "data": {
+                "player_count": len(player_ids),
+                "roles_hidden": True,
+                "role_names": WEREWOLF_ROLE_NAMES,
+                "players": self._player_snapshot(player_ids, roles, alive_players, player_names),
+                "message": f"狼人杀开始：{len(player_ids)} 名玩家入场。",
+            },
         }
 
         for turn in range(1, self.max_turns + 1):
@@ -695,6 +790,15 @@ Example: MOVE: e2 e4"""
                 break
 
             kill_target = None
+            night_actions: dict[str, Any] = {
+                "werewolf_discussion": [],
+                "kill_target": None,
+                "guard_target": None,
+                "seer_check": None,
+                "witch_save": False,
+                "witch_poison_target": None,
+                "hunter_shot": None,
+            }
 
             if len(werewolf_ids) > 1:
                 # 多狼人讨论
@@ -702,9 +806,14 @@ Example: MOVE: e2 e4"""
                 for ww_id in werewolf_ids:
                     resp = await self._call_llm(
                         ww_id,
-                        f"你是狼人。存活非狼人：{non_werewolf_ids}\n讨论：{discussion}\n击杀谁？回复 TARGET: player_id",
+                        f"你是狼人。存活非狼人：{self._format_candidates(non_werewolf_ids, player_names)}\n讨论：{discussion}\n击杀谁？回复 TARGET: player_id",
                     )
-                    discussion.append(f"狼人{ww_id[:8]}: {resp}")
+                    discussion.append(f"{player_names.get(ww_id, ww_id[:8])}: {resp}")
+                    night_actions["werewolf_discussion"].append({
+                        "agent_id": ww_id,
+                        "name": player_names.get(ww_id, ww_id[:8]),
+                        "content": resp,
+                    })
 
                 # 最后一只狼人做决策
                 last_resp = await self._call_llm(
@@ -716,9 +825,13 @@ Example: MOVE: e2 e4"""
                 # 单狼人
                 resp = await self._call_llm(
                     werewolf_ids[0],
-                    f"你是狼人。可击杀目标：{non_werewolf_ids}\n回复 TARGET: player_id",
+                    f"你是狼人。可击杀目标：{self._format_candidates(non_werewolf_ids, player_names)}\n回复 TARGET: player_id",
                 )
                 kill_target = self._extract_target_id(resp, non_werewolf_ids) or random.choice(non_werewolf_ids)
+            night_actions["kill_target"] = {
+                "agent_id": kill_target,
+                "name": player_names.get(kill_target, kill_target[:8]) if kill_target else None,
+            }
 
             # 守卫守护
             guard_id = next((p for p, r in alive_players.items() if r == "guard"), None)
@@ -728,9 +841,13 @@ Example: MOVE: e2 e4"""
                 if candidates:
                     resp = await self._call_llm(
                         guard_id,
-                        f"你是守卫。守护对象（不能守护自己）：{candidates}\n回复 GUARD: player_id",
+                        f"你是守卫。守护对象（不能守护自己）：{self._format_candidates(candidates, player_names)}\n回复 GUARD: player_id",
                     )
                     guard_target = self._extract_target_id(resp, candidates) or random.choice(candidates)
+                    night_actions["guard_target"] = {
+                        "agent_id": guard_target,
+                        "name": player_names.get(guard_target, guard_target[:8]),
+                    }
 
             # 预言家查验
             seer_id = next((p for p, r in alive_players.items() if r == "seer"), None)
@@ -739,20 +856,83 @@ Example: MOVE: e2 e4"""
                 if candidates:
                     resp = await self._call_llm(
                         seer_id,
-                        f"你是预言家。查验对象：{candidates}\n回复 CHECK: player_id",
+                        f"你是预言家。查验对象：{self._format_candidates(candidates, player_names)}\n回复 CHECK: player_id",
                     )
                     check_target = self._extract_target_id(resp, candidates) or random.choice(candidates)
-                    # 预言家获得结果（但不公开）
-                    _ = alive_players.get(check_target) == "werewolf"
+                    night_actions["seer_check"] = {
+                        "seer_id": seer_id,
+                        "seer_name": player_names.get(seer_id, seer_id[:8]),
+                        "target_id": check_target,
+                        "target_name": player_names.get(check_target, check_target[:8]),
+                        "is_werewolf": alive_players.get(check_target) == "werewolf",
+                    }
+
+            # 女巫解药/毒药
+            witch_id = next((p for p, r in alive_players.items() if r == "witch"), None)
+            witch_saved = False
+            poison_target = None
+            if witch_id:
+                if kill_target and role_state["witch_antidote"]:
+                    resp = await self._call_llm(
+                        witch_id,
+                        f"你是女巫。今晚被袭击的是 {player_names.get(kill_target, kill_target[:8])}({kill_target})。是否使用解药？回复 SAVE: YES 或 SAVE: NO",
+                    )
+                    witch_saved = "YES" in resp.upper() or "是" in resp or "救" in resp
+                    if witch_saved:
+                        role_state["witch_antidote"] = False
+                        night_actions["witch_save"] = True
+                if role_state["witch_poison"]:
+                    candidates = [p for p in alive_players if p != witch_id and p != kill_target]
+                    if candidates:
+                        resp = await self._call_llm(
+                            witch_id,
+                            f"你是女巫。可毒杀对象：{self._format_candidates(candidates, player_names)}。不使用请回复 POISON: NONE；使用请回复 POISON: player_id",
+                        )
+                        if "NONE" not in resp.upper() and "不" not in resp:
+                            poison_target = self._extract_target_id(resp, candidates)
+                        if poison_target:
+                            role_state["witch_poison"] = False
+                            night_actions["witch_poison_target"] = {
+                                "agent_id": poison_target,
+                                "name": player_names.get(poison_target, poison_target[:8]),
+                            }
 
             # 夜晚结算
             night_deaths = []
-            if kill_target and kill_target != guard_target:
+            death_reasons: dict[str, str] = {}
+            if kill_target and kill_target != guard_target and not witch_saved:
                 night_deaths.append(kill_target)
-                del alive_players[kill_target]
+                death_reasons[kill_target] = "werewolf_kill"
+            if poison_target and poison_target not in night_deaths:
+                night_deaths.append(poison_target)
+                death_reasons[poison_target] = "witch_poison"
+
+            for dead_id in night_deaths:
+                alive_players.pop(dead_id, None)
+
+            hunter_deaths = [p for p in night_deaths if roles.get(p) == "hunter"]
+            for hunter_id in hunter_deaths:
+                candidates = [p for p in alive_players if p != hunter_id]
+                if candidates:
+                    resp = await self._call_llm(
+                        hunter_id,
+                        f"你是猎人，死亡时可以开枪带走一人。候选人：{self._format_candidates(candidates, player_names)}。不开枪回复 SHOOT: NONE；开枪回复 SHOOT: player_id",
+                    )
+                    shot_target = None if "NONE" in resp.upper() or "不" in resp else self._extract_target_id(resp, candidates)
+                    if shot_target:
+                        alive_players.pop(shot_target, None)
+                        night_deaths.append(shot_target)
+                        death_reasons[shot_target] = "hunter_shot"
+                        night_actions["hunter_shot"] = {
+                            "hunter_id": hunter_id,
+                            "hunter_name": player_names.get(hunter_id, hunter_id[:8]),
+                            "target_id": shot_target,
+                            "target_name": player_names.get(shot_target, shot_target[:8]),
+                        }
 
             # === 白天阶段 ===
-            day_message = f"昨晚 {'、'.join(night_deaths[:8] + ['...'] if len(night_deaths) > 8 else night_deaths)} 死亡。" if night_deaths else "昨晚是平安夜。"
+            death_names = [player_names.get(dead_id, dead_id[:8]) for dead_id in night_deaths]
+            day_message = f"昨晚 {'、'.join(death_names)} 死亡。" if death_names else "昨晚是平安夜。"
 
             yield {
                 "type": "night_result",
@@ -760,27 +940,85 @@ Example: MOVE: e2 e4"""
                 "data": {
                     "phase": "day",
                     "deaths": night_deaths,
+                    "death_names": death_names,
+                    "deaths_detail": [
+                        {
+                            **detail,
+                            "reason": death_reasons.get(detail["agent_id"], "unknown"),
+                        }
+                        for detail in self._target_details(night_deaths, roles, player_names)
+                    ],
+                    "night_actions": night_actions,
                     "message": day_message,
                     "alive_count": len(alive_players),
+                    "players": self._player_snapshot(player_ids, roles, alive_players, player_names),
                 },
             }
 
             # 检查胜负
             win = rules.check_win_condition(alive_players)
             if win:
-                yield {"type": "game_over", "turn": turn, "data": {"winner": win, "roles": roles}}
+                yield {
+                    "type": "game_over",
+                    "turn": turn,
+                    "data": {
+                        "winner": win,
+                        "roles": roles,
+                        "role_names": WEREWOLF_ROLE_NAMES,
+                        "players": self._player_snapshot(player_ids, roles, alive_players, player_names),
+                        "message": "村民阵营获胜。" if win == "village" else "狼人阵营获胜。",
+                    },
+                }
                 break
+
+            # 白天讨论
+            alive_list = list(alive_players.keys())
+            speeches = []
+            for speaker_id in alive_list:
+                resp = await self._call_llm(
+                    speaker_id,
+                    (
+                        f"白天讨论阶段。你的身份是 {WEREWOLF_ROLE_NAMES.get(roles.get(speaker_id, ''), roles.get(speaker_id, '未知'))}。\n"
+                        f"{day_message}\n"
+                        f"存活玩家：{self._format_candidates(alive_list, player_names)}\n"
+                        "请发表一段发言，说明你的观察、怀疑对象或自证逻辑。回复 SPEAK: 发言内容"
+                    ),
+                )
+                speeches.append({
+                    "agent_id": speaker_id,
+                    "name": player_names.get(speaker_id, speaker_id[:8]),
+                    "role": roles.get(speaker_id, "unknown"),
+                    "role_name": WEREWOLF_ROLE_NAMES.get(roles.get(speaker_id, ""), roles.get(speaker_id, "unknown")),
+                    "content": self._parse_speech(resp),
+                })
+
+            discussion_summary = "；".join(f"{s['name']}：{s['content']}" for s in speeches)
+            yield {
+                "type": "day_discussion",
+                "turn": turn,
+                "data": {
+                    "phase": "day",
+                    "speeches": speeches,
+                    "summary": discussion_summary,
+                    "message": f"白天讨论完成，共 {len(speeches)} 名玩家发言。",
+                    "players": self._player_snapshot(player_ids, roles, alive_players, player_names),
+                },
+            }
 
             # 投票放逐
             voter_results: dict[str, str] = {}
-            alive_list = list(alive_players.keys())
             for voter_id in alive_list:
                 candidates = [p for p in alive_list if p != voter_id]
                 if not candidates:
                     continue
                 resp = await self._call_llm(
                     voter_id,
-                    f"白天讨论。{day_message} 投票放逐谁？候选人：{candidates}\n回复 VOTE: player_id",
+                    (
+                        f"白天讨论已完成。昨夜信息：{day_message}\n"
+                        f"发言摘要：{discussion_summary}\n"
+                        f"候选人：{self._format_candidates(candidates, player_names)}\n"
+                        "投票放逐谁？回复 VOTE: player_id"
+                    ),
                 )
                 vote = self._extract_target_id(resp, candidates) or random.choice(candidates)
                 voter_results[voter_id] = vote
@@ -800,21 +1038,73 @@ Example: MOVE: e2 e4"""
             if exiled in alive_players:
                 del alive_players[exiled]
 
+            hunter_shot = None
+            if roles.get(exiled) == "hunter":
+                candidates = [p for p in alive_players if p != exiled]
+                if candidates:
+                    resp = await self._call_llm(
+                        exiled,
+                        f"你是猎人，被放逐时可以开枪带走一人。候选人：{self._format_candidates(candidates, player_names)}。不开枪回复 SHOOT: NONE；开枪回复 SHOOT: player_id",
+                    )
+                    shot_target = None if "NONE" in resp.upper() or "不" in resp else self._extract_target_id(resp, candidates)
+                    if shot_target:
+                        alive_players.pop(shot_target, None)
+                        hunter_shot = {
+                            "hunter_id": exiled,
+                            "hunter_name": player_names.get(exiled, exiled[:8]),
+                            "target_id": shot_target,
+                            "target_name": player_names.get(shot_target, shot_target[:8]),
+                        }
+
+            vote_count_names = {
+                player_names.get(player_id, player_id[:8]): count
+                for player_id, count in vote_counts.items()
+            }
+            vote_details = [
+                {
+                    "voter_id": voter_id,
+                    "voter_name": player_names.get(voter_id, voter_id[:8]),
+                    "target_id": target_id,
+                    "target_name": player_names.get(target_id, target_id[:8]),
+                }
+                for voter_id, target_id in voter_results.items()
+            ]
+            exiled_name = player_names.get(exiled, exiled[:8])
+
             yield {
                 "type": "vote_result",
                 "turn": turn,
                 "data": {
                     "votes": voter_results,
+                    "vote_details": vote_details,
                     "vote_counts": dict(vote_counts),
+                    "vote_count_names": vote_count_names,
                     "exiled": exiled,
+                    "exiled_name": exiled_name,
                     "exiled_role": roles.get(exiled, "unknown"),
+                    "exiled_role_name": WEREWOLF_ROLE_NAMES.get(roles.get(exiled, ""), roles.get(exiled, "unknown")),
+                    "hunter_shot": hunter_shot,
+                    "message": f"投票结果：{exiled_name} 被放逐。" + (
+                        f" 猎人带走了 {hunter_shot['target_name']}。" if hunter_shot else ""
+                    ),
+                    "players": self._player_snapshot(player_ids, roles, alive_players, player_names),
                 },
             }
 
             # 检查胜负
             win = rules.check_win_condition(alive_players)
             if win:
-                yield {"type": "game_over", "turn": turn, "data": {"winner": win, "roles": roles}}
+                yield {
+                    "type": "game_over",
+                    "turn": turn,
+                    "data": {
+                        "winner": win,
+                        "roles": roles,
+                        "role_names": WEREWOLF_ROLE_NAMES,
+                        "players": self._player_snapshot(player_ids, roles, alive_players, player_names),
+                        "message": "村民阵营获胜。" if win == "village" else "狼人阵营获胜。",
+                    },
+                }
                 break
 
     # ==================== 辩论赛 ====================
