@@ -21,6 +21,8 @@ build/
 # Claude Code
 .claude/
 CLAUDE.md
+AGENTS.md
+.cursor/
 
 # OS
 .DS_Store
