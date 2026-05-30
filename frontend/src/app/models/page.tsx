@@ -4,14 +4,46 @@ import { useEffect, useState } from "react";
 import { modelsApi } from "@/lib/api";
 import { ErrorBanner, LoadingSpinner, Badge } from "@/components";
 import type { Model } from "@/types";
+import { extractErrorMessage } from "@/lib/errors";
+
+interface ModelForm {
+  name: string;
+  provider: string;
+  model_id: string;
+  api_key: string;
+  api_base: string;
+}
+
+function emptyForm(): ModelForm {
+  return { name: "", provider: "custom", model_id: "", api_key: "", api_base: "" };
+}
+
+function deriveProvider(apiBase: string): string {
+  try {
+    const url = new URL(apiBase.startsWith("http") ? apiBase : `https://${apiBase}`);
+    const host = url.hostname.toLowerCase();
+    const known: Record<string, string> = {
+      "api.openai.com": "openai",
+      "api.anthropic.com": "anthropic",
+      "generativelanguage.googleapis.com": "google",
+      "api.deepseek.com": "deepseek",
+    };
+    return known[host] || host.slice(0, 50) || "custom";
+  } catch {
+    return "custom";
+  }
+}
 
 export default function ModelsPage() {
   const [models, setModels] = useState<Model[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name: "", provider: "openai", model_id: "", api_key: "" });
+  const [form, setForm] = useState<ModelForm>(emptyForm());
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [discovering, setDiscovering] = useState(false);
+  const [discoveredModels, setDiscoveredModels] = useState<string[]>([]);
+  const [discoverMessage, setDiscoverMessage] = useState("");
 
   const loadModels = async () => {
     try {
@@ -19,7 +51,7 @@ export default function ModelsPage() {
       const r = await modelsApi.list();
       setModels(r.data);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "加载失败");
+      setError(extractErrorMessage(e, "加载失败"));
     } finally {
       setLoading(false);
     }
@@ -30,22 +62,40 @@ export default function ModelsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const payload: Record<string, unknown> = {
+        ...form,
+        provider: form.provider || deriveProvider(form.api_base),
+        api_base: form.api_base.trim(),
+      };
+      if (editingId && !form.api_key.trim()) {
+        delete payload.api_key;
+      }
       if (editingId) {
-        await modelsApi.update(editingId, form);
+        await modelsApi.update(editingId, payload);
       } else {
-        await modelsApi.create(form);
+        await modelsApi.create(payload);
       }
       await loadModels();
       setShowForm(false);
       setEditingId(null);
-      setForm({ name: "", provider: "openai", model_id: "", api_key: "" });
+      setForm(emptyForm());
+      setDiscoveredModels([]);
+      setDiscoverMessage("");
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "操作失败");
+      setError(extractErrorMessage(e, "操作失败"));
     }
   };
 
   const handleEdit = (model: Model) => {
-    setForm({ name: model.name, provider: model.provider, model_id: model.model_id, api_key: "" });
+    setForm({
+      name: model.name,
+      provider: model.provider || "custom",
+      model_id: model.model_id,
+      api_key: "",
+      api_base: model.api_base || "",
+    });
+    setDiscoveredModels([]);
+    setDiscoverMessage("");
     setEditingId(model.id);
     setShowForm(true);
   };
@@ -56,19 +106,49 @@ export default function ModelsPage() {
       await modelsApi.delete(id);
       await loadModels();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "删除失败");
+      setError(extractErrorMessage(e, "删除失败"));
     }
   };
 
-  const PROVIDERS = [
-    { value: "openai", label: "OpenAI", color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" },
-    { value: "anthropic", label: "Anthropic", color: "bg-orange-500/10 text-orange-400 border-orange-500/20" },
-    { value: "google", label: "Google", color: "bg-blue-500/10 text-blue-400 border-blue-500/20" },
-    { value: "deepseek", label: "DeepSeek", color: "bg-purple-500/10 text-purple-400 border-purple-500/20" },
-  ];
+  const handleDiscoverModels = async () => {
+    if (!form.api_base.trim()) {
+      setError("请先填写 API URL");
+      return;
+    }
+    try {
+      setDiscovering(true);
+      setDiscoverMessage("");
+      const r = await modelsApi.discover({
+        api_base: form.api_base.trim(),
+        api_key: form.api_key.trim() || undefined,
+      });
+      const modelIds = r.data.models as string[];
+      setDiscoveredModels(modelIds);
+      setForm(prev => ({
+        ...prev,
+        api_base: r.data.api_base || prev.api_base,
+        provider: r.data.provider || deriveProvider(r.data.api_base || prev.api_base),
+        model_id: prev.model_id || modelIds[0] || "",
+        name: prev.name || modelIds[0] || "",
+      }));
+      setDiscoverMessage(`已获取 ${modelIds.length} 个模型`);
+    } catch (e: unknown) {
+      setDiscoveredModels([]);
+      setDiscoverMessage("");
+      setError(extractErrorMessage(e, "获取模型列表失败"));
+    } finally {
+      setDiscovering(false);
+    }
+  };
 
   const getProviderStyle = (provider: string) => {
-    return PROVIDERS.find(p => p.value === provider)?.color || "bg-gray-500/10 text-gray-400 border-gray-500/20";
+    const styles: Record<string, string> = {
+      openai: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+      anthropic: "bg-orange-500/10 text-orange-400 border-orange-500/20",
+      google: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+      deepseek: "bg-purple-500/10 text-purple-400 border-purple-500/20",
+    };
+    return styles[provider] || "bg-cyan-500/10 text-cyan-300 border-cyan-500/20";
   };
 
   return (
@@ -79,7 +159,13 @@ export default function ModelsPage() {
           <p className="text-sm text-gray-400 mt-1">管理 LLM 模型接入配置</p>
         </div>
         <button
-          onClick={() => { setShowForm(!showForm); setEditingId(null); setForm({ name: "", provider: "openai", model_id: "", api_key: "" }); }}
+          onClick={() => {
+            setShowForm(!showForm);
+            setEditingId(null);
+            setForm(emptyForm());
+            setDiscoveredModels([]);
+            setDiscoverMessage("");
+          }}
           className="btn-primary"
         >
           添加模型
@@ -95,7 +181,7 @@ export default function ModelsPage() {
             <div>
               <label className="block text-sm text-gray-400 mb-1.5">模型名称</label>
               <input
-                placeholder="如: GPT-4o"
+                placeholder="如: GPT-4o 或 DeepSeek V3"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 className="input-field"
@@ -103,28 +189,39 @@ export default function ModelsPage() {
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1.5">提供商</label>
-              <select
-                value={form.provider}
-                onChange={(e) => setForm({ ...form, provider: e.target.value })}
+              <label className="block text-sm text-gray-400 mb-1.5">API URL</label>
+              <input
+                placeholder="如: https://api.openai.com/v1"
+                value={form.api_base}
+                onChange={(e) => setForm({ ...form, api_base: e.target.value, provider: deriveProvider(e.target.value) })}
                 className="input-field"
-              >
-                {PROVIDERS.map(p => (
-                  <option key={p.value} value={p.value}>{p.label}</option>
-                ))}
-              </select>
+                required
+              />
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-gray-400 mb-1.5">模型 ID</label>
-              <input
-                placeholder="如: gpt-4o"
-                value={form.model_id}
-                onChange={(e) => setForm({ ...form, model_id: e.target.value })}
-                className="input-field"
-                required
-              />
+              {discoveredModels.length > 0 ? (
+                <select
+                  value={form.model_id}
+                  onChange={(e) => setForm({ ...form, model_id: e.target.value, name: form.name || e.target.value })}
+                  className="input-field"
+                  required
+                >
+                  {discoveredModels.map(modelId => (
+                    <option key={modelId} value={modelId}>{modelId}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  placeholder="如: gpt-4o，也可先点击获取模型"
+                  value={form.model_id}
+                  onChange={(e) => setForm({ ...form, model_id: e.target.value })}
+                  className="input-field"
+                  required
+                />
+              )}
             </div>
             <div>
               <label className="block text-sm text-gray-400 mb-1.5">API Key</label>
@@ -136,6 +233,19 @@ export default function ModelsPage() {
                 className="input-field"
               />
             </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={handleDiscoverModels}
+              disabled={discovering}
+              className="btn-secondary"
+            >
+              {discovering ? "获取中..." : "自动获取模型"}
+            </button>
+            <span className="text-sm text-gray-400">
+              {discoverMessage || "支持 OpenAI 兼容的 /v1/models 接口，URL 可填写根地址或 /v1 地址"}
+            </span>
           </div>
           <div className="flex gap-3 pt-2">
             <button type="submit" className="btn-primary">
@@ -163,6 +273,9 @@ export default function ModelsPage() {
                 <div>
                   <h3 className="font-semibold">{model.name}</h3>
                   <p className="text-sm text-gray-400">{model.model_id}</p>
+                  {model.api_base && (
+                    <p className="mt-1 max-w-[520px] truncate text-xs text-gray-500">{model.api_base}</p>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-3">

@@ -22,6 +22,7 @@ export interface Model {
   name: string;
   provider: string;
   model_id: string;
+  api_base?: string | null;
   is_active: boolean;
   status: string;
 }

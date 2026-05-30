@@ -113,6 +113,7 @@ export const spectatorApi = {
 export const modelsApi = {
   list: () => api.get("/models/"),
   create: (data: Record<string, unknown>) => api.post("/models/", data),
+  discover: (data: Record<string, unknown>) => api.post("/models/discover", data),
   update: (id: string, data: Record<string, unknown>) => api.put(`/models/${id}`, data),
   delete: (id: string) => api.delete(`/models/${id}`),
 };
