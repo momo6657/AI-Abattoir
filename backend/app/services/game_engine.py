@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import enum
+import logging
 import random
 import re
 from collections import Counter
@@ -11,6 +12,18 @@ from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Optional
 
 from app.models.game import GameType
+
+logger = logging.getLogger(__name__)
+
+TERMINAL_EVENT_TYPES = {
+    "game_over",
+    "max_turns_reached",
+    "debate_result",
+    "negotiation_scores",
+    "negotiation_failed",
+}
+
+ERROR_EVENT_TYPES = {"error", "turn_error", "turn_timeout"}
 
 
 # ==================== 辩题库 ====================
@@ -286,6 +299,11 @@ class GameEngine:
 
     # ==================== 自动运行引擎 ====================
 
+    def _game_type_value(self) -> str:
+        if isinstance(self.game_type, enum.Enum):
+            return str(self.game_type.value)
+        return str(self.game_type)
+
     async def auto_run(self) -> AsyncGenerator[dict, None]:
         """自动运行游戏，yield 每个回合的事件。各 run_* 方法内部处理自己的循环。"""
         # 暂停等待
@@ -298,42 +316,64 @@ class GameEngine:
             yield {"type": "resumed", "turn": self.current_turn}
 
         agents = getattr(self, "agents", []) or []
-        game_type = str(self.game_type)
+        game_type = self._game_type_value()
+        terminal_seen = False
+        error_seen = False
+
+        async def emit(event: dict):
+            nonlocal terminal_seen, error_seen
+            event_type = event.get("type")
+            if event_type in TERMINAL_EVENT_TYPES:
+                terminal_seen = True
+            if event_type in ERROR_EVENT_TYPES:
+                error_seen = True
+            return event
+
+        async def maybe_delay(event: dict):
+            event_type = event.get("type")
+            if event_type not in TERMINAL_EVENT_TYPES and event_type not in ERROR_EVENT_TYPES and not self.is_stopped:
+                await asyncio.sleep(max(0.0, float(self.turn_delay)))
 
         try:
             if game_type in ("werewolf", GameType.WEREWOLF):
                 async for event in self.run_werewolf(agents):
                     if self.is_stopped:
                         break
-                    yield event
+                    yield await emit(event)
+                    await maybe_delay(event)
             elif game_type in ("chess", GameType.CHESS):
                 async for event in self.run_chess():
                     if self.is_stopped:
                         break
-                    yield event
+                    yield await emit(event)
+                    await maybe_delay(event)
             elif game_type in ("debate", GameType.DEBATE):
                 async for event in self.run_debate(agents):
                     if self.is_stopped:
                         break
-                    yield event
+                    yield await emit(event)
+                    await maybe_delay(event)
             elif game_type in ("text_adventure", GameType.TEXT_ADVENTURE):
                 async for event in self.run_text_adventure(agents):
                     if self.is_stopped:
                         break
-                    yield event
+                    yield await emit(event)
+                    await maybe_delay(event)
             elif game_type in ("negotiation", GameType.NEGOTIATION):
                 async for event in self.run_negotiation(agents):
                     if self.is_stopped:
                         break
-                    yield event
+                    yield await emit(event)
+                    await maybe_delay(event)
             else:
-                yield {"type": "error", "data": {"message": f"Unknown game type: {self.game_type}"}}
+                yield await emit({"type": "error", "data": {"message": f"Unknown game type: {self.game_type}"}})
         except asyncio.TimeoutError:
-            yield {"type": "turn_timeout", "turn": self.current_turn}
+            yield await emit({"type": "turn_timeout", "turn": self.current_turn})
         except Exception as e:
-            yield {"type": "turn_error", "turn": self.current_turn, "error": str(e)}
+            logger.exception("Game engine failed for game_type=%s", self.game_type)
+            yield await emit({"type": "turn_error", "turn": self.current_turn, "data": {"message": str(e)}})
 
-        if not self.is_stopped:
+        if not self.is_stopped and not terminal_seen and not error_seen and self.current_turn >= self.max_turns:
             yield {"type": "max_turns_reached", "turn": self.current_turn}
 
     def pause(self):
@@ -348,7 +388,7 @@ class GameEngine:
     async def _execute_game_turn(self) -> AsyncGenerator[dict, None]:
         """执行一个游戏回合，由具体游戏类型实现"""
         agents = getattr(self, "agents", []) or []
-        game_type = str(self.game_type)
+        game_type = self._game_type_value()
 
         if game_type in ("werewolf", GameType.WEREWOLF):
             async for event in self.run_werewolf(agents):
@@ -373,14 +413,14 @@ class GameEngine:
     async def _call_llm(self, agent_id: str, prompt: str) -> str:
         """调用 LLM，带超时保护。通过 agent_id 查找模型配置。"""
         if not self.llm_service:
-            return ""
+            return self._fallback_llm_response(prompt)
 
         # 从 agents 列表查找 agent
         agents = getattr(self, "agents", []) or []
         agent = next((a for a in agents if str(a.id) == agent_id), None)
         if not agent:
             logger.warning("Agent %s not found, skipping LLM call", agent_id)
-            return ""
+            return self._fallback_llm_response(prompt)
 
         # 从 models 缓存查找模型配置
         models_cache = getattr(self, "_models_cache", {})
@@ -403,10 +443,10 @@ class GameEngine:
                         self._models_cache[str(agent.model_id)] = model
             except Exception as e:
                 logger.error("Failed to load model for agent %s: %s", agent_id, e)
-                return ""
+                return self._fallback_llm_response(prompt)
 
         if not model:
-            return ""
+            return self._fallback_llm_response(prompt)
 
         try:
             response = await asyncio.wait_for(
@@ -420,13 +460,48 @@ class GameEngine:
                 ),
                 timeout=60.0,
             )
-            return response.get("content", "").strip()
+            content = response.get("content", "").strip()
+            return content or self._fallback_llm_response(prompt)
         except asyncio.TimeoutError:
             logger.warning("LLM call timeout for agent %s", agent_id)
-            return ""
+            return self._fallback_llm_response(prompt)
         except Exception as e:
             logger.error("LLM call failed for agent %s: %s", agent_id, str(e)[:200])
-            return ""
+            return self._fallback_llm_response(prompt)
+
+    def _fallback_llm_response(self, prompt: str) -> str:
+        """LLM 不可用时给规则引擎一个可解析的本地回应，避免整局瞬间失败。"""
+        if "SCENE:" in prompt and "OPTION_A" in prompt:
+            return (
+                "SCENE: 你们站在起始之地，前方有一条发光的小径，旁边有一座旧石碑。\n"
+                "OPTION_A: 沿着发光小径前进\n"
+                "OPTION_B: 检查旧石碑\n"
+                "OPTION_C: 原地整理装备"
+            )
+        if "ACTION:" in prompt:
+            return "ACTION: A"
+        if "RESULT:" in prompt and "HP_CHANGE:" in prompt:
+            return (
+                "RESULT: 你谨慎前行，发现了一枚刻着符号的铜币，周围暂时没有危险。\n"
+                "HP_CHANGE: 0\n"
+                "ITEM: 铜币\n"
+                "LOCATION: 微光小径"
+            )
+        if "PROPOSAL:" in prompt and "ACTION:" in prompt:
+            return "PROPOSAL: 双方各让一步，先共享基础资源，再按贡献分配收益。\nACTION: 提出新提案\nREASON: 这样能降低冲突并保留继续谈判空间。"
+        if "评分" in prompt and "A方得分" in prompt:
+            return "A方得分（1-10）：6\nB方得分（1-10）：6\n公平性（1-10）：7\n评价：协议仍需细化，但基本公平。"
+        if "辩论" in prompt and "评分" in prompt:
+            return "正方论据力度：6\n正方逻辑性：6\n正方表达力：6\n反方论据力度：6\n反方逻辑性：6\n反方表达力：6\n获胜方：正方\n理由：双方表现接近，正方结构略清晰。"
+        if "VOTE:" in prompt:
+            return "VOTE: "
+        if "KILL:" in prompt:
+            return "KILL: "
+        if "GUARD:" in prompt:
+            return "GUARD: "
+        if "CHECK:" in prompt:
+            return "CHECK: "
+        return "我会采取稳妥策略，先观察局势，再做下一步行动。"
 
     def _extract_target_id(self, response: str, candidates: list[str]) -> str | None:
         """从 LLM 回复中提取目标 ID"""
@@ -976,6 +1051,8 @@ OPTION_C: [行动选项C]（可选）
         """解析叙述者的场景和选项"""
         scene_match = re.search(r"SCENE:\s*(.+?)(?=\nOPTION_|$)", text, re.DOTALL)
         scene = scene_match.group(1).strip() if scene_match else text[:100]
+        if not scene:
+            scene = "你站在起始之地，周围安静而陌生，前方有几条可探索的道路。"
         options: dict[str, str] = {}
         for key in ["OPTION_A", "OPTION_B", "OPTION_C"]:
             match = re.search(rf"{key}:\s*(.+?)(?=\nOPTION_|$)", text, re.DOTALL)
@@ -1008,6 +1085,8 @@ OPTION_C: [行动选项C]（可选）
 
         desc_match = re.search(r"RESULT:\s*(.+?)(?=\nHP_CHANGE|\nITEM|\nLOCATION|$)", text, re.DOTALL)
         description = desc_match.group(1).strip() if desc_match else text[:200]
+        if not description:
+            description = "你谨慎地推进了一步，局势暂时保持稳定。"
 
         return hp_change, item, location, description
 
@@ -1117,7 +1196,7 @@ B方得分（1-10）：X
             action = "propose"
 
         return {
-            "proposal": proposal_match.group(1).strip() if proposal_match else text[:100],
+            "proposal": proposal_match.group(1).strip() if proposal_match else (text[:100] or "双方先交换底线，再寻找可接受的折中方案。"),
             "action": action,
             "reason": reason_match.group(1).strip() if reason_match else "",
         }

@@ -1,7 +1,8 @@
 import pytest
-from unittest.mock import MagicMock
 
-from app.services.game_engine import ChessRules, WerewolfRules
+from app.api.games import _apply_game_event_to_config
+from app.models.game import GameType
+from app.services.game_engine import ChessRules, GameEngine, WerewolfRules
 
 
 # ========== Chess Rules ==========
@@ -136,6 +137,78 @@ class TestWerewolfRules:
         rules = WerewolfRules()
         alive = {"p1": "werewolf", "p2": "villager", "p3": "seer"}
         assert rules.check_win_condition(alive) is None
+
+
+# ========== Game Engine Runtime ==========
+
+class TestGameEngineRuntime:
+    @pytest.mark.asyncio
+    async def test_text_adventure_uses_fallback_when_llm_missing(self):
+        engine = GameEngine(
+            game_type="text_adventure",
+            agent_ids=["narrator", "explorer"],
+            config={"max_turns": 1, "turn_delay": 0},
+        )
+
+        events = [event async for event in engine.auto_run()]
+
+        assert events[0]["type"] == "scene"
+        assert events[0]["data"]["scene"]
+        assert events[0]["data"]["options"]
+        assert events[1]["type"] == "action_result"
+        assert events[-1]["type"] == "max_turns_reached"
+
+    @pytest.mark.asyncio
+    async def test_enum_game_type_runs_by_value(self):
+        engine = GameEngine(
+            game_type=GameType.TEXT_ADVENTURE,
+            agent_ids=["narrator", "explorer"],
+            config={"max_turns": 1, "turn_delay": 0},
+        )
+
+        events = [event async for event in engine.auto_run()]
+
+        assert events[0]["type"] == "scene"
+        assert all(event["type"] != "error" for event in events)
+
+    @pytest.mark.asyncio
+    async def test_unknown_game_type_does_not_emit_max_turns_after_error(self):
+        engine = GameEngine(
+            game_type="unknown",
+            agent_ids=[],
+            config={"max_turns": 1, "turn_delay": 0},
+        )
+
+        events = [event async for event in engine.auto_run()]
+
+        assert [event["type"] for event in events] == ["error"]
+
+    def test_game_event_config_snapshot_includes_adventure_state(self):
+        engine = GameEngine(
+            game_type="text_adventure",
+            agent_ids=["narrator", "explorer"],
+            config={"max_turns": 1},
+        )
+        engine.current_turn = 1
+
+        config = _apply_game_event_to_config(
+            {},
+            {
+                "type": "scene",
+                "turn": 1,
+                "data": {
+                    "scene": "洞口有微光。",
+                    "options": {"OPTION_A": "进入洞口"},
+                    "state": {"hp": 100, "max_hp": 100},
+                },
+            },
+            engine,
+        )
+
+        assert config["current_turn"] == 1
+        assert config["scene"] == "洞口有微光。"
+        assert config["adventure_state"]["hp"] == 100
+        assert config["events"][0]["type"] == "scene"
 
 
 # ========== Schema ==========

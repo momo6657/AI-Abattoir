@@ -16,6 +16,123 @@ router = APIRouter(prefix="/api/games", tags=["games"])
 _running_games: dict[str, "GameEngine"] = {}
 
 
+def _parse_game_uuid(game_id: str) -> UUID:
+    try:
+        return UUID(str(game_id))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="游戏 ID 无效")
+
+
+def _compact_game_event(event: dict) -> dict:
+    data = event.get("data") or {}
+    return {
+        "type": event.get("type", "unknown"),
+        "turn": event.get("turn", 0),
+        "data": data,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _append_game_event(config: dict, event: dict) -> dict:
+    events = list(config.get("events") or [])
+    events.append(_compact_game_event(event))
+    config["events"] = events[-80:]
+    return config
+
+
+def _apply_game_event_to_config(config: dict, event: dict, engine: "GameEngine") -> dict:
+    """把游戏引擎事件折叠成前端面板可直接消费的 config 快照。"""
+    event_type = event.get("type", "unknown")
+    data = event.get("data") or {}
+
+    config = {
+        **config,
+        "current_turn": engine.current_turn,
+        "last_event": _compact_game_event(event),
+    }
+    config = _append_game_event(config, event)
+
+    if event_type == "game_start":
+        config["phase"] = "night"
+        config["game_started_at"] = datetime.now(timezone.utc).isoformat()
+    elif event_type == "night_result":
+        config["phase"] = data.get("phase", "day")
+        config["last_deaths"] = data.get("deaths", [])
+        config["night_result"] = data
+    elif event_type == "vote_result":
+        config["phase"] = "night"
+        config["vote_result"] = data
+    elif event_type in {"turn_result", "invalid_move"}:
+        board = data.get("board")
+        if board:
+            config["board"] = board
+        if data.get("last_move"):
+            config["last_move"] = data.get("last_move")
+        if "in_check" in data:
+            config["in_check"] = data.get("in_check")
+        config["last_move_result"] = data
+    elif event_type == "debate_opening":
+        config["topic"] = data.get("topic")
+        config["current_phase"] = "opening"
+        config["rounds"] = [
+            {"phase": "opening", "side": "pro", "content": data.get("pro", "")},
+            {"phase": "opening", "side": "con", "content": data.get("con", "")},
+        ]
+    elif event_type == "debate_cross":
+        config["current_phase"] = "cross"
+        rounds = list(config.get("rounds") or [])
+        rounds.extend([
+            {"phase": "cross_examination", "side": "pro", "content": data.get("pro_question", "")},
+            {"phase": "cross_response", "side": "con", "content": data.get("con_answer", "")},
+            {"phase": "cross_examination", "side": "con", "content": data.get("con_question", "")},
+            {"phase": "cross_response", "side": "pro", "content": data.get("pro_answer", "")},
+        ])
+        config["rounds"] = rounds
+    elif event_type == "debate_closing":
+        config["current_phase"] = "closing"
+        rounds = list(config.get("rounds") or [])
+        rounds.extend([
+            {"phase": "closing", "side": "pro", "content": data.get("pro", "")},
+            {"phase": "closing", "side": "con", "content": data.get("con", "")},
+        ])
+        config["rounds"] = rounds
+    elif event_type == "debate_result":
+        config["current_phase"] = "result"
+        config["scores"] = data
+        if data.get("topic"):
+            config["topic"] = data.get("topic")
+    elif event_type == "scene":
+        config["scene"] = data.get("scene", "")
+        config["options"] = data.get("options", {})
+        config["adventure_state"] = data.get("state")
+    elif event_type == "action_result":
+        config["last_result"] = data
+        config["adventure_state"] = data.get("state")
+    elif event_type == "negotiation_turn":
+        turns = list(config.get("turns") or [])
+        turns.append(data)
+        config["turns"] = turns
+        if data.get("proposal"):
+            config["current_proposal"] = data.get("proposal")
+    elif event_type == "deal_reached":
+        config["deal_reached"] = data.get("proposal")
+        config["current_proposal"] = data.get("proposal")
+    elif event_type == "negotiation_failed":
+        config["deal_reached"] = None
+        config["current_proposal"] = data.get("last_proposal")
+    elif event_type == "negotiation_scores":
+        config["scores"] = data
+    elif event_type == "game_over":
+        config["game_over"] = data
+        winner_id = data.get("winner_id") or data.get("winner")
+        if winner_id:
+            config["winner_id"] = winner_id
+    elif event_type in {"error", "turn_error", "turn_timeout"}:
+        config["runtime_error"] = data.get("message") or event.get("error") or event_type
+
+    return config
+
+
 def _enrich_game_response(game: Game) -> GameResponse:
     """从 Game ORM 对象构建完整 GameResponse"""
     config = game.config or {}
@@ -93,7 +210,8 @@ async def create_game(game_data: GameCreate, db: AsyncSession = Depends(get_db))
 
 @router.get("/{game_id}", response_model=GameResponse)
 async def get_game(game_id: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Game).where(Game.id == game_id))
+    game_uuid = _parse_game_uuid(game_id)
+    result = await db.execute(select(Game).where(Game.id == game_uuid))
     game = result.scalar_one_or_none()
     if not game:
         raise HTTPException(status_code=404, detail="游戏不存在")
@@ -107,7 +225,8 @@ async def update_game(
     winner_id: str | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Game).where(Game.id == game_id))
+    game_uuid = _parse_game_uuid(game_id)
+    result = await db.execute(select(Game).where(Game.id == game_uuid))
     game = result.scalar_one_or_none()
     if not game:
         raise HTTPException(status_code=404, detail="游戏不存在")
@@ -115,7 +234,7 @@ async def update_game(
     if status is not None:
         game.status = status
     if winner_id is not None:
-        game.config["winner_id"] = winner_id
+        game.config = {**(game.config or {}), "winner_id": winner_id}
 
     await db.commit()
     await db.refresh(game)
@@ -128,7 +247,9 @@ async def end_game(
     request: EndGameRequest | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Game).where(Game.id == game_id))
+    game_uuid = _parse_game_uuid(game_id)
+    game_key = str(game_uuid)
+    result = await db.execute(select(Game).where(Game.id == game_uuid))
     game = result.scalar_one_or_none()
     if not game:
         raise HTTPException(status_code=404, detail="游戏不存在")
@@ -143,8 +264,8 @@ async def end_game(
         game.config["winner_id"] = str(request.winner_id)
 
     # 停止运行中的引擎
-    if game_id in _running_games:
-        _running_games[game_id].stop()
+    if game_key in _running_games:
+        _running_games[game_key].stop()
 
     await db.commit()
     await db.refresh(game)
@@ -154,7 +275,9 @@ async def end_game(
 @router.post("/{game_id}/start", response_model=GameResponse)
 async def start_game(game_id: str, db: AsyncSession = Depends(get_db)):
     """启动游戏，自动运行所有回合"""
-    result = await db.execute(select(Game).where(Game.id == game_id))
+    game_uuid = _parse_game_uuid(game_id)
+    game_key = str(game_uuid)
+    result = await db.execute(select(Game).where(Game.id == game_uuid))
     game = result.scalar_one_or_none()
     if not game:
         raise HTTPException(status_code=404, detail="游戏不存在")
@@ -204,9 +327,9 @@ async def start_game(game_id: str, db: AsyncSession = Depends(get_db)):
             models_list = models_result.scalars().all()
             engine._models_cache = {str(m.id): m for m in models_list}
 
-    _running_games[game_id] = engine
+    _running_games[game_key] = engine
 
-    asyncio.create_task(_run_game_background(game_id, engine))
+    asyncio.create_task(_run_game_background(game_key, engine))
 
     return _enrich_game_response(game)
 
@@ -214,10 +337,12 @@ async def start_game(game_id: str, db: AsyncSession = Depends(get_db)):
 @router.post("/{game_id}/pause", response_model=GameResponse)
 async def pause_game(game_id: str, db: AsyncSession = Depends(get_db)):
     """暂停游戏"""
-    if game_id in _running_games:
-        _running_games[game_id].pause()
+    game_uuid = _parse_game_uuid(game_id)
+    game_key = str(game_uuid)
+    if game_key in _running_games:
+        _running_games[game_key].pause()
 
-    result = await db.execute(select(Game).where(Game.id == game_id))
+    result = await db.execute(select(Game).where(Game.id == game_uuid))
     game = result.scalar_one_or_none()
     if not game:
         raise HTTPException(status_code=404, detail="游戏不存在")
@@ -234,10 +359,12 @@ async def pause_game(game_id: str, db: AsyncSession = Depends(get_db)):
 @router.post("/{game_id}/resume", response_model=GameResponse)
 async def resume_game(game_id: str, db: AsyncSession = Depends(get_db)):
     """恢复游戏"""
-    if game_id in _running_games:
-        _running_games[game_id].resume()
+    game_uuid = _parse_game_uuid(game_id)
+    game_key = str(game_uuid)
+    if game_key in _running_games:
+        _running_games[game_key].resume()
 
-    result = await db.execute(select(Game).where(Game.id == game_id))
+    result = await db.execute(select(Game).where(Game.id == game_uuid))
     game = result.scalar_one_or_none()
     if not game:
         raise HTTPException(status_code=404, detail="游戏不存在")
@@ -258,28 +385,50 @@ async def _run_game_background(game_id: str, engine: "GameEngine"):
     from app.services.spectator_service import SpectatorService
 
     spectator_service = SpectatorService()
+    game_uuid = UUID(game_id)
 
     async for event in engine.auto_run():
-        # 广播事件给观战者
-        await spectator_service.broadcast_game_event(
-            game_id, event.get("type", "unknown"), event
-        )
+        event_type = event.get("type", "unknown")
+        status_value = GameStatus.IN_PROGRESS.value
+        config_snapshot: dict = {}
 
-        # 更新数据库
         from app.core.database import async_session
         async with async_session() as db:
-            result = await db.execute(select(Game).where(Game.id == game_id))
+            result = await db.execute(select(Game).where(Game.id == game_uuid))
             game = result.scalar_one_or_none()
             if game:
-                game.config["current_turn"] = engine.current_turn
-                if event.get("type") == "game_over":
+                config = _apply_game_event_to_config(dict(game.config or {}), event, engine)
+
+                if event_type == "game_over":
                     game.status = GameStatus.FINISHED
-                    winner_id = event.get("data", {}).get("winner_id")
+                    winner_id = config.get("winner_id")
                     if winner_id:
-                        game.config["winner_id"] = winner_id
-                elif event.get("type") == "max_turns_reached":
+                        config["winner_id"] = winner_id
+                elif event_type in {
+                    "max_turns_reached",
+                    "debate_result",
+                    "negotiation_scores",
+                    "negotiation_failed",
+                }:
                     game.status = GameStatus.FINISHED
+                elif event_type in {"error", "turn_error", "turn_timeout"}:
+                    game.status = GameStatus.CANCELLED
+
+                game.config = config
+                config_snapshot = config
+                status_value = _enrich_game_response(game).status.value
                 await db.commit()
+
+        await spectator_service.broadcast_game_event(
+            game_id,
+            event_type,
+            {
+                **event,
+                "current_turn": engine.current_turn,
+                "status": status_value,
+                "config": config_snapshot,
+            },
+        )
 
     # 清理
     _running_games.pop(game_id, None)

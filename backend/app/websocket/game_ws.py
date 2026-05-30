@@ -1,5 +1,6 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
+from uuid import UUID
 
 from app.models.game import Game
 from app.websocket.manager import manager
@@ -11,10 +12,11 @@ router = APIRouter()
 async def game_websocket(websocket: WebSocket, game_id: str):
     await manager.connect_to_game(game_id, websocket)
     try:
+        game_uuid = UUID(str(game_id))
         # 连接后发送当前游戏状态
         from app.core.database import async_session
         async with async_session() as db:
-            result = await db.execute(select(Game).where(Game.id == game_id))
+            result = await db.execute(select(Game).where(Game.id == game_uuid))
             game = result.scalar_one_or_none()
             if game:
                 await websocket.send_json({

@@ -56,6 +56,7 @@ export default function GamesPage() {
   const [filter, setFilter] = useState<"all" | "waiting" | "in_progress" | "paused" | "finished">("all");
 
   const { events, connected, send, clearEvents } = useGameWebSocket(activeGameId);
+  const processedEventCountRef = useRef(0);
 
   const loadGames = useCallback(async () => {
     try {
@@ -81,6 +82,10 @@ export default function GamesPage() {
 
   useEffect(() => { loadGames(); loadAgents(); }, [loadGames, loadAgents]);
 
+  useEffect(() => {
+    processedEventCountRef.current = 0;
+  }, [activeGameId]);
+
   // 加载游戏详情
   const loadGameDetail = useCallback(async (gameId: string) => {
     try {
@@ -99,15 +104,17 @@ export default function GamesPage() {
 
   // WebSocket 事件更新游戏状态
   useEffect(() => {
-    if (activeGame && events.length > 0) {
-      const lastEvent = events[events.length - 1];
-      if (lastEvent.type === "game_state" || lastEvent.type === "turn_result") {
-        const data = lastEvent.data || {};
+    if (activeGame && events.length > processedEventCountRef.current) {
+      const newEvents = events.slice(processedEventCountRef.current);
+      processedEventCountRef.current = events.length;
+      const lastEvent = newEvents[newEvents.length - 1];
+      const data = lastEvent.data || {};
+      if ("config" in data || "current_turn" in data || "status" in data) {
         setActiveGame(prev => prev ? {
           ...prev,
           current_turn: (data.current_turn as number) || prev.current_turn,
           status: (data.status as string) || prev.status,
-          config: { ...prev.config, ...data.config as Record<string, unknown> },
+          config: { ...prev.config, ...(data.config as Record<string, unknown> || {}) },
         } : prev);
       }
       if (lastEvent.type === "game_over" || lastEvent.type === "max_turns_reached") {
@@ -120,7 +127,7 @@ export default function GamesPage() {
         setActiveGame(prev => prev ? { ...prev, status: "in_progress" } : prev);
       }
     }
-  }, [events, activeGame]);
+  }, [events, activeGame?.id]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -201,7 +208,9 @@ export default function GamesPage() {
 
   // 提取游戏特定数据
   const gameConfig = activeGame?.config || {};
-  const gameEventsList = events.filter(e => e.type !== "game_state" && e.type !== "pong");
+  const liveEvents = events.filter(e => e.type !== "game_state" && e.type !== "pong");
+  const storedEvents = Array.isArray(gameConfig.events) ? gameConfig.events as typeof liveEvents : [];
+  const gameEventsList = liveEvents.length > 0 ? liveEvents : storedEvents;
 
   return (
     <div className="animate-fade-in">
@@ -435,20 +444,23 @@ export default function GamesPage() {
               <div className="mt-4">
                 <h4 className="text-xs text-gray-400 mb-2">事件日志</h4>
                 <div className="space-y-1 max-h-48 overflow-y-auto">
-                  {gameEventsList.map((evt, i) => (
-                    <div key={i} className={`text-sm rounded-xl px-3 py-2 ${
-                      evt.type === "game_over" ? "bg-green-900/30 text-green-300" :
-                      evt.type === "night_result" ? "bg-gray-800 text-gray-200" :
-                      evt.type === "vote_result" ? "bg-yellow-900/30 text-yellow-200" :
-                      evt.type === "error" ? "bg-red-900/30 text-red-300" :
-                      evt.type === "paused" ? "bg-yellow-900/20 text-yellow-300" :
-                      evt.type === "resumed" ? "bg-green-900/20 text-green-300" :
-                      "bg-surface-overlay text-gray-200"
-                    }`}>
-                      <span className="font-medium text-accent-hover">{evt.type}</span>
-                      {evt.data && <span className="text-gray-300 ml-2">{JSON.stringify(evt.data).slice(0, 120)}</span>}
-                    </div>
-                  ))}
+                  {gameEventsList.map((evt, i) => {
+                    const eventData = (evt.data?.data as Record<string, unknown> | undefined) || evt.data;
+                    return (
+                      <div key={i} className={`text-sm rounded-xl px-3 py-2 ${
+                        evt.type === "game_over" ? "bg-green-900/30 text-green-300" :
+                        evt.type === "night_result" ? "bg-gray-800 text-gray-200" :
+                        evt.type === "vote_result" ? "bg-yellow-900/30 text-yellow-200" :
+                        evt.type === "error" || evt.type === "turn_error" ? "bg-red-900/30 text-red-300" :
+                        evt.type === "paused" ? "bg-yellow-900/20 text-yellow-300" :
+                        evt.type === "resumed" ? "bg-green-900/20 text-green-300" :
+                        "bg-surface-overlay text-gray-200"
+                      }`}>
+                        <span className="font-medium text-accent-hover">{evt.type}</span>
+                        {eventData && <span className="text-gray-300 ml-2">{JSON.stringify(eventData).slice(0, 120)}</span>}
+                      </div>
+                    );
+                  })}
                   {gameEventsList.length === 0 && (
                     <p className="text-center text-gray-500 text-sm py-4">等待事件...</p>
                   )}
