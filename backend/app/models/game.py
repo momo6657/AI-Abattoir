@@ -14,6 +14,7 @@ class GameType(str, enum.Enum):
     CHESS = "chess"
     TEXT_ADVENTURE = "text_adventure"
     NEGOTIATION = "negotiation"
+    POKEMON_BATTLE = "pokemon_battle"  # 宝可梦对战
 
 
 class GameStatus(str, enum.Enum):

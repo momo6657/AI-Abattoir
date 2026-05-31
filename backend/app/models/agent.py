@@ -28,6 +28,11 @@ class Agent(Base):
     is_template = Column(String(1), default="0")
     level = Column(Enum(AgentLevel), default=AgentLevel.NOVICE)
     experience_points = Column(Integer, default=0)
+    # 宝可梦对战相关字段
+    pokemon_rating = Column(Integer, default=1500)  # ELO 评分
+    pokemon_favorite_format = Column(String(20), nullable=True)  # 偏好对战格式
+    pokemon_playstyle = Column(String(50), nullable=True)  # 对战风格
+    pokemon_stats = Column(JSONB, default=dict)  # 对战统计
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
