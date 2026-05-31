@@ -107,18 +107,32 @@ class TestPokemonAPI:
             ]
         }
 
-        # Mock the created team
-        mock_team = MagicMock()
+        # Mock the created team with proper spec
+        from app.models.pokemon import PokemonTeam
+        mock_team = MagicMock(spec=PokemonTeam)
         mock_team.id = uuid4()
         mock_team.agent_id = uuid4()
         mock_team.name = "Test Team"
         mock_team.format = "vgc2024"
         mock_team.pokemon_list = team_data["pokemon"]
+        mock_team.source = "custom"
+        mock_team.source_url = None
+        mock_team.is_active = True
+        mock_team.rating = 1500
+        mock_team.win_rate = 0.0
+        mock_team.usage_count = 0
         mock_team.created_at = None
+        mock_team.updated_at = None
 
         mock_db.add = MagicMock()
         mock_db.commit = AsyncMock()
-        mock_db.refresh = AsyncMock()
+
+        # Make refresh actually set the values
+        def refresh_side_effect(obj):
+            obj.id = uuid4()
+            obj.created_at = "2026-05-31T19:30:00"
+            obj.updated_at = "2026-05-31T19:30:00"
+        mock_db.refresh = AsyncMock(side_effect=refresh_side_effect)
 
         response = await async_client.post(
             f"/api/pokemon/teams?agent_id={agent_id}",
@@ -131,13 +145,21 @@ class TestPokemonAPI:
         """Test GET /api/pokemon/teams/{team_id} endpoint"""
         team_id = str(uuid4())
 
-        mock_team = MagicMock()
+        from app.models.pokemon import PokemonTeam
+        mock_team = MagicMock(spec=PokemonTeam)
         mock_team.id = uuid4()
         mock_team.agent_id = uuid4()
         mock_team.name = "Test Team"
         mock_team.format = "vgc2024"
         mock_team.pokemon_list = []
-        mock_team.created_at = None
+        mock_team.source = "custom"
+        mock_team.source_url = None
+        mock_team.is_active = True
+        mock_team.rating = 1500
+        mock_team.win_rate = 0.0
+        mock_team.usage_count = 0
+        mock_team.created_at = "2026-05-31T19:30:00"
+        mock_team.updated_at = "2026-05-31T19:30:00"
 
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = mock_team
@@ -152,32 +174,137 @@ class TestPokemonAPI:
         team1_id = str(uuid4())
         team2_id = str(uuid4())
 
-        # Mock team retrieval
-        mock_team1 = MagicMock()
+        # Mock team retrieval with proper spec
+        from app.models.pokemon import PokemonTeam, PokemonBattle
+        agent1_id = uuid4()
+        agent2_id = uuid4()
+        mock_team1 = MagicMock(spec=PokemonTeam)
         mock_team1.id = uuid4()
-        mock_team1.agent_id = uuid4()
+        mock_team1.agent_id = agent1_id
+        mock_team1.name = "Team 1"
+        mock_team1.format = "vgc2024"
         mock_team1.pokemon_list = [
-            {"species": "Charizard", "ability": "Blaze", "moves": ["Flamethrower"]}
+            {
+                "species": "Charizard",
+                "name": "Charizard",
+                "level": 50,
+                "ability": "Blaze",
+                "item": "",
+                "moves": [
+                    {
+                        "name": "Flamethrower",
+                        "type": "Fire",
+                        "category": "special",
+                        "power": 90,
+                        "accuracy": 100,
+                        "pp": 15
+                    }
+                ],
+                "stats": {
+                    "hp": 78,
+                    "atk": 84,
+                    "def": 78,
+                    "spa": 109,
+                    "spd": 85,
+                    "spe": 100
+                }
+            }
         ]
+        mock_team1.source = "custom"
+        mock_team1.source_url = None
+        mock_team1.is_active = True
+        mock_team1.rating = 1500
+        mock_team1.win_rate = 0.0
+        mock_team1.usage_count = 0
+        mock_team1.created_at = "2026-05-31T19:30:00"
+        mock_team1.updated_at = "2026-05-31T19:30:00"
 
-        mock_team2 = MagicMock()
+        mock_team2 = MagicMock(spec=PokemonTeam)
         mock_team2.id = uuid4()
-        mock_team2.agent_id = uuid4()
+        mock_team2.agent_id = agent2_id
+        mock_team2.name = "Team 2"
+        mock_team2.format = "vgc2024"
         mock_team2.pokemon_list = [
-            {"species": "Blastoise", "ability": "Torrent", "moves": ["Hydro Pump"]}
+            {
+                "species": "Blastoise",
+                "name": "Blastoise",
+                "level": 50,
+                "ability": "Torrent",
+                "item": "",
+                "moves": [
+                    {
+                        "name": "Hydro Pump",
+                        "type": "Water",
+                        "category": "special",
+                        "power": 110,
+                        "accuracy": 80,
+                        "pp": 5
+                    }
+                ],
+                "stats": {
+                    "hp": 79,
+                    "atk": 83,
+                    "def": 100,
+                    "spa": 85,
+                    "spd": 105,
+                    "spe": 78
+                }
+            }
         ]
+        mock_team2.source = "custom"
+        mock_team2.source_url = None
+        mock_team2.is_active = True
+        mock_team2.rating = 1500
+        mock_team2.win_rate = 0.0
+        mock_team2.usage_count = 0
+        mock_team2.created_at = "2026-05-31T19:30:00"
+        mock_team2.updated_at = "2026-05-31T19:30:00"
 
-        # Setup mock to return different teams for different queries
+        # Mock battle creation
+        battle_id = uuid4()
+        mock_battle = MagicMock(spec=PokemonBattle)
+        mock_battle.id = battle_id
+        mock_battle.battle_format = "vgc2024"
+        mock_battle.mode = "singles"
+        mock_battle.player1_agent_id = agent1_id
+        mock_battle.player2_agent_id = agent2_id
+        mock_battle.player1_team_id = mock_team1.id
+        mock_battle.player2_team_id = mock_team2.id
+        mock_battle.winner = None
+        mock_battle.turns = 0
+        mock_battle.duration_seconds = None
+        mock_battle.replay_url = None
+        mock_battle.rating_change_p1 = None
+        mock_battle.rating_change_p2 = None
+        mock_battle.battle_log = []
+        mock_battle.summary = {}
+        mock_battle.created_at = "2026-05-31T19:30:00"
+
+        # Setup mock to return different results for different queries
         mock_result1 = MagicMock()
         mock_result1.scalar_one_or_none.return_value = mock_team1
 
         mock_result2 = MagicMock()
         mock_result2.scalar_one_or_none.return_value = mock_team2
 
-        mock_db.execute = AsyncMock(side_effect=[mock_result1, mock_result2])
+        mock_result3 = MagicMock()
+        mock_result3.scalar_one_or_none.return_value = mock_battle
+
+        mock_db.execute = AsyncMock(side_effect=[mock_result1, mock_result2, mock_result3])
         mock_db.add = MagicMock()
         mock_db.commit = AsyncMock()
-        mock_db.refresh = AsyncMock()
+
+        # Make refresh simulate database behavior
+        def refresh_side_effect(obj):
+            if hasattr(obj, 'id') and obj.id is None:
+                obj.id = battle_id
+            if hasattr(obj, 'turns') and obj.turns is None:
+                obj.turns = 0
+            if hasattr(obj, 'battle_log') and obj.battle_log is None:
+                obj.battle_log = []
+            if hasattr(obj, 'summary') and obj.summary is None:
+                obj.summary = {}
+        mock_db.refresh = AsyncMock(side_effect=refresh_side_effect)
 
         response = await async_client.post(
             "/api/pokemon/battles",

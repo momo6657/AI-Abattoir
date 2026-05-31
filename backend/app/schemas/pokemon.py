@@ -77,9 +77,10 @@ class BattleResponse(BaseModel):
     battle_format: str
     player1_agent_id: UUID
     player2_agent_id: Optional[UUID]
-    status: str
-    turn: int
+    turns: int
     winner: Optional[int]
+    battle_log: List[Dict[str, Any]]
+    summary: Dict[str, Any]
 
 
 class BattleStateResponse(BaseModel):

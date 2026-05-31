@@ -31,6 +31,20 @@ from app.services.pokemon.data_loader import PokemonDataLoader
 router = APIRouter(prefix="/pokemon", tags=["pokemon"])
 
 
+# Data initialization endpoint
+@router.post("/init")
+async def init_pokemon_data(db: AsyncSession = Depends(get_db)):
+    """Initialize Pokemon data from JSON files"""
+    loader = PokemonDataLoader(db)
+    counts = await loader.load_all()
+    return {
+        "species_loaded": counts.get("species", 0),
+        "moves_loaded": counts.get("moves", 0),
+        "abilities_loaded": counts.get("abilities", 0),
+        "items_loaded": counts.get("items", 0),
+    }
+
+
 # Species endpoints
 @router.get("/species", response_model=List[SpeciesResponse])
 async def get_species_list(db: AsyncSession = Depends(get_db)):
@@ -150,7 +164,9 @@ async def create_battle(
         player2_agent_id=team2.agent_id,
         player1_team_id=team1.id,
         player2_team_id=team2.id,
-        status="in_progress",
+        turns=0,
+        battle_log=[],
+        summary={},
     )
     db.add(battle)
     await db.commit()
@@ -159,13 +175,21 @@ async def create_battle(
     # Initialize battle engine
     engine = BattleEngine()
     battle_state = engine.create_battle(
-        team1.pokemon_list,
-        team2.pokemon_list,
-        battle.battle_format,
+        str(battle.id),  # battle_id
+        team1.pokemon_list,  # p1_team
+        team2.pokemon_list,  # p2_team
+        str(team1.agent_id),  # p1_agent_id
+        str(team2.agent_id),  # p2_agent_id
     )
 
-    # Store initial state
-    battle.state = battle_state.to_dict()
+    # Store initial battle state
+    battle.battle_log = battle_state.battle_log
+    battle.summary = {
+        "battle_id": str(battle.id),
+        "turn": battle_state.turn,
+        "player1_active": battle_state.player1.active,
+        "player2_active": battle_state.player2.active,
+    }
     await db.commit()
 
     return battle
@@ -213,12 +237,12 @@ async def submit_turn(
     if not battle:
         raise HTTPException(status_code=404, detail="Battle not found")
 
-    if not battle.state:
+    if not battle.summary or "state" not in battle.summary:
         raise HTTPException(status_code=400, detail="Battle not initialized")
 
     # Execute turn
     engine = BattleEngine()
-    battle_state = engine.from_dict(battle.state)
+    battle_state = engine.from_dict(battle.summary["state"])
 
     turn_result = engine.execute_turn(
         battle_state,
@@ -227,11 +251,14 @@ async def submit_turn(
     )
 
     # Update battle state
-    battle.state = turn_result["state"]
-    battle.turn = turn_result["turn"]
+    battle.summary["state"] = turn_result["state"]
+    battle.turns = turn_result["turn"]
 
-    if turn_result["winner"]:
-        battle.status = "finished"
+    if turn_result.get("winner"):
+        battle.winner = turn_result["winner"]
+        battle.summary["status"] = "finished"
+    else:
+        battle.summary["status"] = "in_progress"
         battle.winner = turn_result["winner"]
 
     await db.commit()
