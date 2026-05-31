@@ -226,30 +226,44 @@ class SpectatorService:
         messages: list[dict] = []
         for idx, event in enumerate(events):
             data = event.get("data") or {}
-            if event.get("type") == "day_discussion" and data.get("speeches"):
+            event_type = event.get("type", "unknown")
+            created_at = event.get("timestamp") or datetime.now(timezone.utc).isoformat()
+            # 保存完整事件数据用于前端可视化回放
+            game_data = {
+                "event_type": event_type,
+                "turn": event.get("turn"),
+                **data,
+            }
+            if event_type == "day_discussion" and data.get("speeches"):
                 for speech in data["speeches"]:
                     messages.append({
-                        "id": f"{event.get('type')}-{event.get('turn', 0)}-{speech.get('agent_id', idx)}",
+                        "id": f"{event_type}-{event.get('turn', 0)}-{speech.get('agent_id', idx)}",
                         "agent_id": speech.get("agent_id"),
                         "agent_name": speech.get("name") or "玩家",
                         "role": "agent",
                         "content": speech.get("content") or "",
                         "turn_number": event.get("turn"),
                         "log_type": "speech",
-                        "created_at": event.get("timestamp"),
+                        "game_data": {
+                            "event_type": event_type,
+                            "turn": event.get("turn"),
+                            "players": data.get("players"),
+                        },
+                        "created_at": created_at,
                     })
                 continue
 
             content, log_type = self._format_game_event_message(event)
             messages.append({
-                "id": f"{event.get('type')}-{event.get('turn', 0)}-{idx}",
+                "id": f"{event_type}-{event.get('turn', 0)}-{idx}",
                 "agent_id": None,
                 "agent_name": "系统",
                 "role": "system",
                 "content": content,
                 "turn_number": event.get("turn"),
                 "log_type": log_type,
-                "created_at": event.get("timestamp"),
+                "game_data": game_data,
+                "created_at": created_at,
             })
         return messages
 

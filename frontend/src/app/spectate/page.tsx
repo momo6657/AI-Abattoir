@@ -5,6 +5,10 @@ import { conversationsApi, gamesApi, spectatorApi } from "@/lib/api";
 import { useSpectateWebSocket, SpectateMessage } from "@/hooks/useSpectateWebSocket";
 import { LoadingSpinner, Badge, ErrorBanner, ProgressBar, ChatMessage, ThinkingIndicator } from "@/components";
 import ChessBoard from "@/components/games/ChessBoard";
+import WerewolfGameState from "@/components/games/WerewolfGameState";
+import DebateScoreboard from "@/components/games/DebateScoreboard";
+import TextAdventureState from "@/components/games/TextAdventureState";
+import NegotiationTracker from "@/components/games/NegotiationTracker";
 import { Conversation, Game, GamePlayer } from "@/types";
 import { getAvatarBg, getAvatarLetter, getStatusLabel } from "@/lib/utils";
 import { getGameTypeInfo } from "@/lib/constants";
@@ -65,6 +69,90 @@ function ParticipantList({ participants }: { participants: { id: string; name: s
       ))}
     </div>
   );
+}
+
+// ---- Game Visualization Helper ----
+function GameVisualization({ gameType, gameState, chessBoard, chessLastMove, chessInCheck, chessCurrentColor }: {
+  gameType: string;
+  gameState?: Record<string, unknown>;
+  chessBoard?: Record<string, [string, string]>;
+  chessLastMove?: { from: string; to: string } | null;
+  chessInCheck?: string | null;
+  chessCurrentColor?: string;
+}) {
+  if (gameType === "chess") {
+    const board = chessBoard || {};
+    return (
+      <>
+        <div className="flex items-center gap-3 mb-3">
+          <span className="text-sm font-semibold">国际象棋</span>
+          <Badge text={chessCurrentColor === "white" ? "白方走棋" : "黑方走棋"} variant={chessCurrentColor === "white" ? "info" : "default"} />
+          {chessInCheck && <Badge text="将军!" variant="danger" />}
+        </div>
+        <ChessBoard board={board} lastMove={chessLastMove} inCheck={chessInCheck} />
+        {chessLastMove && (
+          <div className="mt-2 text-xs text-gray-400">
+            最近走法: <span className="text-white font-mono">{chessLastMove.from} → {chessLastMove.to}</span>
+          </div>
+        )}
+        {Object.keys(board).length === 0 && (
+          <p className="text-xs text-gray-500 mt-3">等待第一步...</p>
+        )}
+      </>
+    );
+  }
+  if (!gameState) return null;
+  switch (gameType) {
+    case "werewolf":
+      return <WerewolfGameState
+        phase={gameState.phase as "night" | "day" | "vote" | "result" | undefined}
+        turn={gameState.turn as number}
+        players={gameState.players as Array<{agent_id: string; name: string; role?: string; role_name?: string; alive?: boolean}>}
+        nightActions={gameState.night_actions as Record<string, unknown>}
+        deathNames={gameState.death_names as string[]}
+        exiledName={gameState.exiled_name as string}
+        winner={gameState.winner as string}
+        aliveCount={gameState.alive_count as number}
+      />;
+    case "debate":
+      return <DebateScoreboard
+        topic={gameState.topic as string}
+        phase={gameState.phase as 'opening' | 'cross' | 'closing' | 'result'}
+        proOpening={gameState.pro_opening as string}
+        conOpening={gameState.con_opening as string}
+        proCross={gameState.pro_cross as string}
+        conCross={gameState.con_cross as string}
+        proClosing={gameState.pro_closing as string}
+        conClosing={gameState.con_closing as string}
+        proScores={gameState.pro_scores as {arguments?: number; logic?: number; expression?: number}}
+        conScores={gameState.con_scores as {arguments?: number; logic?: number; expression?: number}}
+        winner={gameState.winner as 'pro' | 'con' | null}
+      />;
+    case "text_adventure":
+      return <TextAdventureState
+        hp={gameState.hp as number}
+        maxHp={gameState.max_hp as number}
+        inventory={gameState.inventory as string[]}
+        currentLocation={gameState.current_location as string}
+        exploredLocations={gameState.explored_locations as string[]}
+        scene={gameState.scene as string}
+        lastAction={gameState.last_action as string}
+        lastResult={gameState.last_result as string}
+        lastHpChange={gameState.last_hp_change as number}
+        lastItem={gameState.last_item as string}
+        turn={gameState.turn as number}
+      />;
+    case "negotiation":
+      return <NegotiationTracker
+        phase={gameState.phase as 'negotiating' | 'accepted' | 'rejected'}
+        proposals={gameState.proposals as Array<{player: string; proposal: string; accepted?: boolean}>}
+        currentProposal={gameState.current_proposal as string}
+        proposedBy={gameState.proposed_by as string}
+        scores={gameState.scores as {player1?: number; player2?: number; fairness?: number}}
+      />;
+    default:
+      return null;
+  }
 }
 
 // ---- Live Spectating View ----
@@ -141,23 +229,17 @@ function LiveSpectateView({
         </div>
       </div>
 
-      {/* Center - Chess Board (only for chess games) */}
-      {isChess && (
+      {/* Center - Game Visualization */}
+      {type === "game" && gameType && (
         <div className="flex-shrink-0 flex flex-col items-center justify-start card overflow-y-auto p-4">
-          <div className="flex items-center gap-3 mb-3">
-            <span className="text-sm font-semibold">国际象棋</span>
-            <Badge text={chessCurrentColor === "white" ? "白方走棋" : "黑方走棋"} variant={chessCurrentColor === "white" ? "info" : "default"} />
-            {chessInCheck && <Badge text="将军!" variant="danger" />}
-          </div>
-          <ChessBoard board={chessBoard} lastMove={chessLastMove} inCheck={chessInCheck} />
-          {chessLastMove && (
-            <div className="mt-2 text-xs text-gray-400">
-              最近走法: <span className="text-white font-mono">{chessLastMove.from} → {chessLastMove.to}</span>
-            </div>
-          )}
-          {Object.keys(chessBoard).length === 0 && (
-            <p className="text-xs text-gray-500 mt-3">等待第一步...</p>
-          )}
+          <GameVisualization
+            gameType={gameType}
+            gameState={gameEvents.length > 0 ? gameEvents[gameEvents.length - 1] : undefined}
+            chessBoard={chessBoard}
+            chessLastMove={chessLastMove}
+            chessInCheck={chessInCheck}
+            chessCurrentColor={chessCurrentColor}
+          />
         </div>
       )}
 
@@ -221,30 +303,6 @@ function ReplayView({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const playTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // 提取象棋棋盘状态（从最终状态或消息日志）
-  const chessReplayBoard = useMemo(() => {
-    if (type !== "game" || replayData?.game_type !== "chess") return null;
-    // 从 state 提取最终棋盘
-    const state = replayData.state as Record<string, unknown> | undefined;
-    if (state?.board && typeof state.board === "object") {
-      return state.board as Record<string, [string, string]>;
-    }
-    // 从消息日志中查找最后一个 turn_result 事件的 board
-    const msgs = replayData.messages || [];
-    for (let i = msgs.length - 1; i >= 0; i--) {
-      const msg = msgs[i];
-      if (msg.log_type === "turn_result" && msg.content) {
-        try {
-          const data = JSON.parse(msg.content);
-          if (data.board) return data.board as Record<string, [string, string]>;
-        } catch {
-          // content 不是 JSON，继续查找
-        }
-      }
-    }
-    return null;
-  }, [type, replayData]);
-
   const messages = replayData?.messages || [];
   const participants = useMemo(() => {
     if (type === "game" && replayData?.players?.length) {
@@ -299,6 +357,43 @@ function ReplayView({
 
   const visibleMessages = messages.slice(0, currentIndex);
   const progressPct = messages.length > 0 ? (currentIndex / messages.length) * 100 : 0;
+
+  // 从可见消息中提取当前回放位置的游戏状态
+  const replayVisualizationProps = useMemo(() => {
+    if (!replayData?.game_type) return null;
+
+    const gameType = replayData.game_type;
+
+    // 国际象棋：从最新的 chess_move 或 turn_result 事件提取棋盘状态
+    if (gameType === "chess") {
+      for (let i = visibleMessages.length - 1; i >= 0; i--) {
+        const msg = visibleMessages[i];
+        if (msg.game_data?.event_type === "chess_move" || msg.game_data?.event_type === "turn_result") {
+          return {
+            gameType,
+            chessBoard: (msg.game_data?.board as Record<string, [string, string]>) || {},
+            chessLastMove: (msg.game_data?.last_move as { from: string; to: string }) || undefined,
+            chessInCheck: (msg.game_data?.in_check as string) || undefined,
+            chessCurrentColor: (msg.game_data?.current_color as string) || undefined,
+          };
+        }
+      }
+      return { gameType, chessBoard: {}, chessLastMove: undefined, chessInCheck: undefined, chessCurrentColor: undefined };
+    }
+
+    // 其他游戏类型：从最新的 game_event 提取状态
+    for (let i = visibleMessages.length - 1; i >= 0; i--) {
+      const msg = visibleMessages[i];
+      if (msg.game_data?.event_type === "game_event" && msg.game_data) {
+        return {
+          gameType,
+          gameState: msg.game_data,
+        };
+      }
+    }
+
+    return null;
+  }, [visibleMessages, replayData?.game_type]);
 
   if (loading) {
     return (
@@ -366,14 +461,16 @@ function ReplayView({
         </div>
       </div>
 
-      {/* Center - Chess Board (only for chess replay) */}
-      {chessReplayBoard && (
+      {/* Center - Game Visualization (step-by-step replay) */}
+      {replayVisualizationProps && (
         <div className="flex-shrink-0 flex flex-col items-center justify-start card overflow-y-auto p-4">
           <div className="flex items-center gap-3 mb-3">
-            <span className="text-sm font-semibold">国际象棋回放</span>
-            <Badge text="最终棋盘" variant="info" />
+            <span className="text-sm font-semibold">
+              {replayVisualizationProps.gameType === "chess" ? "国际象棋回放" : "游戏回放"}
+            </span>
+            <Badge text={`第 ${currentIndex} 步`} variant="info" />
           </div>
-          <ChessBoard board={chessReplayBoard} />
+          <GameVisualization {...replayVisualizationProps} />
         </div>
       )}
 

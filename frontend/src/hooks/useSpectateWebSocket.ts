@@ -9,6 +9,7 @@ export interface SpectateMessage {
   turn_number?: number;
   log_type?: string;
   created_at: string;
+  game_data?: Record<string, unknown>;
 }
 
 interface UseSpectateWebSocketOptions {
@@ -101,6 +102,21 @@ export function useSpectateWebSocket({ targetId, type }: UseSpectateWebSocketOpt
           const eventData = getGameEventData(msg);
           setGameEvents((prev) => [...prev, { type: msg.type, ...eventData, timestamp: msg.timestamp || new Date().toISOString() }]);
 
+          // 象棋棋盘状态实时更新
+          if (msg.type === "turn_result" && eventData.board) {
+            const board = eventData.board as Record<string, [string, string]>;
+            setChessBoard(board);
+            if (eventData.last_move) {
+              setChessLastMove(eventData.last_move as { from: string; to: string });
+            }
+            if (eventData.in_check !== undefined) {
+              setChessInCheck((eventData.in_check as string) || null);
+            }
+            if (eventData.color) {
+              setChessCurrentColor((eventData.color as string) || "white");
+            }
+          }
+
           if (msg.type === "day_discussion" && Array.isArray(eventData.speeches)) {
             setMessages((prev) => [
               ...prev,
@@ -112,6 +128,7 @@ export function useSpectateWebSocket({ targetId, type }: UseSpectateWebSocketOpt
                 content: speech.content || "",
                 turn_number: Number(payload.turn || eventData.turn || 0) || undefined,
                 log_type: "speech",
+                game_data: eventData,
                 created_at: msg.timestamp || new Date().toISOString(),
               })),
             ]);
@@ -122,6 +139,7 @@ export function useSpectateWebSocket({ targetId, type }: UseSpectateWebSocketOpt
               content: formatGameEventContent(msg.type, eventData),
               turn_number: Number(payload.turn || eventData.turn || 0) || undefined,
               log_type: msg.type === "night_result" || msg.type === "vote_result" ? "elimination" : "system",
+              game_data: eventData,
               created_at: msg.timestamp || new Date().toISOString(),
             }]);
           }
