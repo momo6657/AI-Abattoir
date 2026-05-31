@@ -100,7 +100,7 @@ export function useSpectateWebSocket({ targetId, type }: UseSpectateWebSocketOpt
         const payload = msg.data || {};
         if (type === "game" && GAME_EVENT_TYPES.has(msg.type)) {
           const eventData = getGameEventData(msg);
-          setGameEvents((prev) => [...prev, { type: msg.type, ...eventData, timestamp: msg.timestamp || new Date().toISOString() }]);
+          setGameEvents((prev) => [...prev, { type: msg.type, ...eventData, config: (payload.config || {}) as Record<string, unknown>, timestamp: msg.timestamp || new Date().toISOString() }]);
 
           // 象棋棋盘状态实时更新
           if (msg.type === "turn_result" && eventData.board) {

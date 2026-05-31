@@ -236,7 +236,7 @@ function LiveSpectateView({
         <div className="flex-shrink-0 flex flex-col items-center justify-start card overflow-y-auto p-4">
           <GameVisualization
             gameType={gameType}
-            gameState={gameEvents.length > 0 ? gameEvents[gameEvents.length - 1] : undefined}
+            gameState={gameEvents.length > 0 ? ((gameEvents[gameEvents.length - 1].config as Record<string, unknown>) || (gameEvents[gameEvents.length - 1].data as Record<string, unknown>) || gameEvents[gameEvents.length - 1]) : undefined}
             chessBoard={chessBoard}
             chessLastMove={chessLastMove}
             chessInCheck={chessInCheck}
@@ -383,13 +383,13 @@ function ReplayView({
       return { gameType, chessBoard: {}, chessLastMove: undefined, chessInCheck: undefined, chessCurrentColor: undefined };
     }
 
-    // 其他游戏类型：从最新的 game_event 提取状态
+    // 其他游戏类型：从最新的有 config 的消息提取状态
     for (let i = visibleMessages.length - 1; i >= 0; i--) {
       const msg = visibleMessages[i];
-      if (msg.game_data?.event_type === "game_event" && msg.game_data) {
+      if (msg.game_data?.config) {
         return {
           gameType,
-          gameState: msg.game_data,
+          gameState: msg.game_data.config as Record<string, unknown>,
         };
       }
     }
