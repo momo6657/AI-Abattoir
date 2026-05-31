@@ -1,0 +1,69 @@
+{
+  "team_templates": [
+    {
+      "id": "balance_sun",
+      "name": "Sun Offense",
+      "name_zh": "日光攻势",
+      "format": "vgc2024",
+      "description": "Sun-based offensive team with Torkoal and Chlorophyll sweepers",
+      "pokemon": [
+        {"species": "Torkoal", "ability": "Drought", "item": "Heat Rock", "moves": ["Eruption", "Body Press", "Protect", "Yawn"], "nature": "Modest", "evs": {"hp": 252, "def": 252, "spa": 4}},
+        {"species": "Venusaur", "ability": "Chlorophyll", "item": "Life Orb", "moves": ["Giga Drain", "Sludge Bomb", "Weather Ball", "Protect"], "nature": "Modest", "evs": {"hp": 4, "spa": 252, "spe": 252}},
+        {"species": "Dragonite", "ability": "Multiscale", "item": "Lum Berry", "moves": ["Extreme Speed", "Dragon Claw", "Earthquake", "Protect"], "nature": "Adamant", "evs": {"hp": 4, "atk": 252, "spe": 252}},
+        {"species": "Garchomp", "ability": "Rough Skin", "item": "Rocky Helmet", "moves": ["Earthquake", "Dragon Claw", "Rock Slide", "Protect"], "nature": "Jolly", "evs": {"atk": 252, "spd": 4, "spe": 252}}
+      ]
+    },
+    {
+      "id": "rain_sweepers",
+      "name": "Rain Sweepers",
+      "name_zh": "雨天队",
+      "format": "vgc2024",
+      "description": "Rain team with Swift Swim Pokemon and powerful Water attacks",
+      "pokemon": [
+        {"species": "Politoed", "ability": "Drizzle", "item": "Damp Rock", "moves": ["Scald", "Icy Wind", "Helping Hand", "Protect"], "nature": "Calm", "evs": {"hp": 252, "def": 252, "spd": 4}},
+        {"species": "Kingdra", "ability": "Swift Swim", "item": "Life Orb", "moves": ["Muddy Water", "Dragon Pulse", "Ice Beam", "Protect"], "nature": "Modest", "evs": {"hp": 4, "spa": 252, "spe": 252}},
+        {"species": "Amoonguss", "ability": "Regenerator", "item": "Black Sludge", "moves": ["Spore", "Rage Powder", "Giga Drain", "Protect"], "nature": "Relaxed", "evs": {"hp": 252, "def": 252, "spa": 4}},
+        {"species": "Metagross", "ability": "Clear Body", "item": "Weakness Policy", "moves": ["Meteor Mash", "Earthquake", "Ice Punch", "Protect"], "nature": "Adamant", "evs": {"hp": 4, "atk": 252, "spe": 252}}
+      ]
+    },
+    {
+      "id": "trick_room",
+      "name": "Trick Room",
+      "name_zh": "戏法空间队",
+      "format": "vgc2024",
+      "description": "Slow, powerful Pokemon that abuse Trick Room to outspeed",
+      "pokemon": [
+        {"species": "Cresselia", "ability": "Levitate", "item": "Mental Herb", "moves": ["Trick Room", "Psychic", "Icy Wind", "Helping Hand"], "nature": "Bold", "evs": {"hp": 252, "def": 252, "spa": 4}},
+        {"species": "Copperajah", "ability": "Sheer Force", "item": "Life Orb", "moves": ["Iron Head", "High Horsepower", "Play Rough", "Protect"], "nature": "Brave", "evs": {"hp": 252, "atk": 252, "def": 4}},
+        {"species": "Conkeldurr", "ability": "Guts", "item": "Flame Orb", "moves": ["Facade", "Drain Punch", "Mach Punch", "Wide Guard"], "nature": "Brave", "evs": {"hp": 252, "atk": 252, "def": 4}},
+        {"species": "Hatterene", "ability": "Magic Bounce", "item": "Weakness Policy", "moves": ["Expanding Force", "Dazzling Gleam", "Mystical Fire", "Protect"], "nature": "Quiet", "evs": {"hp": 252, "spa": 252, "spd": 4}}
+      ]
+    },
+    {
+      "id": "tailwind_bo",
+      "name": "Tailwind Balance",
+      "name_zh": "顺风平衡队",
+      "format": "vgc2024",
+      "description": "Balanced team with Tailwind support for speed control",
+      "pokemon": [
+        {"species": "Whimsicott", "ability": "Prankster", "item": "Focus Sash", "moves": ["Tailwind", "Moonblast", "Taunt", "Helping Hand"], "nature": "Timid", "evs": {"hp": 4, "spa": 252, "spe": 252}},
+        {"species": "Urshifu", "ability": "Unseen Fist", "item": "Choice Band", "moves": ["Wicked Blow", "Close Combat", "Sucker Punch", "Iron Head"], "nature": "Adamant", "evs": {"hp": 4, "atk": 252, "spe": 252}},
+        {"species": "Dragapult", "ability": "Clear Body", "item": "Life Orb", "moves": ["Dragon Darts", "Shadow Ball", "Fire Blast", "Protect"], "nature": "Timid", "evs": {"hp": 4, "spa": 252, "spe": 252}},
+        {"species": "Rillaboom", "ability": "Grassy Surge", "item": "Assault Vest", "moves": ["Grassy Glide", "Wood Hammer", "U-turn", "Fake Out"], "nature": "Adamant", "evs": {"hp": 252, "atk": 252, "def": 4}}
+      ]
+    },
+    {
+      "id": "good_stuff",
+      "name": "Good Stuff",
+      "name_zh": "强力单体型",
+      "format": "vgc2024",
+      "description": "Collection of individually strong Pokemon with good synergy",
+      "pokemon": [
+        {"species": "Incineroar", "ability": "Intimidate", "item": "Sitrus Berry", "moves": ["Flare Blitz", "Parting Shot", "Fake Out", "Snarl"], "nature": "Careful", "evs": {"hp": 252, "def": 4, "spd": 252}},
+        {"species": "Landorus", "ability": "Intimidate", "item": "Choice Scarf", "moves": ["Earthquake", "U-turn", "Rock Slide", "Superpower"], "nature": "Jolly", "evs": {"hp": 4, "atk": 252, "spe": 252}},
+        {"species": "Dragapult", "ability": "Infiltrator", "item": "Focus Sash", "moves": ["Dragon Darts", "Shadow Ball", "Thunderbolt", "Protect"], "nature": "Timid", "evs": {"hp": 4, "spa": 252, "spe": 252}},
+        {"species": "Rillaboom", "ability": "Grassy Surge", "item": "Life Orb", "moves": ["Grassy Glide", "Wood Hammer", "Fake Out", "Protect"], "nature": "Adamant", "evs": {"hp": 4, "atk": 252, "spe": 252}}
+      ]
+    }
+  ]
+}

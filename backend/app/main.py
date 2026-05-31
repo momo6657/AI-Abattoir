@@ -7,12 +7,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api import models, agents, conversations, games, auth, arena, search, hierarchy, evolution, leaderboard
+from app.api import models, agents, conversations, games, auth, arena, search, hierarchy, evolution, leaderboard, pokemon
 from app.core.database import get_db, engine, Base
 from app.core.config import settings
 from app.websocket.manager import manager as ws_manager
 from app.services.spectator_service import spectator_service
 from app.websocket.game_ws import router as game_ws_router
+from app.websocket.pokemon_manager import pokemon_ws_manager
 
 # Import all models to register them with Base
 from app.models import *  # noqa: F401, F403
@@ -63,6 +64,7 @@ app.include_router(search.router, prefix="/api")
 app.include_router(hierarchy.router, prefix="/api")
 app.include_router(evolution.router, prefix="/api")
 app.include_router(leaderboard.router, prefix="/api")
+app.include_router(pokemon.router, prefix="/api")
 app.include_router(game_ws_router)
 
 
@@ -286,3 +288,19 @@ async def replay_arena(
         return data
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+# ========== Pokemon 对战 WebSocket ==========
+
+
+@app.websocket("/ws/pokemon/battle/{battle_id}")
+async def pokemon_battle_ws(websocket: WebSocket, battle_id: str):
+    """Pokemon 对战 WebSocket - 实时对战通信"""
+    client_id = str(UUID(int=hash(str(websocket.client))))
+    await pokemon_ws_manager.connect(battle_id, websocket, client_id)
+    try:
+        while True:
+            data = await websocket.receive_json()
+            await pokemon_ws_manager.handle_message(battle_id, client_id, data)
+    except WebSocketDisconnect:
+        pokemon_ws_manager.disconnect(battle_id, client_id)
