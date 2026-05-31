@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { conversationsApi, gamesApi, spectatorApi } from "@/lib/api";
 import { useSpectateWebSocket, SpectateMessage } from "@/hooks/useSpectateWebSocket";
 import { LoadingSpinner, Badge, ErrorBanner, ProgressBar, ChatMessage, ThinkingIndicator } from "@/components";
+import ChessBoard from "@/components/games/ChessBoard";
 import { Conversation, Game, GamePlayer } from "@/types";
 import { getAvatarBg, getAvatarLetter, getStatusLabel } from "@/lib/utils";
 import { getGameTypeInfo } from "@/lib/constants";
@@ -76,10 +77,11 @@ function LiveSpectateView({
   type: "conversation" | "game";
   onBack: () => void;
 }) {
-  const { messages, connected, thinkingAgent, gameEvents, disconnect } = useSpectateWebSocket({ targetId, type });
+  const { messages, connected, thinkingAgent, gameEvents, disconnect, chessBoard, chessLastMove, chessInCheck, chessCurrentColor } = useSpectateWebSocket({ targetId, type });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [title, setTitle] = useState<string>("");
   const [targetPlayers, setTargetPlayers] = useState<GamePlayer[]>([]);
+  const [gameType, setGameType] = useState<string>("");
 
   useEffect(() => {
     (async () => {
@@ -87,6 +89,9 @@ function LiveSpectateView({
         const r = type === "conversation" ? await conversationsApi.get(targetId) : await gamesApi.get(targetId);
         setTitle(r.data.title || (type === "conversation" ? "对话" : "游戏"));
         setTargetPlayers(type === "game" ? (r.data.players || []) : []);
+        if (type === "game" && r.data.game_type) {
+          setGameType(r.data.game_type);
+        }
       } catch { setTitle(type === "conversation" ? "对话" : "游戏"); }
     })();
   }, [targetId, type]);
@@ -100,6 +105,8 @@ function LiveSpectateView({
     }
     return buildParticipants(messages);
   }, [messages, targetPlayers, type]);
+
+  const isChess = gameType === "chess";
 
   return (
     <div className="flex flex-col md:flex-row gap-4" style={{ height: "calc(100vh - 180px)" }}>
@@ -133,6 +140,26 @@ function LiveSpectateView({
           )}
         </div>
       </div>
+
+      {/* Center - Chess Board (only for chess games) */}
+      {isChess && (
+        <div className="flex-shrink-0 flex flex-col items-center justify-start card overflow-y-auto p-4">
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-sm font-semibold">国际象棋</span>
+            <Badge text={chessCurrentColor === "white" ? "白方走棋" : "黑方走棋"} variant={chessCurrentColor === "white" ? "info" : "default"} />
+            {chessInCheck && <Badge text="将军!" variant="danger" />}
+          </div>
+          <ChessBoard board={chessBoard} lastMove={chessLastMove} inCheck={chessInCheck} />
+          {chessLastMove && (
+            <div className="mt-2 text-xs text-gray-400">
+              最近走法: <span className="text-white font-mono">{chessLastMove.from} → {chessLastMove.to}</span>
+            </div>
+          )}
+          {Object.keys(chessBoard).length === 0 && (
+            <p className="text-xs text-gray-500 mt-3">等待第一步...</p>
+          )}
+        </div>
+      )}
 
       {/* Right - Message Stream */}
       <div className="flex-1 flex flex-col card overflow-hidden">
@@ -193,6 +220,30 @@ function ReplayView({
   const [speed, setSpeed] = useState(1);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const playTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // 提取象棋棋盘状态（从最终状态或消息日志）
+  const chessReplayBoard = useMemo(() => {
+    if (type !== "game" || replayData?.game_type !== "chess") return null;
+    // 从 state 提取最终棋盘
+    const state = replayData.state as Record<string, unknown> | undefined;
+    if (state?.board && typeof state.board === "object") {
+      return state.board as Record<string, [string, string]>;
+    }
+    // 从消息日志中查找最后一个 turn_result 事件的 board
+    const msgs = replayData.messages || [];
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const msg = msgs[i];
+      if (msg.log_type === "turn_result" && msg.content) {
+        try {
+          const data = JSON.parse(msg.content);
+          if (data.board) return data.board as Record<string, [string, string]>;
+        } catch {
+          // content 不是 JSON，继续查找
+        }
+      }
+    }
+    return null;
+  }, [type, replayData]);
 
   const messages = replayData?.messages || [];
   const participants = useMemo(() => {
@@ -314,6 +365,17 @@ function ReplayView({
           )}
         </div>
       </div>
+
+      {/* Center - Chess Board (only for chess replay) */}
+      {chessReplayBoard && (
+        <div className="flex-shrink-0 flex flex-col items-center justify-start card overflow-y-auto p-4">
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-sm font-semibold">国际象棋回放</span>
+            <Badge text="最终棋盘" variant="info" />
+          </div>
+          <ChessBoard board={chessReplayBoard} />
+        </div>
+      )}
 
       {/* Right - Replay Stream */}
       <div className="flex-1 flex flex-col card overflow-hidden">

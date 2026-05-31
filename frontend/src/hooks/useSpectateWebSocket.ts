@@ -26,7 +26,18 @@ const GAME_EVENT_TYPES = new Set([
   "turn_error",
   "turn_timeout",
   "error",
+  // 象棋事件
+  "turn_result",
+  "invalid_move",
 ]);
+
+/** 棋盘状态：{ 'e2': ['white', 'pawn'], ... } */
+export interface ChessBoardState {
+  board: Record<string, [string, string]>;
+  lastMove: { from: string; to: string } | null;
+  inCheck: string | null;
+  currentColor: string;
+}
 
 function getGameEventData(message: Record<string, unknown>): Record<string, unknown> {
   const payload = (message.data || {}) as Record<string, unknown>;
@@ -45,6 +56,13 @@ function formatGameEventContent(type: string, data: Record<string, unknown>): st
   if (type === "vote_result") return `投票结果：${data.exiled_name || data.exiled || "玩家"} 被放逐`;
   if (type === "game_over") return data.winner === "werewolf" ? "游戏结束：狼人阵营获胜" : "游戏结束：村民阵营获胜";
   if (type === "max_turns_reached") return "游戏达到最大回合数";
+  if (type === "turn_result") {
+    const from = data.from as string, to = data.to as string;
+    const color = data.color === "white" ? "白方" : "黑方";
+    const check = data.in_check ? " 将军!" : "";
+    return `${color}: ${from} → ${to}${check}`;
+  }
+  if (type === "invalid_move") return `无效走法，回退: ${data.fallback || "?"}`;
   return String(data.message || type);
 }
 
@@ -54,6 +72,10 @@ export function useSpectateWebSocket({ targetId, type }: UseSpectateWebSocketOpt
   const [connected, setConnected] = useState(false);
   const [thinkingAgent, setThinkingAgent] = useState<string | null>(null);
   const [gameEvents, setGameEvents] = useState<Record<string, unknown>[]>([]);
+  const [chessBoard, setChessBoard] = useState<Record<string, [string, string]>>({});
+  const [chessLastMove, setChessLastMove] = useState<{ from: string; to: string } | null>(null);
+  const [chessInCheck, setChessInCheck] = useState<string | null>(null);
+  const [chessCurrentColor, setChessCurrentColor] = useState<string>("white");
   const reconnectTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCount = useRef(0);
 
@@ -122,6 +144,16 @@ export function useSpectateWebSocket({ targetId, type }: UseSpectateWebSocketOpt
             break;
           case "agent_done_thinking":
             setThinkingAgent(null);
+            break;
+          case "chess_move":
+            const board = payload.board as Record<string, [string, string]> | undefined;
+            if (board) {
+              setChessBoard(board);
+              if (payload.last_move) setChessLastMove(payload.last_move as { from: string; to: string });
+              setChessInCheck((payload.in_check as string) || null);
+              setChessCurrentColor((payload.color as string) || "white");
+            }
+            setGameEvents((prev) => [...prev, { type: msg.type, ...payload, timestamp: new Date().toISOString() }]);
             break;
           case "game_event":
           case "turn_start":
@@ -203,8 +235,12 @@ export function useSpectateWebSocket({ targetId, type }: UseSpectateWebSocketOpt
     setMessages([]);
     setThinkingAgent(null);
     setGameEvents([]);
+    setChessBoard({});
+    setChessLastMove(null);
+    setChessInCheck(null);
+    setChessCurrentColor("white");
     retryCount.current = 0;
   }, []);
 
-  return { messages, connected, thinkingAgent, gameEvents, disconnect, setMessages };
+  return { messages, connected, thinkingAgent, gameEvents, chessBoard, chessLastMove, chessInCheck, chessCurrentColor, disconnect, setMessages };
 }
