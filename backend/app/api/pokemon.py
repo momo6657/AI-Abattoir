@@ -28,7 +28,7 @@ from app.models.pokemon import (
 from app.services.pokemon.battle_engine import BattleEngine
 from app.services.pokemon.data_loader import PokemonDataLoader
 
-router = APIRouter(prefix="/api/pokemon", tags=["pokemon"])
+router = APIRouter(prefix="/pokemon", tags=["pokemon"])
 
 
 # Species endpoints
