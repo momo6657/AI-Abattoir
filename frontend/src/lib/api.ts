@@ -107,6 +107,7 @@ export const searchApi = {
 export const spectatorApi = {
   replayConversation: (id: string) => api.get(`/replay/conversations/${id}`),
   replayGame: (id: string) => api.get(`/replay/games/${id}`),
+  replayArena: (id: string) => api.get(`/replay/arena/${id}`),
 };
 
 // ---- Models ---- (backend: /api/models/ with slash)

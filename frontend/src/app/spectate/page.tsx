@@ -1,15 +1,17 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { conversationsApi, gamesApi, spectatorApi } from "@/lib/api";
+import { conversationsApi, gamesApi, spectatorApi, arenaApi } from "@/lib/api";
 import { useSpectateWebSocket, SpectateMessage } from "@/hooks/useSpectateWebSocket";
+import { useArenaWebSocket } from "@/hooks/useArenaWebSocket";
+import ArenaMatchView from "@/components/arena/ArenaMatchView";
 import { LoadingSpinner, Badge, ErrorBanner, ProgressBar, ChatMessage, ThinkingIndicator } from "@/components";
 import ChessBoard from "@/components/games/ChessBoard";
 import WerewolfGameState from "@/components/games/WerewolfGameState";
 import DebateScoreboard from "@/components/games/DebateScoreboard";
 import TextAdventureState from "@/components/games/TextAdventureState";
 import NegotiationTracker from "@/components/games/NegotiationTracker";
-import { Conversation, Game, GamePlayer } from "@/types";
+import { Conversation, Game, GamePlayer, ArenaMatch, ArenaParticipant } from "@/types";
 import { getAvatarBg, getAvatarLetter, getStatusLabel } from "@/lib/utils";
 import { getGameTypeInfo } from "@/lib/constants";
 
@@ -534,26 +536,248 @@ function ReplayView({
   );
 }
 
+// ---- Live Arena Spectate View ----
+function LiveArenaSpectateView({
+  matchId,
+  onBack,
+}: {
+  matchId: string;
+  onBack: () => void;
+}) {
+  const [initialMatch, setInitialMatch] = useState<ArenaMatch | null>(null);
+  const [initialParticipants, setInitialParticipants] = useState<ArenaParticipant[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const { connected, match, participants, events, disconnect } = useArenaWebSocket({
+    matchId,
+    initialMatch,
+    initialParticipants,
+  });
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await arenaApi.getMatch(matchId);
+        const matchData = r.data.match;
+        const participantsData = r.data.participants;
+
+        const arenaMatch: ArenaMatch = {
+          id: matchData.id,
+          match_type: matchData.match_type,
+          title: matchData.title,
+          prompt: matchData.prompt,
+          status: matchData.status,
+          agent_a_id: participantsData[0]?.agent_id || "",
+          agent_b_id: participantsData[1]?.agent_id || "",
+          agent_a_name: participantsData[0]?.agent_name,
+          agent_b_name: participantsData[1]?.agent_name,
+          votes_a: participantsData[0]?.vote_count || 0,
+          votes_b: participantsData[1]?.vote_count || 0,
+          winner_id: matchData.winner_id,
+          created_at: matchData.created_at,
+          updated_at: matchData.updated_at,
+          creator_id: matchData.creator_id,
+          config: matchData.config,
+        };
+
+        const arenaParticipants: ArenaParticipant[] = participantsData.map((p: any) => ({
+          id: p.id,
+          match_id: p.match_id,
+          agent_id: p.agent_id,
+          agent_name: p.agent_name,
+          response_content: p.response_content,
+          vote_count: p.vote_count,
+          created_at: p.created_at,
+        }));
+
+        setInitialMatch(arenaMatch);
+        setInitialParticipants(arenaParticipants);
+      } catch {
+        // ignore
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [matchId]);
+
+  const handleBack = () => {
+    disconnect();
+    onBack();
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <LoadingSpinner text="加载竞技场对决..." />
+      </div>
+    );
+  }
+
+  const currentMatch = match || initialMatch;
+  const currentParticipants = participants.length > 0 ? participants : initialParticipants;
+
+  if (!currentMatch) {
+    return (
+      <div className="space-y-4">
+        <BackBtn onClick={handleBack} />
+        <ErrorBanner message="无法加载对决数据" onDismiss={handleBack} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-4 mb-4">
+        <BackBtn onClick={handleBack} />
+        <div className="flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-full ${connected ? "bg-green-500" : "bg-red-500"}`} />
+          <span className="text-xs text-gray-400">{connected ? "实时连接中" : "连接中..."}</span>
+          <Badge text="只读观战" variant="info" />
+        </div>
+      </div>
+
+      <ArenaMatchView
+        match={currentMatch}
+        participants={currentParticipants}
+        showVoting={true}
+      />
+
+      {events.length > 0 && (
+        <div className="card p-4 mt-6">
+          <h3 className="text-lg font-semibold mb-3">实时事件</h3>
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {events.slice(-10).reverse().map((evt, idx) => (
+              <div key={idx} className="text-sm text-gray-400 bg-gray-800 rounded px-3 py-2">
+                <span className="text-xs text-gray-500 mr-2">
+                  {new Date(evt.timestamp).toLocaleTimeString("zh-CN")}
+                </span>
+                {String(evt.data?.message || evt.type)}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- Arena Replay View ----
+function ArenaReplayView({
+  matchId,
+  onBack,
+}: {
+  matchId: string;
+  onBack: () => void;
+}) {
+  const [match, setMatch] = useState<ArenaMatch | null>(null);
+  const [participants, setParticipants] = useState<ArenaParticipant[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        setLoading(true);
+        const r = await spectatorApi.replayArena(matchId);
+        const matchData = r.data;
+        const participantsData = matchData.participants || [];
+
+        const arenaMatch: ArenaMatch = {
+          id: matchData.match_id,
+          match_type: matchData.match_type,
+          title: matchData.title,
+          prompt: matchData.prompt,
+          status: matchData.status,
+          agent_a_id: participantsData[0]?.agent_id || "",
+          agent_b_id: participantsData[1]?.agent_id || "",
+          agent_a_name: participantsData[0]?.agent_name,
+          agent_b_name: participantsData[1]?.agent_name,
+          votes_a: participantsData[0]?.vote_count || 0,
+          votes_b: participantsData[1]?.vote_count || 0,
+          winner_id: matchData.winner_id,
+          created_at: matchData.created_at,
+          updated_at: matchData.updated_at,
+          creator_id: matchData.creator_id,
+          config: matchData.config,
+        };
+
+        const arenaParticipants: ArenaParticipant[] = participantsData.map((p: any) => ({
+          id: p.id,
+          match_id: p.match_id,
+          agent_id: p.agent_id,
+          agent_name: p.agent_name,
+          response_content: p.response_content,
+          vote_count: p.vote_count,
+          created_at: p.created_at,
+        }));
+
+        setMatch(arenaMatch);
+        setParticipants(arenaParticipants);
+        setError(null);
+      } catch {
+        setError("无法加载对决回放数据");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [matchId]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <LoadingSpinner text="加载回放数据..." />
+      </div>
+    );
+  }
+
+  if (error || !match) {
+    return (
+      <div className="space-y-4">
+        <BackBtn onClick={onBack} />
+        <ErrorBanner message={error || "加载失败"} onDismiss={onBack} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-4 mb-4">
+        <BackBtn onClick={onBack} />
+        <Badge text="历史回放" variant="default" />
+      </div>
+
+      <ArenaMatchView
+        match={match}
+        participants={participants}
+        showVoting={true}
+      />
+    </div>
+  );
+}
+
 // ---- Page Component ----
 export default function SpectatePage() {
   const [tab, setTab] = useState<"live" | "replay">("live");
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [games, setGames] = useState<Game[]>([]);
+  const [arenaMatches, setArenaMatches] = useState<ArenaMatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"list" | "spectate" | "replay">("list");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedType, setSelectedType] = useState<"conversation" | "game">("conversation");
+  const [selectedType, setSelectedType] = useState<"conversation" | "game" | "arena">("conversation");
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [convR, gameR] = await Promise.all([
+      const [convR, gameR, arenaR] = await Promise.all([
         conversationsApi.list().catch(() => ({ data: [] })),
         gamesApi.list().catch(() => ({ data: [] })),
+        arenaApi.listMatches().catch(() => ({ data: [] })),
       ]);
       setConversations(convR.data || []);
       setGames(gameR.data || []);
+      setArenaMatches(arenaR.data || []);
       setError(null);
     } catch {
       setError("无法加载数据，请检查后端服务是否运行");
@@ -564,10 +788,10 @@ export default function SpectatePage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const handleSpectate = (id: string, type: "conversation" | "game") => {
+  const handleSpectate = (id: string, type: "conversation" | "game" | "arena") => {
     setSelectedId(id); setSelectedType(type); setViewMode("spectate");
   };
-  const handleReplay = (id: string, type: "conversation" | "game") => {
+  const handleReplay = (id: string, type: "conversation" | "game" | "arena") => {
     setSelectedId(id); setSelectedType(type); setViewMode("replay");
   };
   const handleBack = () => { setViewMode("list"); setSelectedId(null); };
@@ -576,17 +800,25 @@ export default function SpectatePage() {
   const endedConvs = conversations.filter((c) => c.status === "ended" || c.status === "finished");
   const activeGms = games.filter((g) => g.status === "in_progress");
   const endedGms = games.filter((g) => g.status === "finished");
+  const activeArena = arenaMatches.filter((m) => m.status === "in_progress" || m.status === "voting");
+  const endedArena = arenaMatches.filter((m) => m.status === "finished");
   const isLive = tab === "live";
 
   if (viewMode === "spectate" && selectedId) {
+    if (selectedType === "arena") {
+      return <LiveArenaSpectateView matchId={selectedId} onBack={handleBack} />;
+    }
     return <LiveSpectateView targetId={selectedId} type={selectedType} onBack={handleBack} />;
   }
   if (viewMode === "replay" && selectedId) {
+    if (selectedType === "arena") {
+      return <ArenaReplayView matchId={selectedId} onBack={handleBack} />;
+    }
     return <ReplayView targetId={selectedId} type={selectedType} onBack={handleBack} />;
   }
 
   const tabLabel = (t: "live" | "replay") => t === "live" ? "实时观战" : "历史回放";
-  const tabCount = (t: "live" | "replay") => t === "live" ? activeConvs.length + activeGms.length : endedConvs.length + endedGms.length;
+  const tabCount = (t: "live" | "replay") => t === "live" ? activeConvs.length + activeGms.length + activeArena.length : endedConvs.length + endedGms.length + endedArena.length;
   const convBtnClass = (active: boolean) => `px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${active ? "bg-accent/10 text-accent-hover border border-accent/20" : "text-gray-400 hover:text-white hover:bg-surface-overlay border border-transparent"}`;
   const actionBtn = (onClick: () => void, color: string, label: string) => (
     <button onClick={onClick} className={`${color} hover:opacity-80 px-3 py-1.5 rounded-xl text-xs font-medium transition-all`}>{label}</button>
@@ -611,7 +843,7 @@ export default function SpectatePage() {
       </div>
 
       {loading ? <LoadingSpinner text="加载中..." /> : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Conversations */}
           <div>
             <h3 className="text-lg font-semibold mb-4">{isLive ? "进行中的对话" : "已结束的对话"}</h3>
@@ -676,6 +908,63 @@ export default function SpectatePage() {
               {(isLive ? activeGms : endedGms).length === 0 && (
                 <div className="text-center py-8 text-gray-500 card">
                   {isLive ? "没有进行中的游戏" : "没有已结束的游戏"}
+                </div>
+              )}
+            </div>
+          </div>
+          {/* Arena Matches */}
+          <div>
+            <h3 className="text-lg font-semibold mb-4">{isLive ? "进行中的竞技场" : "已结束的竞技场"}</h3>
+            <div className="space-y-3">
+              {(isLive ? activeArena : endedArena).map((arena) => {
+                const getMatchTypeLabel = (type: string) => {
+                  const labels: Record<string, string> = {
+                    qa: "问答对决",
+                    creative: "创意对决",
+                    code: "编程对决",
+                    image: "图像对决",
+                    voice: "语音对决",
+                  };
+                  return labels[type] || type;
+                };
+                const getMatchTypeIcon = (type: string) => {
+                  const icons: Record<string, string> = {
+                    qa: "💬",
+                    creative: "🎨",
+                    code: "💻",
+                    image: "🖼️",
+                    voice: "🎤",
+                  };
+                  return icons[type] || "⚔️";
+                };
+                return (
+                  <div key={arena.id} className="card-hover p-4">
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-2xl">{getMatchTypeIcon(arena.match_type)}</span>
+                        <h4 className="font-medium">{arena.title}</h4>
+                      </div>
+                      <Badge text={getStatusLabel(arena.status)} variant={getStatusBadgeVariant(arena.status)} />
+                    </div>
+                    <p className="text-xs text-gray-400 mb-3">
+                      {getMatchTypeLabel(arena.match_type)}{" · "}{arena.agent_a_name || "选手A"} vs {arena.agent_b_name || "选手B"}{" · "}{formatDate(arena.created_at)}
+                    </p>
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs text-gray-500">
+                        {arena.votes_a + arena.votes_b > 0 && (
+                          <span>投票: {arena.votes_a} vs {arena.votes_b}</span>
+                        )}
+                      </div>
+                      {isLive && (arena.status === "in_progress" || arena.status === "voting")
+                        ? actionBtn(() => handleSpectate(arena.id, "arena"), "bg-green-600", "进入观战")
+                        : actionBtn(() => handleReplay(arena.id, "arena"), "bg-blue-600", "观看回放")}
+                    </div>
+                  </div>
+                );
+              })}
+              {(isLive ? activeArena : endedArena).length === 0 && (
+                <div className="text-center py-8 text-gray-500 card">
+                  {isLive ? "没有进行中的竞技场" : "没有已结束的竞技场"}
                 </div>
               )}
             </div>

@@ -16,6 +16,7 @@ from app.core.database import async_session
 from app.models.conversation import Conversation, Message
 from app.models.game import Game, GamePlayer
 from app.models.agent import Agent
+from app.models.arena import ArenaMatch, ArenaParticipant
 from app.services.game_engine import WEREWOLF_ROLE_NAMES
 from app.websocket.manager import manager as ws_manager
 
@@ -103,6 +104,90 @@ class SpectatorService:
         # 广播给 spectate 通道
         channel = f"spectate_game_{game_id}"
         await self._broadcast_to_channel(channel, message)
+
+    # ==================== Arena Spectating ====================
+
+    async def join_arena_as_spectator(self, websocket: WebSocket, match_id: UUID):
+        """加入竞技场观战频道"""
+        channel = f"spectate_arena_{match_id}"
+        await websocket.accept()
+        if channel not in self._spectate_connections:
+            self._spectate_connections[channel] = []
+        self._spectate_connections[channel].append(websocket)
+        logger.info("Spectator joined arena %s, channel=%s", match_id, channel)
+        try:
+            while True:
+                data = await websocket.receive_json()
+                if data.get("type") == "ping":
+                    await websocket.send_json({"type": "pong"})
+        except Exception:
+            pass
+        finally:
+            self._remove_spectator(websocket, channel)
+
+    async def broadcast_arena_event(
+        self, match_id: str, event_type: str, data: dict
+    ):
+        """Broadcast an arena event to all spectators."""
+        message = {
+            "type": event_type,
+            "match_id": str(match_id),
+            "data": data,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        # 广播给 spectate 通道
+        channel = f"spectate_arena_{match_id}"
+        await self._broadcast_to_channel(channel, message)
+
+    async def replay_arena(
+        self, db: AsyncSession, match_id: UUID
+    ) -> Dict[str, Any]:
+        """获取竞技场对决回放"""
+        result = await db.execute(select(ArenaMatch).where(ArenaMatch.id == match_id))
+        match = result.scalar_one_or_none()
+        if not match:
+            raise ValueError("Arena match not found")
+
+        # 加载参与者
+        participants_result = await db.execute(
+            select(ArenaParticipant)
+            .where(ArenaParticipant.match_id == match.id)
+            .order_by(ArenaParticipant.created_at.asc())
+        )
+        participants = participants_result.scalars().all()
+
+        # 批量加载 agent 信息
+        agent_ids = {p.agent_id for p in participants if p.agent_id}
+        agents_map: Dict[str, Any] = {}
+        if agent_ids:
+            agents_result = await db.execute(select(Agent).where(Agent.id.in_(agent_ids)))
+            agents_map = {str(a.id): a for a in agents_result.scalars().all()}
+
+        participant_list = []
+        for p in participants:
+            agent = agents_map.get(str(p.agent_id)) if p.agent_id else None
+            participant_list.append({
+                "id": str(p.id),
+                "agent_id": str(p.agent_id),
+                "agent_name": agent.name if agent else "Unknown",
+                "response_content": p.response_content,
+                "vote_count": p.vote_count or 0,
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+            })
+
+        return {
+            "match_id": str(match.id),
+            "match_type": match.match_type.value if match.match_type else None,
+            "title": match.title,
+            "prompt": match.prompt,
+            "status": match.status.value if match.status else None,
+            "config": match.config or {},
+            "creator_id": str(match.creator_id) if match.creator_id else None,
+            "winner_id": str(match.winner_id) if match.winner_id else None,
+            "participants": participant_list,
+            "created_at": match.created_at.isoformat() if match.created_at else None,
+            "updated_at": match.updated_at.isoformat() if match.updated_at else None,
+        }
 
     # ==================== Connection Management ====================
 

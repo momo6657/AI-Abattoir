@@ -240,6 +240,12 @@ async def spectate_game(websocket: WebSocket, game_id: UUID):
     await spectator_service.join_game_as_spectator(websocket, game_id)
 
 
+@app.websocket("/ws/spectate/arena/{match_id}")
+async def spectate_arena(websocket: WebSocket, match_id: UUID):
+    """观战竞技场 - 只接收消息，不发送"""
+    await spectator_service.join_arena_as_spectator(websocket, match_id)
+
+
 # ========== 回放 API ==========
 
 
@@ -264,6 +270,19 @@ async def replay_game(
     """获取游戏回放"""
     try:
         data = await spectator_service.replay_game(db, game_id)
+        return data
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.get("/api/replay/arena/{match_id}")
+async def replay_arena(
+    match_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """获取竞技场回放"""
+    try:
+        data = await spectator_service.replay_arena(db, match_id)
         return data
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

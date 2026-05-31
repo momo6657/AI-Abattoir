@@ -61,3 +61,47 @@ export interface GamePlayer {
 
 export type GameType = 'werewolf' | 'debate' | 'chess' | 'text_adventure' | 'negotiation';
 export type GameStatus = 'waiting' | 'in_progress' | 'paused' | 'finished' | 'cancelled';
+
+export interface ArenaMatch {
+  id: string;
+  match_type: string;
+  title: string;
+  prompt: string;
+  status: string;
+  agent_a_id: string;
+  agent_b_id: string;
+  agent_a_name?: string;
+  agent_b_name?: string;
+  result_a?: string;
+  result_b?: string;
+  image_a_url?: string;
+  image_b_url?: string;
+  audio_a_url?: string;
+  audio_b_url?: string;
+  participant_a_id?: string;
+  participant_b_id?: string;
+  votes_a: number;
+  votes_b: number;
+  winner_id?: string;
+  created_at: string;
+  updated_at?: string;
+  creator_id?: string;
+  config?: Record<string, unknown>;
+}
+
+export interface ArenaParticipant {
+  id: string;
+  match_id: string;
+  agent_id: string;
+  agent_name: string;
+  response_content?: {
+    response?: string;
+    image_url?: string;
+    audio_url?: string;
+    prompt?: string;
+    transcript?: string;
+    error?: string;
+  };
+  vote_count?: number;
+  created_at?: string;
+}

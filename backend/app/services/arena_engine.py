@@ -14,6 +14,7 @@ from app.services.image_adapter import image_adapter
 from app.services.tts_adapter import tts_adapter
 from app.services.agent_service import AgentService
 from app.services.media_storage import media_storage
+from app.services.spectator_service import spectator_service
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,16 @@ class ArenaEngine:
         match.status = MatchStatus.IN_PROGRESS
         await db.flush()
 
+        # 广播比赛开始
+        await spectator_service.broadcast_arena_event(
+            str(match.id),
+            "match_started",
+            {
+                "match_type": match.match_type.value if hasattr(match.match_type, 'value') else str(match.match_type),
+                "prompt": match.prompt,
+            }
+        )
+
         result = await db.execute(
             select(ArenaParticipant).where(ArenaParticipant.match_id == match.id)
         )
@@ -101,19 +112,52 @@ class ArenaEngine:
                     response_content = {"error": f"Unsupported match type: {match.match_type}"}
 
                 participant.response_content = response_content
+
+                # 广播该 Agent 完成响应
+                await spectator_service.broadcast_arena_event(
+                    str(match.id),
+                    "agent_responded",
+                    {
+                        "agent_id": str(agent.id),
+                        "agent_name": agent.name,
+                        "response_content": response_content,
+                    }
+                )
             except Exception as e:
                 logger.exception(
                     "Failed to generate response for agent=%s in match=%s (type=%s)",
                     agent.id, match.id, match.match_type,
                 )
-                participant.response_content = {
+                error_content = {
                     "type": match.match_type.value if hasattr(match.match_type, 'value') else str(match.match_type),
                     "error": f"Generation failed: {str(e)[:300]}",
                 }
+                participant.response_content = error_content
+
+                # 广播错误事件
+                await spectator_service.broadcast_arena_event(
+                    str(match.id),
+                    "agent_responded",
+                    {
+                        "agent_id": str(agent.id),
+                        "agent_name": agent.name,
+                        "response_content": error_content,
+                    }
+                )
 
         match.status = MatchStatus.VOTING
         await db.commit()
         await db.refresh(match)
+
+        # 广播投票开始
+        await spectator_service.broadcast_arena_event(
+            str(match.id),
+            "voting_started",
+            {
+                "participants": await self._build_participant_list(db, participants)
+            }
+        )
+
         return match
 
     async def vote(
@@ -157,6 +201,20 @@ class ArenaEngine:
 
         await db.commit()
         await db.refresh(vote)
+
+        # 广播投票更新
+        agent = await db.get(Agent, participant.agent_id)
+        await spectator_service.broadcast_arena_event(
+            match_id,
+            "vote_received",
+            {
+                "participant_id": participant_id,
+                "agent_id": str(participant.agent_id),
+                "agent_name": agent.name if agent else "Unknown",
+                "vote_count": participant.vote_count,
+            }
+        )
+
         return vote
 
     async def get_results(self, db: AsyncSession, match_id: str) -> Dict[str, Any]:
@@ -227,9 +285,40 @@ class ArenaEngine:
         await db.commit()
         await db.refresh(match)
 
+        # 广播比赛完成
+        winner_agent = None
+        if match.winner_id:
+            winner_agent = await db.get(Agent, match.winner_id)
+
+        await spectator_service.broadcast_arena_event(
+            match_id,
+            "match_completed",
+            {
+                "winner_id": str(match.winner_id) if match.winner_id else None,
+                "winner_name": winner_agent.name if winner_agent else None,
+                "status": match.status.value if hasattr(match.status, 'value') else str(match.status),
+            }
+        )
+
         return await self.get_results(db, match_id)
 
     # ========== 内部方法 ==========
+
+    async def _build_participant_list(
+        self, db: AsyncSession, participants: List[ArenaParticipant]
+    ) -> List[Dict[str, Any]]:
+        """构建参与者列表信息（用于事件广播）"""
+        result = []
+        for p in participants:
+            agent = await db.get(Agent, p.agent_id)
+            result.append({
+                "id": str(p.id),
+                "agent_id": str(p.agent_id),
+                "agent_name": agent.name if agent else "Unknown",
+                "response_content": p.response_content,
+                "vote_count": p.vote_count or 0,
+            })
+        return result
 
     async def _generate_text_response(
         self,
