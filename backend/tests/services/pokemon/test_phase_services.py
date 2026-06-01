@@ -73,6 +73,12 @@ def test_showdown_parser_tracks_room_events():
     assert events[1].event_type == "move"
 
 
+def test_showdown_extracts_challstr():
+    connector = PokemonShowdownConnector()
+    events = connector.parse_message("|challstr|4|abcdef")
+    assert connector.extract_challstr(events) == "4|abcdef"
+
+
 def test_showdown_message_builders():
     connector = PokemonShowdownConnector()
     assert connector.build_search_message("gen9vgc2024regg") == "|/search gen9vgc2024regg"

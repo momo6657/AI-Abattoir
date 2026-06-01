@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
+import httpx
 
 
 class ShowdownConnectionError(RuntimeError):
@@ -25,8 +26,13 @@ class ShowdownEvent:
 class PokemonShowdownConnector:
     """Minimal connector for Pokemon Showdown rooms and battle messages."""
 
-    def __init__(self, server_url: str = "wss://sim3.psim.us/showdown/websocket"):
+    def __init__(
+        self,
+        server_url: str = "wss://sim3.psim.us/showdown/websocket",
+        login_url: str = "https://play.pokemonshowdown.com/action.php",
+    ):
         self.server_url = server_url
+        self.login_url = login_url
         self.websocket: Any | None = None
         self.current_room = ""
 
@@ -48,6 +54,39 @@ class PokemonShowdownConnector:
 
     def build_login_message(self, username: str, assertion: str) -> str:
         return f"|/trn {username},0,{assertion}"
+
+    def extract_challstr(self, events: list[ShowdownEvent]) -> str | None:
+        for event in events:
+            if event.event_type == "challstr":
+                return "|".join(event.args)
+        return None
+
+    async def request_assertion(
+        self,
+        username: str,
+        challstr: str,
+        password: str | None = None,
+    ) -> str:
+        payload = {
+            "act": "login" if password else "getassertion",
+            "name": username,
+            "challstr": challstr,
+        }
+        if password:
+            payload["pass"] = password
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.post(self.login_url, data=payload)
+            response.raise_for_status()
+        text = response.text
+        if text.startswith("]"):
+            data = response.json()
+            assertion = data.get("assertion")
+            if not assertion:
+                raise ShowdownConnectionError(data.get("actionsuccess") or "Pokemon Showdown login failed.")
+            return assertion
+        if not text:
+            raise ShowdownConnectionError("Pokemon Showdown returned an empty assertion.")
+        return text
 
     def build_search_message(self, battle_format: str = "gen9vgc2024regg") -> str:
         return f"|/search {battle_format}"
