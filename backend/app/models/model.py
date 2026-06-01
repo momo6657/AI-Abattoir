@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import Column, String, DateTime, Boolean, Float, ForeignKey, Enum, Integer
 from sqlalchemy.dialects.postgresql import UUID
 from app.core.types import CompatibleJSON as JSONB
+from app.core.types import enum_values
 import enum
 
 from app.core.database import Base
@@ -43,5 +44,5 @@ class ModelCapability(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     model_id = Column(UUID(as_uuid=True), ForeignKey("models.id", ondelete="CASCADE"), nullable=False)
-    capability = Column(Enum(CapabilityType), nullable=False)
+    capability = Column(Enum(CapabilityType, values_callable=enum_values), nullable=False)
     config = Column(JSONB, default=dict)

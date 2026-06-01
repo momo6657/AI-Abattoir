@@ -1,4 +1,9 @@
 import asyncio
+import os
+import tempfile
+from pathlib import Path
+from uuid import uuid4
+
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
@@ -7,9 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from app.core.database import Base, get_db
 from app.main import app
 
-TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+TEST_DB_DIR = Path(tempfile.gettempdir()) / "ai-abattoir-tests"
+TEST_DB_DIR.mkdir(exist_ok=True)
+TEST_DATABASE_URL = f"sqlite+aiosqlite:///{TEST_DB_DIR / f'test-{os.getpid()}-{uuid4().hex}.db'}"
 
-engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+engine = create_async_engine(TEST_DATABASE_URL, echo=False, connect_args={"timeout": 30})
 TestSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

@@ -19,3 +19,8 @@ class CompatibleJSON(TypeDecorator):
             from sqlalchemy.dialects.postgresql import JSONB
             return dialect.type_descriptor(JSONB())
         return dialect.type_descriptor(JSON())
+
+
+def enum_values(enum_cls):
+    """Persist str Enum values instead of member names."""
+    return [item.value for item in enum_cls]

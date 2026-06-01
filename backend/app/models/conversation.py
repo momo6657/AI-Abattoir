@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Integer, Enum
 from sqlalchemy.dialects.postgresql import UUID
 from app.core.types import CompatibleJSON as JSONB
+from app.core.types import enum_values
 import enum
 
 from app.core.database import Base
@@ -26,8 +27,8 @@ class Conversation(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title = Column(String(200), nullable=True)
-    mode = Column(Enum(ConversationMode), default=ConversationMode.FREE)
-    status = Column(Enum(ConversationStatus), default=ConversationStatus.ACTIVE)
+    mode = Column(Enum(ConversationMode, values_callable=enum_values), default=ConversationMode.FREE)
+    status = Column(Enum(ConversationStatus, values_callable=enum_values), default=ConversationStatus.ACTIVE)
     config = Column(JSONB, default=dict)
     creator_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

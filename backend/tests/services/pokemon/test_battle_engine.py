@@ -135,6 +135,39 @@ class TestBattleEngine:
         # Note: damage calculation depends on speed and other factors
         assert len(new_state.battle_log) > 0
 
+    def test_execute_turn_with_string_moves(self):
+        """Test team templates with string move names can execute turns."""
+        from app.services.pokemon.battle_engine import BattleAction
+
+        team = [
+            {
+                "species": "Charizard",
+                "types": ["Fire", "Flying"],
+                "stats": {"hp": 100, "atk": 84, "def": 78, "spa": 109, "spd": 85, "spe": 100},
+                "moves": ["Flamethrower", "Protect"],
+                "ability": "Blaze",
+                "item": "",
+            },
+            {
+                "species": "Venusaur",
+                "types": ["Grass", "Poison"],
+                "stats": {"hp": 100, "atk": 82, "def": 83, "spa": 100, "spd": 100, "spe": 80},
+                "moves": ["Giga Drain", "Protect"],
+                "ability": "Overgrow",
+                "item": "",
+            },
+        ]
+        state = self.engine.create_battle("string-move-battle", team, team, "agent1", "agent2")
+        new_state = self.engine.execute_turn(
+            state,
+            [BattleAction("move", pokemon_index=0, move_index=0, target=(2, 0))],
+            [BattleAction("move", pokemon_index=0, move_index=0, target=(1, 0))],
+        )
+
+        assert new_state.turn == 1
+        assert isinstance(new_state.player1.team[0].moves[0], dict)
+        assert new_state.player1.team[0].moves[0]["name"] == "Flamethrower"
+
     def test_type_effectiveness_in_battle(self):
         """Test that type effectiveness is applied correctly"""
         from app.services.pokemon.battle_engine import BattleAction

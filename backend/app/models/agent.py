@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Integer, Enum
 from sqlalchemy.dialects.postgresql import UUID
 from app.core.types import CompatibleJSON as JSONB
+from app.core.types import enum_values
 import enum
 
 from app.core.database import Base
@@ -26,7 +27,7 @@ class Agent(Base):
     avatar_url = Column(String(500), nullable=True)
     voice_model_id = Column(UUID(as_uuid=True), ForeignKey("models.id"), nullable=True)
     is_template = Column(String(1), default="0")
-    level = Column(Enum(AgentLevel), default=AgentLevel.NOVICE)
+    level = Column(Enum(AgentLevel, values_callable=enum_values), default=AgentLevel.NOVICE)
     experience_points = Column(Integer, default=0)
     # 宝可梦对战相关字段
     pokemon_rating = Column(Integer, default=1500)  # ELO 评分

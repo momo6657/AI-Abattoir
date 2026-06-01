@@ -2,7 +2,9 @@
 Battle Engine - Core battle logic for Pokemon VGC double battles
 """
 
+import json
 import random
+from pathlib import Path
 from typing import Dict, List, Optional, Any
 from app.services.pokemon.battle_state import (
     BattleState, BattlePhase, PokemonState, PlayerState, Weather
@@ -24,6 +26,7 @@ class BattleAction:
 
 class BattleEngine:
     """Core battle engine for VGC double battles"""
+    _move_catalog: Dict[str, Dict[str, Any]] | None = None
 
     def __init__(self):
         self.damage_calculator = DamageCalculator()
@@ -58,7 +61,11 @@ class BattleEngine:
 
     def from_dict(self, data: Dict[str, Any]) -> BattleState:
         """Rehydrate battle state from API/database JSON."""
-        return BattleState.from_dict(data)
+        state = BattleState.from_dict(data)
+        for player in (state.player1, state.player2):
+            for pokemon in player.team:
+                pokemon.moves = [self._normalize_move(move) for move in pokemon.moves]
+        return state
 
     def _create_pokemon_state(self, data: Dict, position: int) -> PokemonState:
         """Create PokemonState from team data"""
@@ -90,11 +97,54 @@ class BattleEngine:
             stats=stats,
             current_hp=max_hp,
             max_hp=max_hp,
-            moves=data.get("moves", []),
+            moves=[self._normalize_move(move) for move in data.get("moves", [])],
             ability=data.get("ability", ""),
             item=data.get("item", ""),
             position=position,
         )
+
+    @classmethod
+    def _load_move_catalog(cls) -> Dict[str, Dict[str, Any]]:
+        if cls._move_catalog is not None:
+            return cls._move_catalog
+
+        cls._move_catalog = {}
+        data_path = Path(__file__).resolve().parents[3] / "data" / "pokemon" / "moves.json"
+        if data_path.exists():
+            with open(data_path, "r", encoding="utf-8") as file:
+                payload = json.load(file)
+            for move in payload.get("moves", []):
+                if isinstance(move, dict) and move.get("name"):
+                    cls._move_catalog[move["name"].lower()] = move
+        return cls._move_catalog
+
+    def _normalize_move(self, move: Any) -> Dict[str, Any]:
+        if isinstance(move, dict):
+            return move
+        if isinstance(move, str):
+            catalog_move = self._load_move_catalog().get(move.lower())
+            if catalog_move:
+                return dict(catalog_move)
+            return {
+                "name": move,
+                "type": "Normal",
+                "category": "physical",
+                "power": 50,
+                "accuracy": 100,
+                "pp": 10,
+                "priority": 0,
+                "target": "normal",
+            }
+        return {
+            "name": "Struggle",
+            "type": "Normal",
+            "category": "physical",
+            "power": 50,
+            "accuracy": 100,
+            "pp": 1,
+            "priority": 0,
+            "target": "normal",
+        }
 
     def get_valid_actions(self, state: BattleState, player_num: int) -> List[BattleAction]:
         """Get all valid actions for a player"""
@@ -108,6 +158,8 @@ class BattleEngine:
 
             # Move actions
             for move_idx, move in enumerate(pokemon.moves):
+                move = self._normalize_move(move)
+                pokemon.moves[move_idx] = move
                 targets = self._get_valid_targets(state, player_num, move)
                 for target in targets:
                     actions.append(BattleAction(
@@ -232,7 +284,8 @@ class BattleEngine:
         pokemon = player.team[action.pokemon_index]
 
         if action.move_index < len(pokemon.moves):
-            move = pokemon.moves[action.move_index]
+            move = self._normalize_move(pokemon.moves[action.move_index])
+            pokemon.moves[action.move_index] = move
             return move.get("priority", 0)
         return 0
 
@@ -269,7 +322,8 @@ class BattleEngine:
         if action.move_index >= len(attacker.moves):
             return
 
-        move = attacker.moves[action.move_index]
+        move = self._normalize_move(attacker.moves[action.move_index])
+        attacker.moves[action.move_index] = move
 
         # Status moves
         if move.get("category") == "status":
