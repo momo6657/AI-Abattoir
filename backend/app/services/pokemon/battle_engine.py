@@ -56,6 +56,10 @@ class BattleEngine:
             phase=BattlePhase.BATTLE,
         )
 
+    def from_dict(self, data: Dict[str, Any]) -> BattleState:
+        """Rehydrate battle state from API/database JSON."""
+        return BattleState.from_dict(data)
+
     def _create_pokemon_state(self, data: Dict, position: int) -> PokemonState:
         """Create PokemonState from team data"""
         base_stats = data.get("stats", {"hp": 100, "atk": 100, "def": 100, "spa": 100, "spd": 100, "spe": 100})
@@ -150,8 +154,8 @@ class BattleEngine:
 
         return targets if targets else [(2 if player_num == 1 else 1, 0)]
 
-    def execute_turn(self, state: BattleState, p1_actions: List[BattleAction],
-                    p2_actions: List[BattleAction]) -> BattleState:
+    def execute_turn(self, state: BattleState, p1_actions: List[Any],
+                    p2_actions: List[Any]) -> BattleState:
         """Execute one turn of battle"""
         if state.is_over():
             return state
@@ -161,6 +165,9 @@ class BattleEngine:
 
         # Collect all actions with speed
         all_actions = []
+        p1_actions = [self._coerce_action(action) for action in p1_actions]
+        p2_actions = [self._coerce_action(action) for action in p2_actions]
+
         for action in p1_actions:
             pokemon = state.player1.team[action.pokemon_index]
             speed = self._get_effective_speed(pokemon, state)
@@ -175,7 +182,7 @@ class BattleEngine:
         # Trick Room reverses speed order
         all_actions.sort(
             key=lambda x: (
-                self._get_action_priority(x[0], state),
+                self._get_action_priority(x[0], state, x[1]),
                 x[2] if not state.trick_room else -x[2]
             ),
             reverse=True
@@ -204,12 +211,24 @@ class BattleEngine:
         state.add_log("turn_end", {"turn": state.turn})
         return state
 
-    def _get_action_priority(self, action: BattleAction, state: BattleState) -> int:
+    def _coerce_action(self, action: Any) -> BattleAction:
+        if isinstance(action, BattleAction):
+            return action
+        if isinstance(action, dict):
+            action = dict(action)
+            action_type = action.pop("action_type", action.pop("type", "move"))
+            target = action.get("target")
+            if isinstance(target, list):
+                action["target"] = tuple(target)
+            return BattleAction(action_type, **action)
+        raise TypeError(f"Unsupported battle action: {type(action)!r}")
+
+    def _get_action_priority(self, action: BattleAction, state: BattleState, player_num: int = 1) -> int:
         """Get priority of an action"""
         if action.action_type == "switch":
             return 100  # Switches happen first
 
-        player = state.player1 if True else state.player2  # simplified
+        player = state.player1 if player_num == 1 else state.player2
         pokemon = player.team[action.pokemon_index]
 
         if action.move_index < len(pokemon.moves):

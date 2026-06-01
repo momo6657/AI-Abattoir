@@ -25,8 +25,13 @@ from app.models.pokemon import (
     PokemonTeam,
     PokemonBattle,
 )
+from app.models.agent import Agent
 from app.services.pokemon.battle_engine import BattleEngine
 from app.services.pokemon.data_loader import PokemonDataLoader
+from app.services.pokemon.knowledge_service import pokemon_knowledge_service
+from app.services.pokemon.team_builder import pokemon_team_builder
+from app.services.pokemon.battle_analysis import pokemon_battle_analysis_service
+from app.services.pokemon.showdown_connector import pokemon_showdown_connector
 
 router = APIRouter(prefix="/pokemon", tags=["pokemon"])
 
@@ -106,6 +111,19 @@ async def create_team(
     return team
 
 
+@router.post("/teams/build", response_model=TeamResponse, status_code=status.HTTP_201_CREATED)
+async def build_team_for_agent(
+    agent_id: UUID,
+    battle_format: str = "vgc2024",
+    db: AsyncSession = Depends(get_db),
+):
+    """Build a team for an agent based on its Pokemon level/playstyle."""
+    agent = await db.get(Agent, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return await pokemon_team_builder.build_for_agent(db, agent, battle_format)
+
+
 @router.get("/teams/{team_id}", response_model=TeamResponse)
 async def get_team(team_id: UUID, db: AsyncSession = Depends(get_db)):
     """Get a specific team"""
@@ -129,6 +147,25 @@ async def delete_team(team_id: UUID, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Team not found")
     await db.delete(team)
     await db.commit()
+
+
+@router.get("/battles/history", response_model=List[BattleResponse])
+async def get_battle_history(
+    agent_id: UUID | None = None,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get Pokemon battle history, optionally scoped to one agent."""
+    query = select(PokemonBattle).order_by(PokemonBattle.created_at.desc()).limit(limit)
+    if agent_id:
+        query = (
+            select(PokemonBattle)
+            .where((PokemonBattle.player1_agent_id == agent_id) | (PokemonBattle.player2_agent_id == agent_id))
+            .order_by(PokemonBattle.created_at.desc())
+            .limit(limit)
+        )
+    result = await db.execute(query)
+    return list(result.scalars().all())
 
 
 # Battle endpoints
@@ -187,6 +224,8 @@ async def create_battle(
     battle.summary = {
         "battle_id": str(battle.id),
         "turn": battle_state.turn,
+        "state": battle_state.to_dict(),
+        "status": "in_progress",
         "player1_active": battle_state.player1.active,
         "player2_active": battle_state.player2.active,
     }
@@ -217,10 +256,13 @@ async def get_battle_state(battle_id: UUID, db: AsyncSession = Depends(get_db)):
     if not battle:
         raise HTTPException(status_code=404, detail="Battle not found")
 
-    if not battle.state:
+    state = (battle.summary or {}).get("state") if isinstance(battle.summary, dict) else None
+    if not state:
+        state = getattr(battle, "state", None)
+    if not state:
         raise HTTPException(status_code=400, detail="Battle not initialized")
 
-    return battle.state
+    return state
 
 
 @router.post("/battles/{battle_id}/turn")
@@ -237,33 +279,86 @@ async def submit_turn(
     if not battle:
         raise HTTPException(status_code=404, detail="Battle not found")
 
-    if not battle.summary or "state" not in battle.summary:
+    state_payload = (battle.summary or {}).get("state") if isinstance(battle.summary, dict) else None
+    if not state_payload:
+        state_payload = getattr(battle, "state", None)
+    if not state_payload:
         raise HTTPException(status_code=400, detail="Battle not initialized")
 
     # Execute turn
     engine = BattleEngine()
-    battle_state = engine.from_dict(battle.summary["state"])
+    battle_state = engine.from_dict(state_payload)
 
-    turn_result = engine.execute_turn(
+    next_state = engine.execute_turn(
         battle_state,
         [a.model_dump() for a in turn_data.player1_actions],
         [a.model_dump() for a in turn_data.player2_actions] if turn_data.player2_actions else [],
     )
 
     # Update battle state
-    battle.summary["state"] = turn_result["state"]
-    battle.turns = turn_result["turn"]
+    turn_result = next_state.to_dict()
+    turn_result["battle_log"] = next_state.battle_log
+    if not isinstance(battle.summary, dict):
+        battle.summary = {}
+    battle.summary["state"] = turn_result
+    battle.battle_log = next_state.battle_log
+    battle.turns = next_state.turn
 
-    if turn_result.get("winner"):
-        battle.winner = turn_result["winner"]
+    if next_state.winner:
+        battle.winner = next_state.winner
         battle.summary["status"] = "finished"
     else:
         battle.summary["status"] = "in_progress"
-        battle.winner = turn_result["winner"]
+        battle.winner = next_state.winner
 
     await db.commit()
 
     return turn_result
+
+
+@router.get("/battles/{battle_id}/analysis")
+async def analyze_battle(battle_id: UUID, db: AsyncSession = Depends(get_db)):
+    """Analyze a battle log and return summary statistics."""
+    battle = await db.get(PokemonBattle, battle_id)
+    if not battle:
+        raise HTTPException(status_code=404, detail="Battle not found")
+    return pokemon_battle_analysis_service.summarize(battle.battle_log or [])
+
+
+@router.post("/battles/{battle_id}/finalize")
+async def finalize_battle(
+    battle_id: UUID,
+    winner_agent_id: UUID | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Finalize a Pokemon battle and record evolution experience."""
+    battle = await db.get(PokemonBattle, battle_id)
+    if not battle:
+        raise HTTPException(status_code=404, detail="Battle not found")
+    return await pokemon_battle_analysis_service.finalize_battle(db, battle, winner_agent_id)
+
+
+@router.get("/knowledge/search")
+async def search_knowledge(
+    query_type: str,
+    query_key: str,
+    max_results: int = 5,
+    db: AsyncSession = Depends(get_db),
+):
+    """Search Pokemon knowledge sources with database caching."""
+    return await pokemon_knowledge_service.search(db, query_type, query_key, max_results)
+
+
+@router.post("/showdown/parse")
+async def parse_showdown_message(payload: dict):
+    """Parse raw Pokemon Showdown protocol payload into structured events."""
+    raw = payload.get("payload", "")
+    return {
+        "events": [
+            {"room_id": event.room_id, "event_type": event.event_type, "args": event.args, "raw": event.raw}
+            for event in pokemon_showdown_connector.parse_message(raw)
+        ]
+    }
 
 
 # Data loading endpoint

@@ -142,7 +142,77 @@ class BattleState:
             "status": pokemon.status,
             "is_fainted": pokemon.is_fainted,
             "is_active": pokemon.is_active,
+            "stats": pokemon.stats,
+            "moves": pokemon.moves,
+            "ability": pokemon.ability,
+            "item": pokemon.item,
+            "position": pokemon.position,
+            "stat_stages": pokemon.stat_stages,
+            "has_tera": pokemon.has_tera,
+            "tera_type": pokemon.tera_type,
         }
 
     def deep_copy(self) -> "BattleState":
         return copy.deepcopy(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "BattleState":
+        """Rehydrate a BattleState previously produced by to_dict()."""
+        return cls(
+            battle_id=data["battle_id"],
+            player1=cls._player_from_dict(data["player1"]),
+            player2=cls._player_from_dict(data["player2"]),
+            turn=data.get("turn", 0),
+            phase=BattlePhase(data.get("phase", BattlePhase.BATTLE.value)),
+            weather=Weather(data.get("weather", Weather.NONE.value)),
+            trick_room=data.get("trick_room", False),
+            battle_log=data.get("battle_log", []),
+            winner=data.get("winner"),
+        )
+
+    @staticmethod
+    def _player_from_dict(data: Dict[str, Any]) -> PlayerState:
+        active_payload = data.get("active", [])
+        team_payload = data.get("team")
+        if team_payload is not None and all(isinstance(item, int) for item in active_payload):
+            team = [
+                BattleState._pokemon_from_dict(pokemon_data, idx in set(active_payload))
+                for idx, pokemon_data in enumerate(team_payload)
+            ]
+        else:
+            bench_payload = data.get("bench", [])
+            combined = active_payload + bench_payload
+            team = [
+                BattleState._pokemon_from_dict(pokemon_data, idx in range(len(active_payload)))
+                for idx, pokemon_data in enumerate(combined)
+            ]
+        return PlayerState(
+            agent_id=data.get("agent_id", ""),
+            team=team,
+            active=[i for i, pokemon in enumerate(team) if pokemon.is_active],
+            can_tera=data.get("can_tera", True),
+        )
+
+    @staticmethod
+    def _pokemon_from_dict(data: Dict[str, Any], default_active: bool) -> PokemonState:
+        return PokemonState(
+            species=data.get("species", "Unknown"),
+            name=data.get("name", data.get("species", "Unknown")),
+            level=data.get("level", 50),
+            types=data.get("types", ["Normal"]),
+            stats=data.get("stats", {}),
+            current_hp=data.get("current_hp", data.get("max_hp", 0)),
+            max_hp=data.get("max_hp", 0),
+            moves=data.get("moves", []),
+            ability=data.get("ability", ""),
+            item=data.get("item", ""),
+            status=data.get("status"),
+            stat_stages=data.get("stat_stages", {
+                "atk": 0, "def": 0, "spa": 0, "spd": 0, "spe": 0, "accuracy": 0, "evasion": 0
+            }),
+            is_fainted=data.get("is_fainted", False),
+            is_active=data.get("is_active", default_active),
+            position=data.get("position", 0),
+            has_tera=data.get("has_tera", True),
+            tera_type=data.get("tera_type"),
+        )
