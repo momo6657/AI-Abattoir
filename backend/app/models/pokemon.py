@@ -1,6 +1,7 @@
 import uuid as uuid_module
 from datetime import datetime, timezone
 from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, ForeignKey, Text, Index, UniqueConstraint, JSON
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.types import TypeDecorator, String as SQLString
 from app.core.database import Base
 
@@ -11,14 +12,25 @@ class PGArray(TypeDecorator):
     impl = JSON
     cache_ok = True
 
-    def __init__(self, item_type=None):
+    def __init__(self, item_type=String):
+        self.item_type = item_type
         super().__init__()
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(postgresql.ARRAY(self.item_type()))
+        return dialect.type_descriptor(JSON())
 
 
 class PGJSONB(TypeDecorator):
     """PostgreSQL JSONB type with SQLite fallback (stores as JSON)"""
     impl = JSON
     cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(postgresql.JSONB())
+        return dialect.type_descriptor(JSON())
 
 
 class PGUUID(TypeDecorator):
@@ -30,14 +42,23 @@ class PGUUID(TypeDecorator):
         self.as_uuid = as_uuid
         super().__init__()
 
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(postgresql.UUID(as_uuid=self.as_uuid))
+        return dialect.type_descriptor(SQLString(36))
+
     def process_bind_param(self, value, dialect):
         if value is None:
             return None
+        if dialect.name == "postgresql":
+            return value
         return str(value)
 
     def process_result_value(self, value, dialect):
         if value is None:
             return None
+        if dialect.name == "postgresql":
+            return value
         if self.as_uuid:
             return uuid_module.UUID(value)
         return value

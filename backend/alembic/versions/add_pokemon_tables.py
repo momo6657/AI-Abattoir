@@ -1,7 +1,7 @@
 """add pokemon tables
 
 Revision ID: a1b2c3d4e5f6
-Revises:
+Revises: 002
 Create Date: 2026-05-31 19:30:00.000000
 
 """
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = 'a1b2c3d4e5f6'
-down_revision = None
+down_revision = '002'
 branch_labels = None
 depends_on = None
 

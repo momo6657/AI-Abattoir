@@ -15,31 +15,22 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Agent hierarchy indexes
-    op.create_index('ix_agent_hierarchy_parent_agent_id', 'agent_hierarchy', ['parent_agent_id'])
-    op.create_index('ix_agent_hierarchy_child_agent_id', 'agent_hierarchy', ['child_agent_id'])
-
-    # Agent experience index
-    op.create_index('ix_agent_experiences_agent_id', 'agent_experiences', ['agent_id'])
-
-    # Game player indexes
-    op.create_index('ix_game_players_game_id', 'game_players', ['game_id'])
-    op.create_index('ix_game_players_agent_id', 'game_players', ['agent_id'])
-
-    # Message turn number index
-    op.create_index('ix_messages_turn_number', 'messages', ['turn_number'])
-
-    # Media asset indexes
-    op.create_index('ix_media_assets_message_id', 'media_assets', ['message_id'])
-    op.create_index('ix_media_assets_uploader_id', 'media_assets', ['uploader_id'])
+    op.execute("CREATE INDEX IF NOT EXISTS ix_agent_hierarchy_parent_agent_id ON agent_hierarchy (parent_agent_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_agent_hierarchy_child_agent_id ON agent_hierarchy (child_agent_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_agent_experiences_agent_id ON agent_experiences (agent_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_game_players_game_id ON game_players (game_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_game_players_agent_id ON game_players (agent_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_messages_turn_number ON messages (turn_number)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_media_assets_message_id ON media_assets (message_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_media_assets_uploader_id ON media_assets (uploader_id)")
 
 
 def downgrade() -> None:
-    op.drop_index('ix_media_assets_uploader_id')
-    op.drop_index('ix_media_assets_message_id')
-    op.drop_index('ix_messages_turn_number')
-    op.drop_index('ix_game_players_agent_id')
-    op.drop_index('ix_game_players_game_id')
-    op.drop_index('ix_agent_experiences_agent_id')
-    op.drop_index('ix_agent_hierarchy_child_agent_id')
-    op.drop_index('ix_agent_hierarchy_parent_agent_id')
+    op.execute("DROP INDEX IF EXISTS ix_media_assets_uploader_id")
+    op.execute("DROP INDEX IF EXISTS ix_media_assets_message_id")
+    op.execute("DROP INDEX IF EXISTS ix_messages_turn_number")
+    op.execute("DROP INDEX IF EXISTS ix_game_players_agent_id")
+    op.execute("DROP INDEX IF EXISTS ix_game_players_game_id")
+    op.execute("DROP INDEX IF EXISTS ix_agent_experiences_agent_id")
+    op.execute("DROP INDEX IF EXISTS ix_agent_hierarchy_child_agent_id")
+    op.execute("DROP INDEX IF EXISTS ix_agent_hierarchy_parent_agent_id")

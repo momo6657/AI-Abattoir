@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
+import json
 import httpx
 
 
@@ -79,7 +80,7 @@ class PokemonShowdownConnector:
             response.raise_for_status()
         text = response.text
         if text.startswith("]"):
-            data = response.json()
+            data = json.loads(text[1:])
             assertion = data.get("assertion")
             if not assertion:
                 raise ShowdownConnectionError(data.get("actionsuccess") or "Pokemon Showdown login failed.")

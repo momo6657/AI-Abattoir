@@ -23,6 +23,8 @@ def mock_db():
 @pytest_asyncio.fixture
 async def async_client(mock_db):
     """Create an async test client with mocked database"""
+    previous_override = app.dependency_overrides.get(get_db)
+
     async def override_get_db():
         yield mock_db
 
@@ -30,7 +32,10 @@ async def async_client(mock_db):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
-    app.dependency_overrides.clear()
+    if previous_override is not None:
+        app.dependency_overrides[get_db] = previous_override
+    else:
+        app.dependency_overrides.pop(get_db, None)
 
 
 class TestPokemonAPI:

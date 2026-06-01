@@ -3,6 +3,8 @@
 from types import SimpleNamespace
 from uuid import uuid4
 
+import pytest
+
 from app.models.agent import AgentLevel
 from app.services.pokemon.battle_analysis import PokemonBattleAnalysisService
 from app.services.pokemon.knowledge_service import PokemonKnowledgeService
@@ -84,3 +86,32 @@ def test_showdown_message_builders():
     assert connector.build_search_message("gen9vgc2024regg") == "|/search gen9vgc2024regg"
     assert connector.build_choose_move("battle-1", 2, 1) == "battle-1|/choose move 2 1"
     assert connector.build_choose_switch("battle-1", 3) == "battle-1|/choose switch 3"
+
+
+@pytest.mark.asyncio
+async def test_showdown_assertion_parses_login_response(monkeypatch):
+    class FakeResponse:
+        text = ']{"assertion":"signed-token"}'
+
+        def raise_for_status(self):
+            return None
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, data):
+            return FakeResponse()
+
+    from app.services.pokemon import showdown_connector
+
+    monkeypatch.setattr(showdown_connector.httpx, "AsyncClient", FakeAsyncClient)
+    assertion = await PokemonShowdownConnector().request_assertion("bot", "1|challenge", "password")
+
+    assert assertion == "signed-token"
