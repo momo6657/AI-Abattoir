@@ -46,6 +46,35 @@ def test_team_builder_selects_by_playstyle():
     assert "rain" in template["id"]
 
 
+def test_team_builder_accepts_showdown_format_alias():
+    builder = PokemonTeamBuilder()
+    agent = SimpleNamespace(
+        id=uuid4(),
+        name="VgcBot",
+        level=AgentLevel.NOVICE,
+        pokemon_playstyle="",
+        pokemon_stats={},
+    )
+
+    template = builder.select_template(agent, "gen9vgc2024regg")
+
+    assert template["format"] == "vgc2024"
+
+
+def test_team_builder_rejects_formats_without_templates():
+    builder = PokemonTeamBuilder()
+    agent = SimpleNamespace(
+        id=uuid4(),
+        name="SinglesBot",
+        level=AgentLevel.NOVICE,
+        pokemon_playstyle="",
+        pokemon_stats={},
+    )
+
+    with pytest.raises(ValueError):
+        builder.select_template(agent, "gen9ou")
+
+
 def test_team_builder_master_adds_tera_types():
     builder = PokemonTeamBuilder()
     agent = SimpleNamespace(

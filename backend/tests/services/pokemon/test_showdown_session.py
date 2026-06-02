@@ -39,13 +39,27 @@ def test_create_session_can_prepare_ladder_search_commands():
     session = service.create_session(
         username="Bot",
         team=[{"species": "Incineroar", "ability": "Intimidate", "item": "Sitrus Berry", "moves": ["Fake Out"]}],
-        battle_format="gen9vgc2024regg",
+        battle_format="vgc2024",
         auto_search=True,
     )
 
     assert session.status == "searching"
+    assert session.battle_format == "vgc2024"
+    assert session.showdown_format == "gen9vgc2024regg"
+    assert session.team_size == 4
     assert session.command_log[0].startswith("|/utm Incineroar||sitrusberry|intimidate|fakeout")
     assert session.command_log[1] == "|/search gen9vgc2024regg"
+
+
+def test_create_random_battle_session_uses_no_team_showdown_format():
+    service = PokemonShowdownSessionService()
+
+    session = service.create_session(username="Bot", team=None, battle_format="random", auto_search=True)
+
+    assert session.battle_format == "gen9randombattle"
+    assert session.showdown_format == "gen9randombattle"
+    assert not session.requires_team
+    assert session.command_log == ["|/utm null", "|/search gen9randombattle"]
 
 
 def test_process_payload_logs_in_and_auto_responds_to_battle_request():

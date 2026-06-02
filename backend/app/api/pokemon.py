@@ -36,6 +36,7 @@ from app.services.pokemon.data_loader import PokemonDataLoader
 from app.services.pokemon.knowledge_service import pokemon_knowledge_service
 from app.services.pokemon.team_builder import pokemon_team_builder
 from app.services.pokemon.battle_analysis import pokemon_battle_analysis_service
+from app.services.pokemon.format_catalog import pokemon_format_catalog
 from app.services.pokemon.showdown_connector import ShowdownConnectionError, pokemon_showdown_connector
 from app.services.pokemon.showdown_battle_agent import pokemon_showdown_battle_agent
 from app.services.pokemon.showdown_session import pokemon_showdown_session_service
@@ -58,6 +59,21 @@ async def init_pokemon_data(db: AsyncSession = Depends(get_db)):
 
 
 # Species endpoints
+@router.get("/formats")
+async def list_pokemon_formats():
+    """List supported Pokemon battle format metadata."""
+    return [battle_format.to_dict() for battle_format in pokemon_format_catalog.list_formats()]
+
+
+@router.get("/formats/{format_id}")
+async def get_pokemon_format(format_id: str):
+    """Get one Pokemon battle format metadata item."""
+    try:
+        return pokemon_format_catalog.get(format_id).to_dict()
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.get("/species", response_model=List[SpeciesResponse])
 async def get_species_list(db: AsyncSession = Depends(get_db)):
     """Get list of all Pokemon species"""
@@ -128,7 +144,10 @@ async def build_team_for_agent(
     agent = await db.get(Agent, agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
-    return await pokemon_team_builder.build_for_agent(db, agent, battle_format)
+    try:
+        return await pokemon_team_builder.build_for_agent(db, agent, battle_format)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/teams/{team_id}", response_model=TeamResponse)

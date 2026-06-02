@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
+from app.services.pokemon.format_catalog import pokemon_format_catalog
 from app.services.pokemon.showdown_battle_agent import (
     PokemonShowdownBattleAgent,
     ShowdownChoicePlan,
@@ -27,6 +28,11 @@ class ShowdownSessionState:
     session_id: str
     username: str
     battle_format: str = "gen9vgc2024regg"
+    showdown_format: str = "gen9vgc2024regg"
+    battle_type: str = "double"
+    team_size: int = 4
+    active_pokemon: int = 2
+    requires_team: bool = True
     mode: str = "balanced"
     status: str = "ready"
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -51,6 +57,11 @@ class ShowdownSessionState:
             "session_id": self.session_id,
             "username": self.username,
             "battle_format": self.battle_format,
+            "showdown_format": self.showdown_format,
+            "battle_type": self.battle_type,
+            "team_size": self.team_size,
+            "active_pokemon": self.active_pokemon,
+            "requires_team": self.requires_team,
             "mode": self.mode,
             "status": self.status,
             "created_at": self.created_at.isoformat(),
@@ -88,18 +99,24 @@ class PokemonShowdownSessionService:
     ) -> ShowdownSessionState:
         session_id = uuid4().hex
         connector = connector or PokemonShowdownConnector()
+        format_info = pokemon_format_catalog.get(battle_format)
         agent = PokemonShowdownBattleAgent(connector)
         state = ShowdownSessionState(
             session_id=session_id,
             username=username,
-            battle_format=battle_format,
+            battle_format=format_info.id,
+            showdown_format=format_info.showdown_format,
+            battle_type=format_info.battle_type,
+            team_size=format_info.team_size,
+            active_pokemon=format_info.active_pokemon,
+            requires_team=format_info.requires_team,
             mode=mode,
             status="searching" if auto_search else "ready",
             team=team,
             login_assertion=login_assertion,
         )
         if auto_search:
-            state.command_log.extend(connector.build_ladder_search_messages(team, battle_format))
+            state.command_log.extend(connector.build_ladder_search_messages(team, format_info.showdown_format))
         self.sessions[session_id] = state
         self.connectors[session_id] = connector
         self.agents[session_id] = agent
@@ -145,7 +162,12 @@ class PokemonShowdownSessionService:
 
         battle_request = connector.parse_battle_request(events)
         if auto_respond and battle_request and battle_request.needs_choice:
-            plan = agent.plan(battle_request, mode=state.mode, team_size=team_size, allow_tera=allow_tera)
+            plan = agent.plan(
+                battle_request,
+                mode=state.mode,
+                team_size=team_size or state.team_size,
+                allow_tera=allow_tera,
+            )
             if plan.command:
                 commands.append(plan.command)
                 state.status = "responded"
@@ -246,7 +268,7 @@ class PokemonShowdownSessionService:
     def start_ladder_search(self, session_id: str) -> list[str]:
         state = self._require_session(session_id)
         connector = self.connectors[session_id]
-        commands = connector.build_ladder_search_messages(state.team, state.battle_format)
+        commands = connector.build_ladder_search_messages(state.team, state.showdown_format)
         state.command_log.extend(commands)
         state.status = "searching"
         state.touch()

@@ -31,6 +31,24 @@ async def test_showdown_commands_build_ladder_search(client):
 
 
 @pytest.mark.asyncio
+async def test_pokemon_formats_endpoint_returns_showdown_metadata(client):
+    response = await client.get("/api/pokemon/formats")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert any(item["id"] == "vgc2024" and item["showdown_format"] == "gen9vgc2024regg" for item in data)
+    assert any(item["id"] == "gen9randombattle" and not item["requires_team"] for item in data)
+
+
+@pytest.mark.asyncio
+async def test_pokemon_format_detail_resolves_alias(client):
+    response = await client.get("/api/pokemon/formats/gen9vgc2024regg")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "vgc2024"
+
+
+@pytest.mark.asyncio
 async def test_showdown_commands_reject_invalid_choose_slot(client):
     response = await client.post(
         "/api/pokemon/showdown/commands",

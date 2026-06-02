@@ -20,6 +20,18 @@ type SetupState = {
   blueTeam?: any;
 };
 
+type PokemonFormat = {
+  id: string;
+  name: string;
+  name_zh: string;
+  showdown_format: string;
+  battle_type: string;
+  team_size: number;
+  active_pokemon: number;
+  requires_team: boolean;
+  template_format?: string | null;
+};
+
 function formatLogEntry(entry: any): string {
   if (!entry) return 'Unknown event';
   const data = entry.data || {};
@@ -62,6 +74,8 @@ export default function PokemonBattlePage() {
   const [speciesCount, setSpeciesCount] = useState(0);
   const [moveCount, setMoveCount] = useState(0);
   const [history, setHistory] = useState<any[]>([]);
+  const [formats, setFormats] = useState<PokemonFormat[]>([]);
+  const [selectedFormat, setSelectedFormat] = useState('vgc2024');
   const [analysis, setAnalysis] = useState<any>(null);
   const [knowledgeQuery, setKnowledgeQuery] = useState('Incineroar');
   const [knowledge, setKnowledge] = useState<any>(null);
@@ -77,6 +91,10 @@ export default function PokemonBattlePage() {
     () => (battleId ? resolveWebSocketURL(`/ws/pokemon/battle/${battleId}`) : ''),
     [battleId]
   );
+  const selectedFormatInfo = useMemo(
+    () => formats.find((format) => format.id === selectedFormat) || formats[0],
+    [formats, selectedFormat]
+  );
 
   useEffect(() => {
     refreshOverview();
@@ -88,14 +106,20 @@ export default function PokemonBattlePage() {
 
   async function refreshOverview() {
     try {
-      const [speciesRes, movesRes, historyRes] = await Promise.all([
+      const [speciesRes, movesRes, historyRes, formatsRes] = await Promise.all([
         pokemonApi.listSpecies(),
         pokemonApi.listMoves(),
         pokemonApi.getHistory(8),
+        pokemonApi.listFormats(),
       ]);
       setSpeciesCount(speciesRes.data.length || 0);
       setMoveCount(movesRes.data.length || 0);
       setHistory(historyRes.data || []);
+      const nextFormats = formatsRes.data || [];
+      setFormats(nextFormats);
+      if (nextFormats.length && !nextFormats.some((format: PokemonFormat) => format.id === selectedFormat)) {
+        setSelectedFormat(nextFormats[0].id);
+      }
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '无法读取 Pokemon 模块状态');
     }
@@ -134,23 +158,27 @@ export default function PokemonBattlePage() {
     setBusy(true);
     setError(null);
     try {
+      const localFormat = selectedFormatInfo;
+      if (localFormat && !localFormat.template_format) {
+        throw new Error(`${localFormat.name_zh || localFormat.name} 暂无本地队伍模板，可先用于 Showdown 会话或选择 VGC 2024。`);
+      }
       addMessage('初始化本地宝可梦数据');
       await pokemonApi.init();
       const model = await getOrCreateModel();
       const redAgent = await getOrCreateAgent(RED_AGENT, model.id, '稳健进攻');
       const blueAgent = await getOrCreateAgent(BLUE_AGENT, model.id, '平衡反制');
 
-      addMessage('自动构建双方模板队伍');
+      addMessage(`自动构建双方模板队伍：${localFormat?.name || selectedFormat}`);
       const [redTeam, blueTeam] = await Promise.all([
-        pokemonApi.buildTeam(redAgent.id, 'vgc2024'),
-        pokemonApi.buildTeam(blueAgent.id, 'vgc2024'),
+        pokemonApi.buildTeam(redAgent.id, localFormat?.id || selectedFormat),
+        pokemonApi.buildTeam(blueAgent.id, localFormat?.id || selectedFormat),
       ]);
 
-      addMessage('创建本地 VGC 双打对战');
+      addMessage(`创建本地对战：${localFormat?.name || selectedFormat}`);
       const battle = (await pokemonApi.createBattle({
         player1_team_id: redTeam.data.id,
         player2_team_id: blueTeam.data.id,
-        battle_format: 'vgc2024',
+        battle_format: localFormat?.id || selectedFormat,
       })).data;
 
       const state = battle.summary?.state || (await pokemonApi.getBattleState(battle.id)).data;
@@ -236,7 +264,7 @@ export default function PokemonBattlePage() {
       if (!session?.session_id) {
         session = (await pokemonApi.createShowdownSession({
           username: 'PokemonBot',
-          battle_format: 'gen9vgc2024regg',
+          battle_format: selectedFormatInfo?.id || selectedFormat,
           mode: showdownMode,
           auto_search: true,
         })).data;
@@ -259,7 +287,7 @@ export default function PokemonBattlePage() {
     ['Phase 1', '本地双打引擎、伤害计算、REST 流程、训练 UI'],
     ['Phase 2', '知识检索、缓存、决策记录、强化学习雏形'],
     ['Phase 3', '等级驱动队伍构建、对战分析、经验进化'],
-    ['Phase 4', 'Showdown 队伍上传、搜索/挑战、request 解析和自动选择命令'],
+    ['Phase 4', '多格式目录、Showdown 队伍上传、会话运行器和自动选择命令'],
   ];
 
   return (
@@ -273,29 +301,61 @@ export default function PokemonBattlePage() {
               从本地 VGC 双打模拟开始，让智能体自动建队、执行回合、记录对战日志，并逐步接入知识库、学习机制和 Pokemon Showdown 实战。
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={prepareTrainingBattle}
-              disabled={busy}
-              className="btn-primary inline-flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v6h6M20 20v-6h-6M20 9A8 8 0 006.7 5.1L4 10M4 15a8 8 0 0013.3 3.9L20 14" />
-              </svg>
-              准备训练环境
-            </button>
-            <button onClick={refreshOverview} disabled={busy} className="btn-secondary disabled:opacity-50">
-              刷新状态
-            </button>
+          <div className="flex w-full flex-col gap-3 lg:w-auto lg:min-w-80">
+            <label className="text-xs uppercase text-gray-500">
+              Format
+              <select
+                value={selectedFormat}
+                onChange={(event) => {
+                  setSelectedFormat(event.target.value);
+                  setShowdownSession(null);
+                }}
+                className="mt-1 w-full rounded-md border border-border bg-black/30 px-3 py-2 text-sm normal-case text-gray-100 outline-none focus:border-accent"
+              >
+                {formats.length ? formats.map((format) => (
+                  <option key={format.id} value={format.id}>
+                    {format.name_zh || format.name}
+                  </option>
+                )) : (
+                  <option value="vgc2024">VGC 2024</option>
+                )}
+              </select>
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={prepareTrainingBattle}
+                disabled={busy || Boolean(selectedFormatInfo && !selectedFormatInfo.template_format)}
+                className="btn-primary inline-flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v6h6M20 20v-6h-6M20 9A8 8 0 006.7 5.1L4 10M4 15a8 8 0 0013.3 3.9L20 14" />
+                </svg>
+                准备训练环境
+              </button>
+              <button onClick={refreshOverview} disabled={busy} className="btn-secondary disabled:opacity-50">
+                刷新状态
+              </button>
+            </div>
           </div>
         </div>
 
-        <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-5">
           <Metric label="Species" value={speciesCount} />
           <Metric label="Moves" value={moveCount} />
           <Metric label="Battles" value={history.length} />
+          <Metric label="Format" value={selectedFormatInfo?.showdown_format || selectedFormat} />
           <Metric label="WebSocket" value={battleId ? 'ready' : 'idle'} />
         </div>
+        {selectedFormatInfo && (
+          <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-500">
+            <span className="rounded border border-border bg-black/20 px-2 py-1">{selectedFormatInfo.battle_type}</span>
+            <span className="rounded border border-border bg-black/20 px-2 py-1">team {selectedFormatInfo.team_size}</span>
+            <span className="rounded border border-border bg-black/20 px-2 py-1">active {selectedFormatInfo.active_pokemon}</span>
+            {!selectedFormatInfo.template_format && (
+              <span className="rounded border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-amber-200">Showdown only</span>
+            )}
+          </div>
+        )}
       </section>
 
       {error && (
@@ -411,6 +471,14 @@ export default function PokemonBattlePage() {
                   {mode}
                 </button>
               ))}
+            </div>
+            <div className="mt-3 rounded-md border border-border bg-black/20 px-3 py-2 text-xs text-gray-400">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-gray-500">Showdown format</span>
+                <span className="break-all text-right font-mono text-gray-200">
+                  {selectedFormatInfo?.showdown_format || selectedFormat}
+                </span>
+              </div>
             </div>
 
             <textarea

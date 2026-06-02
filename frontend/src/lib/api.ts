@@ -136,6 +136,7 @@ export const modelsApi = {
 // ---- Pokemon ----
 export const pokemonApi = {
   init: () => api.post("/pokemon/init"),
+  listFormats: () => api.get("/pokemon/formats"),
   listSpecies: () => api.get("/pokemon/species"),
   listMoves: () => api.get("/pokemon/moves"),
   listTeams: (agentId: string) => api.get("/pokemon/teams", { params: { agent_id: agentId } }),

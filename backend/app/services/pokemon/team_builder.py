@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent import Agent, AgentLevel
 from app.models.pokemon import PokemonTeam
+from app.services.pokemon.format_catalog import pokemon_format_catalog
 
 
 DATA_DIR = Path(__file__).parent.parent.parent.parent / "data" / "pokemon"
@@ -20,12 +21,13 @@ class PokemonTeamBuilder:
     """Builds teams from templates now, with hooks for later innovation."""
 
     def load_templates(self, battle_format: str = "vgc2024") -> list[dict[str, Any]]:
+        template_format = pokemon_format_catalog.template_format(battle_format)
         path = DATA_DIR / "team_templates.json"
         with open(path, "r", encoding="utf-8") as handle:
             data = json.load(handle)
         return [
             template for template in data.get("team_templates", [])
-            if template.get("format", "vgc2024") == battle_format
+            if template.get("format", "vgc2024") == template_format
         ]
 
     async def build_for_agent(
@@ -34,6 +36,7 @@ class PokemonTeamBuilder:
         agent: Agent,
         battle_format: str = "vgc2024",
     ) -> PokemonTeam:
+        format_info = pokemon_format_catalog.get(battle_format)
         template = self.select_template(agent, battle_format)
         pokemon = template["pokemon"]
         source = "template"
@@ -45,7 +48,7 @@ class PokemonTeamBuilder:
             id=uuid.uuid4(),
             agent_id=agent.id,
             name=f"{agent.name} - {template['name']}",
-            format=battle_format,
+            format=format_info.id,
             pokemon_list=pokemon,
             source=source,
             source_url=template.get("source_url"),
