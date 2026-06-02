@@ -140,3 +140,12 @@ class ShowdownCommandRequest(BaseModel):
     request_id: Optional[int] = None
     modifier: Optional[str] = None
     choices: Optional[List[str]] = None
+
+
+class ShowdownDecisionRequest(BaseModel):
+    payload: Optional[str] = None
+    request: Optional[Dict[str, Any]] = None
+    room_id: Optional[str] = None
+    mode: str = "balanced"
+    team_size: Optional[int] = None
+    allow_tera: bool = True

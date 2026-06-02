@@ -9,6 +9,8 @@ import { agentsApi, modelsApi, pokemonApi, resolveWebSocketURL } from '@/lib/api
 const MODEL_NAME = 'Pokemon Local Policy';
 const RED_AGENT = '红方训练师';
 const BLUE_AGENT = '蓝方训练师';
+const SAMPLE_SHOWDOWN_PAYLOAD =
+  '>battle-gen9vgc-demo\n|request|{"rqid":1,"active":[{"moves":[{"id":"protect","target":"self","pp":16},{"id":"moonblast","target":"normal","basePower":95,"pp":15}]}]}';
 
 type SetupState = {
   model?: any;
@@ -63,6 +65,9 @@ export default function PokemonBattlePage() {
   const [analysis, setAnalysis] = useState<any>(null);
   const [knowledgeQuery, setKnowledgeQuery] = useState('Incineroar');
   const [knowledge, setKnowledge] = useState<any>(null);
+  const [showdownPayload, setShowdownPayload] = useState(SAMPLE_SHOWDOWN_PAYLOAD);
+  const [showdownMode, setShowdownMode] = useState<'balanced' | 'aggressive' | 'defensive'>('balanced');
+  const [showdownPlan, setShowdownPlan] = useState<any>(null);
   const [messages, setMessages] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -203,11 +208,29 @@ export default function PokemonBattlePage() {
     }
   }
 
+  async function planShowdownChoice() {
+    if (!showdownPayload.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = (await pokemonApi.planShowdownDecision({
+        payload: showdownPayload,
+        mode: showdownMode,
+      })).data;
+      setShowdownPlan(result.plan);
+      addMessage(`Showdown choice: ${result.plan?.command || result.plan?.decision_type || 'none'}`);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '生成 Showdown 选择失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const phaseItems = [
     ['Phase 1', '本地双打引擎、伤害计算、REST 流程、训练 UI'],
     ['Phase 2', '知识检索、缓存、决策记录、强化学习雏形'],
     ['Phase 3', '等级驱动队伍构建、对战分析、经验进化'],
-    ['Phase 4', 'Pokemon Showdown 协议解析已接入，登录/天梯实战仍需继续完善'],
+    ['Phase 4', 'Showdown 队伍上传、搜索/挑战、request 解析和自动选择命令'],
   ];
 
   return (
@@ -334,9 +357,68 @@ export default function PokemonBattlePage() {
           </section>
 
           <section className="card p-4">
-            <h2 className="text-lg font-semibold text-white">Showdown 连接</h2>
-            <p className="mt-2 break-all text-xs leading-5 text-gray-500">
-              {battleId ? wsURL : '创建对战后生成本地实时通道。PS 登录、房间同步和天梯匹配仍属于后续深化任务。'}
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-white">Showdown 控制台</h2>
+                <p className="mt-1 text-xs text-gray-500">解析 PS request 并生成下一步选择命令。</p>
+              </div>
+              <button
+                onClick={() => setShowdownPayload(SAMPLE_SHOWDOWN_PAYLOAD)}
+                className="rounded-md border border-border px-2 py-1 text-xs text-gray-300 hover:border-accent"
+              >
+                示例
+              </button>
+            </div>
+
+            <div className="mt-3 grid grid-cols-3 gap-1 rounded-md border border-border bg-black/20 p-1">
+              {(['balanced', 'aggressive', 'defensive'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setShowdownMode(mode)}
+                  className={`rounded px-2 py-1.5 text-xs transition ${
+                    showdownMode === mode ? 'bg-accent text-white' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
+
+            <textarea
+              value={showdownPayload}
+              onChange={(event) => setShowdownPayload(event.target.value)}
+              rows={6}
+              className="mt-3 w-full resize-none rounded-md border border-border bg-black/30 px-3 py-2 font-mono text-xs leading-5 text-gray-200 outline-none focus:border-accent"
+              spellCheck={false}
+            />
+
+            <button
+              onClick={planShowdownChoice}
+              disabled={busy || !showdownPayload.trim()}
+              className="btn-secondary mt-3 w-full disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              生成选择命令
+            </button>
+
+            <div className="mt-3 rounded-md border border-border bg-black/20 p-3 text-xs leading-5 text-gray-400">
+              {showdownPlan ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-gray-500">Type</span>
+                    <span className="text-gray-200">{showdownPlan.decision_type}</span>
+                  </div>
+                  <div className="break-all rounded bg-black/30 p-2 font-mono text-gray-100">
+                    {showdownPlan.command || 'waiting'}
+                  </div>
+                  <div>{showdownPlan.reason}</div>
+                </div>
+              ) : (
+                '等待 Showdown payload。'
+              )}
+            </div>
+
+            <p className="mt-3 break-all text-xs leading-5 text-gray-600">
+              {battleId ? wsURL : '本地对战创建后会显示 WebSocket；真实 PS 会话连接仍继续深化。'}
             </p>
           </section>
         </aside>

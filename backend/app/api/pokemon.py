@@ -19,6 +19,7 @@ from app.schemas.pokemon import (
     BattleStateResponse,
     BattleTurnRequest,
     ShowdownCommandRequest,
+    ShowdownDecisionRequest,
 )
 from app.models.pokemon import (
     PokemonSpecies,
@@ -33,6 +34,7 @@ from app.services.pokemon.knowledge_service import pokemon_knowledge_service
 from app.services.pokemon.team_builder import pokemon_team_builder
 from app.services.pokemon.battle_analysis import pokemon_battle_analysis_service
 from app.services.pokemon.showdown_connector import ShowdownConnectionError, pokemon_showdown_connector
+from app.services.pokemon.showdown_battle_agent import pokemon_showdown_battle_agent
 
 router = APIRouter(prefix="/pokemon", tags=["pokemon"])
 
@@ -373,6 +375,8 @@ async def parse_showdown_message(payload: dict):
             "side": battle_request.side,
             "force_switch": battle_request.force_switch,
             "wait": battle_request.wait,
+            "team_preview": battle_request.team_preview,
+            "max_team_size": battle_request.max_team_size,
             "needs_choice": battle_request.needs_choice,
             "raw": battle_request.raw,
         },
@@ -434,6 +438,40 @@ async def build_showdown_commands(payload: ShowdownCommandRequest):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"commands": commands}
+
+
+@router.post("/showdown/decision")
+async def plan_showdown_decision(payload: ShowdownDecisionRequest):
+    """Plan the next autonomous Pokemon Showdown battle choice."""
+    try:
+        if payload.payload is not None:
+            events, request, plan = pokemon_showdown_battle_agent.plan_from_payload(
+                payload.payload,
+                mode=payload.mode,
+                team_size=payload.team_size,
+                allow_tera=payload.allow_tera,
+            )
+            return {
+                "events": [
+                    {"room_id": event.room_id, "event_type": event.event_type, "args": event.args, "raw": event.raw}
+                    for event in events
+                ],
+                "request": None if request is None else request.raw,
+                "plan": plan.to_dict(),
+            }
+        if payload.request is not None:
+            room_id = _required(payload.room_id, "room_id")
+            plan = pokemon_showdown_battle_agent.plan_from_raw_request(
+                payload.request,
+                room_id,
+                mode=payload.mode,
+                team_size=payload.team_size,
+                allow_tera=payload.allow_tera,
+            )
+            return {"events": [], "request": payload.request, "plan": plan.to_dict()}
+    except (ShowdownConnectionError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    raise HTTPException(status_code=400, detail="payload or request is required.")
 
 
 def _required(value: str | None, name: str) -> str:

@@ -164,6 +164,8 @@ export const pokemonApi = {
       params: { query_type: queryType, query_key: queryKey, max_results: maxResults },
     }),
   parseShowdown: (payload: string) => api.post("/pokemon/showdown/parse", { payload }),
+  buildShowdownCommands: (data: Record<string, unknown>) => api.post("/pokemon/showdown/commands", data),
+  planShowdownDecision: (data: Record<string, unknown>) => api.post("/pokemon/showdown/decision", data),
 };
 
 // ---- System ----

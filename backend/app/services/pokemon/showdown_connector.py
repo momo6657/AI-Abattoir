@@ -39,7 +39,16 @@ class ShowdownBattleRequest:
 
     @property
     def needs_choice(self) -> bool:
-        return not self.wait and bool(self.active or self.force_switch)
+        return not self.wait and bool(self.team_preview or self.active or self.force_switch)
+
+    @property
+    def team_preview(self) -> bool:
+        return bool(self.raw.get("teamPreview"))
+
+    @property
+    def max_team_size(self) -> int | None:
+        value = self.raw.get("maxTeamSize")
+        return int(value) if value is not None else None
 
 
 class PokemonShowdownConnector:

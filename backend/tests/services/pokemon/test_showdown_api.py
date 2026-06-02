@@ -60,3 +60,37 @@ async def test_showdown_parse_extracts_battle_request(client):
     assert data["battle_request"]["room_id"] == "battle-gen9vgc-42"
     assert data["battle_request"]["request_id"] == 9
     assert data["battle_request"]["needs_choice"]
+
+
+@pytest.mark.asyncio
+async def test_showdown_decision_plans_next_choice_from_payload(client):
+    payload = {
+        "rqid": 10,
+        "active": [
+            {
+                "moves": [
+                    {"id": "protect", "target": "self", "pp": 16},
+                    {"id": "moonblast", "target": "normal", "basePower": 95, "pp": 15},
+                ]
+            }
+        ],
+    }
+
+    response = await client.post(
+        "/api/pokemon/showdown/decision",
+        json={"payload": f">battle-gen9vgc-43\n|request|{json.dumps(payload)}"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["plan"]["decision_type"] == "move"
+    assert data["plan"]["command"] == "battle-gen9vgc-43|/choose move 2 -1|10"
+    assert data["plan"]["needs_choice"]
+
+
+@pytest.mark.asyncio
+async def test_showdown_decision_requires_payload_or_request(client):
+    response = await client.post("/api/pokemon/showdown/decision", json={})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "payload or request is required."
