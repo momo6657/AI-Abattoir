@@ -68,6 +68,7 @@ export default function PokemonBattlePage() {
   const [showdownPayload, setShowdownPayload] = useState(SAMPLE_SHOWDOWN_PAYLOAD);
   const [showdownMode, setShowdownMode] = useState<'balanced' | 'aggressive' | 'defensive'>('balanced');
   const [showdownPlan, setShowdownPlan] = useState<any>(null);
+  const [showdownSession, setShowdownSession] = useState<any>(null);
   const [messages, setMessages] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -221,6 +222,34 @@ export default function PokemonBattlePage() {
       addMessage(`Showdown choice: ${result.plan?.command || result.plan?.decision_type || 'none'}`);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '生成 Showdown 选择失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runShowdownSessionStep() {
+    if (!showdownPayload.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      let session = showdownSession;
+      if (!session?.session_id) {
+        session = (await pokemonApi.createShowdownSession({
+          username: 'PokemonBot',
+          battle_format: 'gen9vgc2024regg',
+          mode: showdownMode,
+          auto_search: true,
+        })).data;
+      }
+      const result = (await pokemonApi.processShowdownSessionMessage(session.session_id, {
+        payload: showdownPayload,
+        auto_respond: true,
+      })).data;
+      setShowdownSession(result.session);
+      setShowdownPlan(result.decision || showdownPlan);
+      addMessage(`Showdown session ${result.session?.status || 'ready'}: ${(result.commands || []).join(' / ') || 'no command'}`);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '推进 Showdown 会话失败');
     } finally {
       setBusy(false);
     }
@@ -392,13 +421,22 @@ export default function PokemonBattlePage() {
               spellCheck={false}
             />
 
-            <button
-              onClick={planShowdownChoice}
-              disabled={busy || !showdownPayload.trim()}
-              className="btn-secondary mt-3 w-full disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              生成选择命令
-            </button>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                onClick={planShowdownChoice}
+                disabled={busy || !showdownPayload.trim()}
+                className="btn-secondary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                生成选择
+              </button>
+              <button
+                onClick={runShowdownSessionStep}
+                disabled={busy || !showdownPayload.trim()}
+                className="btn-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                推进会话
+              </button>
+            </div>
 
             <div className="mt-3 rounded-md border border-border bg-black/20 p-3 text-xs leading-5 text-gray-400">
               {showdownPlan ? (
@@ -414,6 +452,21 @@ export default function PokemonBattlePage() {
                 </div>
               ) : (
                 '等待 Showdown payload。'
+              )}
+            </div>
+
+            <div className="mt-3 rounded-md border border-border bg-black/20 p-3 text-xs leading-5 text-gray-400">
+              {showdownSession ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-gray-500">Session</span>
+                    <span className="text-gray-200">{showdownSession.status}</span>
+                  </div>
+                  <div className="break-all font-mono text-gray-500">{showdownSession.session_id}</div>
+                  <div className="text-gray-500">Commands: {showdownSession.command_log?.length || 0}</div>
+                </div>
+              ) : (
+                '推进会话后会记录登录、搜索、对战选择和结果状态。'
               )}
             </div>
 

@@ -20,6 +20,8 @@ from app.schemas.pokemon import (
     BattleTurnRequest,
     ShowdownCommandRequest,
     ShowdownDecisionRequest,
+    ShowdownSessionCreateRequest,
+    ShowdownSessionMessageRequest,
 )
 from app.models.pokemon import (
     PokemonSpecies,
@@ -35,6 +37,7 @@ from app.services.pokemon.team_builder import pokemon_team_builder
 from app.services.pokemon.battle_analysis import pokemon_battle_analysis_service
 from app.services.pokemon.showdown_connector import ShowdownConnectionError, pokemon_showdown_connector
 from app.services.pokemon.showdown_battle_agent import pokemon_showdown_battle_agent
+from app.services.pokemon.showdown_session import pokemon_showdown_session_service
 
 router = APIRouter(prefix="/pokemon", tags=["pokemon"])
 
@@ -472,6 +475,72 @@ async def plan_showdown_decision(payload: ShowdownDecisionRequest):
     except (ShowdownConnectionError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     raise HTTPException(status_code=400, detail="payload or request is required.")
+
+
+@router.post("/showdown/sessions")
+async def create_showdown_session(payload: ShowdownSessionCreateRequest):
+    """Create an autonomous Pokemon Showdown session state machine."""
+    session = pokemon_showdown_session_service.create_session(
+        username=payload.username,
+        team=payload.team,
+        battle_format=payload.battle_format,
+        mode=payload.mode,
+        login_assertion=payload.login_assertion,
+        auto_search=payload.auto_search,
+    )
+    return session.to_dict()
+
+
+@router.get("/showdown/sessions")
+async def list_showdown_sessions():
+    """List in-memory Pokemon Showdown automation sessions."""
+    return [session.to_dict() for session in pokemon_showdown_session_service.list_sessions()]
+
+
+@router.get("/showdown/sessions/{session_id}")
+async def get_showdown_session(session_id: str):
+    """Get a Pokemon Showdown automation session."""
+    session = pokemon_showdown_session_service.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Pokemon Showdown session not found")
+    return session.to_dict()
+
+
+@router.post("/showdown/sessions/{session_id}/search")
+async def start_showdown_ladder_search(session_id: str):
+    """Build and record ladder search commands for an existing session."""
+    try:
+        commands = pokemon_showdown_session_service.start_ladder_search(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    session = pokemon_showdown_session_service.get_session(session_id)
+    return {"commands": commands, "session": session.to_dict() if session else None}
+
+
+@router.post("/showdown/sessions/{session_id}/message")
+async def process_showdown_session_message(session_id: str, payload: ShowdownSessionMessageRequest):
+    """Process Showdown protocol payload and return commands to send back."""
+    try:
+        return pokemon_showdown_session_service.process_payload(
+            session_id,
+            payload.payload,
+            auto_respond=payload.auto_respond,
+            team_size=payload.team_size,
+            allow_tera=payload.allow_tera,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ShowdownConnectionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete("/showdown/sessions/{session_id}")
+async def delete_showdown_session(session_id: str):
+    """Delete an in-memory Pokemon Showdown automation session."""
+    deleted = pokemon_showdown_session_service.delete_session(session_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Pokemon Showdown session not found")
+    return {"deleted": True}
 
 
 def _required(value: str | None, name: str) -> str:

@@ -149,3 +149,19 @@ class ShowdownDecisionRequest(BaseModel):
     mode: str = "balanced"
     team_size: Optional[int] = None
     allow_tera: bool = True
+
+
+class ShowdownSessionCreateRequest(BaseModel):
+    username: str
+    team: Optional[Union[List[Dict[str, Any]], str]] = None
+    battle_format: str = "gen9vgc2024regg"
+    mode: str = "balanced"
+    login_assertion: Optional[str] = None
+    auto_search: bool = False
+
+
+class ShowdownSessionMessageRequest(BaseModel):
+    payload: str
+    auto_respond: bool = True
+    team_size: Optional[int] = None
+    allow_tera: bool = True

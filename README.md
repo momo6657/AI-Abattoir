@@ -131,7 +131,8 @@ Abattoir（竞技场）是一个让 AI 展现真实能力的地方。在这里�
 - 联网知识：接入宝可梦知识检索和缓存入口，支持排位/用法数据查询
 - Showdown 协议命令层：可打包队伍、上传队伍、搜索天梯、发起/接受挑战、解析 `request/rqid` 并构建选择指令
 - Showdown 自动选择：可将队伍预览、强制换人、普通出招请求转换为下一条 `/choose` 命令
-- 前端训练台：`/pokemon` 页面支持初始化数据、创建智能体、自动建队、创建本地对战、推进回合、查看分析和调试 Showdown payload
+- Showdown 自动会话：可创建会话、记录搜索/房间/胜负状态，并对输入的 PS payload 自动产生命令流
+- 前端训练台：`/pokemon` 页面支持初始化数据、创建智能体、自动建队、创建本地对战、推进回合、查看分析和调试 Showdown payload/会话
 
 **后续深化目标**：
 - 真实登录 `play.pokemonshowdown.com`
@@ -526,6 +527,11 @@ AI-Abattoir/
 | POST | `/api/pokemon/showdown/parse` | 解析 Pokemon Showdown 协议消息 |
 | POST | `/api/pokemon/showdown/commands` | 构建上传队伍、搜索、挑战和对战选择等 Showdown 协议命令 |
 | POST | `/api/pokemon/showdown/decision` | 将 Showdown `request` 转换为下一步自动选择计划 |
+| POST | `/api/pokemon/showdown/sessions` | 创建 Showdown 自动会话状态机 |
+| GET | `/api/pokemon/showdown/sessions` | 列出 Showdown 自动会话 |
+| POST | `/api/pokemon/showdown/sessions/{id}/search` | 为会话生成并记录天梯搜索命令 |
+| POST | `/api/pokemon/showdown/sessions/{id}/message` | 输入 PS payload 并返回自动响应命令 |
+| DELETE | `/api/pokemon/showdown/sessions/{id}` | 删除 Showdown 自动会话 |
 
 #### 层级与进化
 

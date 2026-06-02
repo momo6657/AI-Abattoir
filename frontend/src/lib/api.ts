@@ -166,6 +166,11 @@ export const pokemonApi = {
   parseShowdown: (payload: string) => api.post("/pokemon/showdown/parse", { payload }),
   buildShowdownCommands: (data: Record<string, unknown>) => api.post("/pokemon/showdown/commands", data),
   planShowdownDecision: (data: Record<string, unknown>) => api.post("/pokemon/showdown/decision", data),
+  createShowdownSession: (data: Record<string, unknown>) => api.post("/pokemon/showdown/sessions", data),
+  startShowdownSearch: (sessionId: string) => api.post(`/pokemon/showdown/sessions/${sessionId}/search`),
+  processShowdownSessionMessage: (sessionId: string, data: Record<string, unknown>) =>
+    api.post(`/pokemon/showdown/sessions/${sessionId}/message`, data),
+  deleteShowdownSession: (sessionId: string) => api.delete(`/pokemon/showdown/sessions/${sessionId}`),
 };
 
 // ---- System ----
