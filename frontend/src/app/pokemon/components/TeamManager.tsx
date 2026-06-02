@@ -1,84 +1,65 @@
 'use client';
 
-import { useState } from 'react';
-
 interface TeamManagerProps {
   label: string;
-  team: any[];
-  onChange: (team: any[]) => void;
+  team?: any;
+  agent?: any;
+  tone?: 'blue' | 'red';
 }
 
-export default function TeamManager({ label, team, onChange }: TeamManagerProps) {
-  const [species, setSpecies] = useState('');
-  const [level, setLevel] = useState(50);
+const TONE_CLASS = {
+  blue: 'border-sky-400/25 bg-sky-500/5',
+  red: 'border-red-400/25 bg-red-500/5',
+};
 
-  const addPokemon = () => {
-    if (!species) return;
-
-    const newPokemon = {
-      species,
-      name: species,
-      level,
-      ability: 'Default',
-      item: 'None',
-      moves: ['Tackle', 'Growl'],
-      stats: { hp: 100, atk: 50, def: 50, spa: 50, spd: 50, spe: 50 },
-    };
-
-    onChange([...team, newPokemon]);
-    setSpecies('');
-  };
-
-  const removePokemon = (index: number) => {
-    onChange(team.filter((_, i) => i !== index));
-  };
+export default function TeamManager({ label, team, agent, tone = 'blue' }: TeamManagerProps) {
+  const members = team?.pokemon_list || [];
 
   return (
-    <div className="mb-6">
-      <h3 className="text-lg font-bold mb-3">{label}</h3>
-
-      <div className="flex gap-2 mb-3">
-        <input
-          type="text"
-          value={species}
-          onChange={(e) => setSpecies(e.target.value)}
-          placeholder="Species name"
-          className="flex-1 px-3 py-2 border rounded"
-        />
-        <input
-          type="number"
-          value={level}
-          onChange={(e) => setLevel(parseInt(e.target.value))}
-          placeholder="Level"
-          className="w-20 px-3 py-2 border rounded"
-          min={1}
-          max={100}
-        />
-        <button
-          onClick={addPokemon}
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-        >
-          Add
-        </button>
+    <section className={`rounded-lg border p-4 ${TONE_CLASS[tone]}`}>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs uppercase text-gray-500">{label}</p>
+          <h3 className="truncate text-lg font-semibold text-white">{agent?.name || '未创建智能体'}</h3>
+          <p className="mt-1 truncate text-sm text-gray-400">{team?.name || '等待自动构建队伍'}</p>
+        </div>
+        <div className="shrink-0 rounded-md border border-border bg-black/20 px-2 py-1 text-xs text-gray-400">
+          {team?.format || 'vgc2024'}
+        </div>
       </div>
 
-      <div className="space-y-2">
-        {team.map((pokemon, index) => (
-          <div key={index} className="flex justify-between items-center p-2 bg-gray-100 rounded">
-            <span>{pokemon.name} (Lv. {pokemon.level})</span>
-            <button
-              onClick={() => removePokemon(index)}
-              className="px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm"
-            >
-              Remove
-            </button>
-          </div>
-        ))}
-      </div>
-
-      {team.length === 0 && (
-        <p className="text-gray-500 text-sm">No Pokemon added yet</p>
+      {members.length > 0 ? (
+        <div className="grid grid-cols-1 gap-3">
+          {members.map((pokemon: any, index: number) => (
+            <div key={`${pokemon.species}-${index}`} className="rounded-md border border-border bg-surface/75 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate font-medium text-gray-100">{pokemon.name || pokemon.species}</div>
+                  <div className="mt-1 truncate text-xs text-gray-500">
+                    {pokemon.ability || 'Ability unknown'} · {pokemon.item || 'No item'}
+                  </div>
+                </div>
+                {pokemon.tera_type && (
+                  <span className="rounded bg-surface-overlay px-2 py-1 text-xs text-gray-400">
+                    Tera {pokemon.tera_type}
+                  </span>
+                )}
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {(pokemon.moves || []).slice(0, 4).map((move: string) => (
+                  <span key={move} className="rounded border border-border bg-black/20 px-2 py-0.5 text-xs text-gray-300">
+                    {move}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-md border border-dashed border-border p-5 text-center text-sm text-gray-500">
+          点击“准备训练环境”后自动生成队伍。
+        </div>
       )}
-    </div>
+    </section>
   );
 }

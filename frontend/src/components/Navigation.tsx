@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: "/conversations", label: "对话", icon: "chat" },
   { href: "/arena", label: "竞技场", icon: "swords" },
   { href: "/games", label: "游戏", icon: "gamepad" },
+  { href: "/pokemon", label: "宝可梦", icon: "spark" },
   { href: "/spectate", label: "观战", icon: "eye" },
   { href: "/leaderboard", label: "排行榜", icon: "trophy" },
   { href: "/search", label: "搜索", icon: "search" },
@@ -31,6 +32,8 @@ function NavIcon({ icon, className = "" }: { icon: string; className?: string })
       return <svg className={base} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>;
     case "gamepad":
       return <svg className={base} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
+    case "spark":
+      return <svg className={base} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3zM5 15l.9 2.1L8 18l-2.1.9L5 21l-.9-2.1L2 18l2.1-.9L5 15zM18 14l.8 1.8L21 17l-2.2.8L18 20l-.8-2.2L15 17l2.2-.8L18 14z" /></svg>;
     case "eye":
       return <svg className={base} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>;
     case "trophy":

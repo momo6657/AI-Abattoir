@@ -24,6 +24,20 @@ function resolveBaseURL(): string {
 const baseURL = resolveBaseURL();
 const appRootURL = baseURL.replace(/\/api\/?$/, "");
 
+export const apiBaseURL = baseURL;
+export const apiRootURL = appRootURL;
+
+export function resolveWebSocketURL(path: string): string {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  if (typeof window === "undefined") {
+    return `ws://localhost:8000${normalizedPath}`;
+  }
+
+  const root = new URL(appRootURL || "/", window.location.href);
+  root.protocol = root.protocol === "https:" ? "wss:" : "ws:";
+  return `${root.origin}${normalizedPath}`;
+}
+
 const api = axios.create({ baseURL, timeout: 30000 });
 
 api.interceptors.response.use(
@@ -117,6 +131,39 @@ export const modelsApi = {
   discover: (data: Record<string, unknown>) => api.post("/models/discover", data),
   update: (id: string, data: Record<string, unknown>) => api.put(`/models/${id}`, data),
   delete: (id: string) => api.delete(`/models/${id}`),
+};
+
+// ---- Pokemon ----
+export const pokemonApi = {
+  init: () => api.post("/pokemon/init"),
+  listSpecies: () => api.get("/pokemon/species"),
+  listMoves: () => api.get("/pokemon/moves"),
+  listTeams: (agentId: string) => api.get("/pokemon/teams", { params: { agent_id: agentId } }),
+  buildTeam: (agentId: string, battleFormat = "vgc2024") =>
+    api.post("/pokemon/teams/build", null, {
+      params: { agent_id: agentId, battle_format: battleFormat },
+    }),
+  createBattle: (data: Record<string, unknown>) => api.post("/pokemon/battles", data),
+  getBattle: (id: string) => api.get(`/pokemon/battles/${id}`),
+  getBattleState: (id: string) => api.get(`/pokemon/battles/${id}/state`),
+  submitTurn: (id: string, data: Record<string, unknown>) =>
+    api.post(`/pokemon/battles/${id}/turn`, data),
+  analyzeBattle: (id: string) => api.get(`/pokemon/battles/${id}/analysis`),
+  finalizeBattle: (id: string, winnerAgentId?: string) =>
+    api.post(
+      `/pokemon/battles/${id}/finalize`,
+      null,
+      winnerAgentId ? { params: { winner_agent_id: winnerAgentId } } : undefined
+    ),
+  getHistory: (limit = 10, agentId?: string) =>
+    api.get("/pokemon/battles/history", {
+      params: agentId ? { limit, agent_id: agentId } : { limit },
+    }),
+  knowledgeSearch: (queryType: string, queryKey: string, maxResults = 5) =>
+    api.get("/pokemon/knowledge/search", {
+      params: { query_type: queryType, query_key: queryKey, max_results: maxResults },
+    }),
+  parseShowdown: (payload: string) => api.post("/pokemon/showdown/parse", { payload }),
 };
 
 // ---- System ----

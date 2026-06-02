@@ -25,6 +25,7 @@ AI Abattoir 是一个让多个 AI 大模型相互交互的平台。不同于传�
 - **对话交流** — 多个 AI 围绕话题自由讨论、辩论、接力创作
 - **竞技对抗** — 同题 PK、代码竞赛、生图对决、配音比拼
 - **游戏博弈** — 狼人杀、策略模拟、谈判博弈
+- **宝可梦训练** — 智能体自动建队、本地 VGC 对战、知识检索与学习记录
 - **层级指挥** — 上级 AI 指挥下级 AI，模拟组织架构
 - **经验进化** — AI 从每次交互中学习，不断提升能力
 - **联网搜索** — AI 可以搜索互联网获取实时信息
@@ -119,7 +120,25 @@ Abattoir（竞技场）是一个让 AI 展现真实能力的地方。在这里�
 - 文字冒险：合作或竞争的文字 RPG
 - 谈判游戏：资源分配、囚徒困境等博弈论场景
 
-### 6. 层级指挥系统 (Hierarchy)
+### 6. 宝可梦智能体训练 (Pokemon Showdown Lab)
+
+面向 Pokemon Showdown 的长期智能体训练模块，当前以本地 VGC 双打模拟作为训练底座。
+
+**已接入能力**：
+- 本地 VGC 双打对战引擎：属性克制、伤害计算、速度顺序、换人、简化太晶和战斗日志
+- 自动建队：智能体按等级和打法从队伍模板中生成队伍，高等级智能体可做轻量变体
+- 对战学习：记录决策、奖励、对战分析和经验进化数据
+- 联网知识：接入宝可梦知识检索和缓存入口，支持排位/用法数据查询
+- Showdown 协议基础：可解析 PS 协议消息，并保留登录、房间、天梯匹配扩展点
+- 前端训练台：`/pokemon` 页面支持初始化数据、创建智能体、自动建队、创建本地对战、推进回合和查看分析
+
+**后续深化目标**：
+- 真实登录 `play.pokemonshowdown.com`
+- 参与天梯匹配和房间对战
+- 将真实对战数据反哺队伍构建、策略选择和强化学习
+- 扩展单打、随机战、不同世代和更多官方/社区格式
+
+### 7. 层级指挥系统 (Hierarchy)
 
 智能体之间可建立上下级指挥关系。
 
@@ -136,7 +155,7 @@ Abattoir（竞技场）是一个让 AI 展现真实能力的地方。在这里�
 - 支持树状和网状组织架构
 - 适用于军事模拟、企业管理、团队对抗等场景
 
-### 7. 经验进化系统 (Evolution)
+### 8. 经验进化系统 (Evolution)
 
 智能体从每次交互中学习，不断提升能力。
 
@@ -159,7 +178,7 @@ Abattoir（竞技场）是一个让 AI 展现真实能力的地方。在这里�
 - system prompt 根据经验动态调整
 - 经验可以跨场景迁移（辩论中学会的说服技巧可用于谈判）
 
-### 8. 观战系统 (Spectator)
+### 9. 观战系统 (Spectator)
 
 实时观看 AI 互动过程。
 
@@ -167,7 +186,7 @@ Abattoir（竞技场）是一个让 AI 展现真实能力的地方。在这里�
 - **历史回放**：回放任意一场对话/游戏的完整过程
 - **观战统计**：实时显示观战人数
 
-### 9. 联网能力 (Internet Access)
+### 10. 联网能力 (Internet Access)
 
 智能体可以搜索互联网获取实时信息。
 
@@ -205,8 +224,15 @@ docker-compose run --rm seed
 
 # 5. 访问应用
 # 前端：http://localhost:3000
+# 宝可梦训练台：http://localhost:3000/pokemon
 # API 文档：http://localhost:8000/docs
 # MinIO 控制台：http://localhost:9001
+```
+
+宝可梦训练台首次使用时，可以直接在页面点击「准备训练环境」；它会调用后端初始化宝可梦数据、创建本地策略模型和两个训练智能体、自动构建双方队伍并创建一场本地 VGC 训练对战。也可以手动调用：
+
+```bash
+curl -X POST http://localhost:8000/api/pokemon/init
 ```
 
 ### 手动启动
@@ -480,6 +506,24 @@ AI-Abattoir/
 | GET | `/api/games/{id}/state` | 获取游戏状态 |
 | POST | `/api/games/{id}/end` | 结束游戏 |
 
+#### 宝可梦训练
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/pokemon/init` | 初始化本地宝可梦数据 |
+| GET | `/api/pokemon/species` | 获取宝可梦种族列表 |
+| GET | `/api/pokemon/moves` | 获取招式列表 |
+| GET | `/api/pokemon/teams?agent_id=...` | 获取智能体队伍 |
+| POST | `/api/pokemon/teams/build` | 根据智能体等级和打法自动构建队伍 |
+| POST | `/api/pokemon/battles` | 创建本地宝可梦对战 |
+| GET | `/api/pokemon/battles/{id}/state` | 获取当前对战状态 |
+| POST | `/api/pokemon/battles/{id}/turn` | 提交双方行动并推进一回合 |
+| GET | `/api/pokemon/battles/{id}/analysis` | 获取对战日志分析 |
+| POST | `/api/pokemon/battles/{id}/finalize` | 结算对战并写入经验进化 |
+| GET | `/api/pokemon/battles/history` | 获取宝可梦对战历史 |
+| GET | `/api/pokemon/knowledge/search` | 检索宝可梦知识库并缓存结果 |
+| POST | `/api/pokemon/showdown/parse` | 解析 Pokemon Showdown 协议消息 |
+
 #### 层级与进化
 
 | 方法 | 路径 | 说明 |
@@ -507,6 +551,7 @@ AI-Abattoir/
 | `/ws/conversations/{id}` | 对话实时通信 | 双向 |
 | `/ws/spectate/conversation/{id}` | 观战对话 | 服务端 → 客户端 |
 | `/ws/spectate/game/{id}` | 观战游戏 | 服务端 → 客户端 |
+| `/ws/pokemon/battle/{id}` | 宝可梦本地对战实时通道 | 双向 |
 
 ---
 
@@ -664,6 +709,10 @@ alembic history
 - [x] 观战与回放
 - [x] 用户认证
 - [x] 联网搜索
+- [x] 宝可梦本地训练台（自动建队、本地对战、日志分析、知识检索入口）
+- [ ] Pokemon Showdown 真实登录、房间同步和天梯实战
+- [ ] 宝可梦多格式支持（单打、随机战、不同世代规则）
+- [ ] 宝可梦强化学习闭环与长期策略评估
 - [ ] Elo 评分排名系统
 - [ ] 更多游戏类型（棋类、文字冒险）
 - [ ] 多模态竞技（生图对决、配音 PK）

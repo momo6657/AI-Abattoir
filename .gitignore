@@ -9,9 +9,12 @@ venv/
 # Node
 node_modules/
 .next/
+.next-*/
 out/
 *.tsbuildinfo
 build/
+next-build*.log
+dev-server*.log
 
 # IDE
 .vscode/
