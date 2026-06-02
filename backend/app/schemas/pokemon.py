@@ -3,7 +3,7 @@ Pokemon API Schemas
 """
 
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from uuid import UUID
 from datetime import datetime
 
@@ -122,3 +122,21 @@ class TeamListResponse(BaseModel):
 
 class BattleListResponse(BaseModel):
     battles: List[BattleResponse]
+
+
+class ShowdownCommandRequest(BaseModel):
+    action: str = Field(
+        ...,
+        description="Command kind: ladder_search, challenge, accept_challenge, reject_challenge, cancel_search, use_team, choose_team, choose_move, choose_switch, choose_multi, choose_default.",
+    )
+    battle_format: str = "gen9vgc2024regg"
+    team: Optional[Union[List[Dict[str, Any]], str]] = None
+    username: Optional[str] = None
+    room_id: Optional[str] = None
+    slots: Optional[List[int]] = None
+    move_slot: Optional[int] = None
+    switch_slot: Optional[int] = None
+    target: Optional[int] = None
+    request_id: Optional[int] = None
+    modifier: Optional[str] = None
+    choices: Optional[List[str]] = None

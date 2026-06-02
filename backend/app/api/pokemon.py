@@ -18,6 +18,7 @@ from app.schemas.pokemon import (
     BattleResponse,
     BattleStateResponse,
     BattleTurnRequest,
+    ShowdownCommandRequest,
 )
 from app.models.pokemon import (
     PokemonSpecies,
@@ -31,7 +32,7 @@ from app.services.pokemon.data_loader import PokemonDataLoader
 from app.services.pokemon.knowledge_service import pokemon_knowledge_service
 from app.services.pokemon.team_builder import pokemon_team_builder
 from app.services.pokemon.battle_analysis import pokemon_battle_analysis_service
-from app.services.pokemon.showdown_connector import pokemon_showdown_connector
+from app.services.pokemon.showdown_connector import ShowdownConnectionError, pokemon_showdown_connector
 
 router = APIRouter(prefix="/pokemon", tags=["pokemon"])
 
@@ -353,12 +354,96 @@ async def search_knowledge(
 async def parse_showdown_message(payload: dict):
     """Parse raw Pokemon Showdown protocol payload into structured events."""
     raw = payload.get("payload", "")
+    events = pokemon_showdown_connector.parse_message(raw)
+    try:
+        battle_request = pokemon_showdown_connector.parse_battle_request(events)
+        search = pokemon_showdown_connector.parse_search_update(events)
+        challenges = pokemon_showdown_connector.parse_challenge_update(events)
+    except ShowdownConnectionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
         "events": [
             {"room_id": event.room_id, "event_type": event.event_type, "args": event.args, "raw": event.raw}
-            for event in pokemon_showdown_connector.parse_message(raw)
-        ]
+            for event in events
+        ],
+        "battle_request": None if battle_request is None else {
+            "room_id": battle_request.room_id,
+            "request_id": battle_request.request_id,
+            "active": battle_request.active,
+            "side": battle_request.side,
+            "force_switch": battle_request.force_switch,
+            "wait": battle_request.wait,
+            "needs_choice": battle_request.needs_choice,
+            "raw": battle_request.raw,
+        },
+        "search": search,
+        "challenges": challenges,
     }
+
+
+@router.post("/showdown/commands")
+async def build_showdown_commands(payload: ShowdownCommandRequest):
+    """Build Pokemon Showdown protocol commands for agent orchestration."""
+    action = payload.action
+    try:
+        if action == "ladder_search":
+            commands = pokemon_showdown_connector.build_ladder_search_messages(payload.team, payload.battle_format)
+        elif action == "challenge":
+            username = _required(payload.username, "username")
+            commands = pokemon_showdown_connector.build_challenge_messages(username, payload.battle_format, payload.team)
+        elif action == "accept_challenge":
+            username = _required(payload.username, "username")
+            commands = pokemon_showdown_connector.build_accept_challenge_messages(username, payload.team)
+        elif action == "reject_challenge":
+            username = _required(payload.username, "username")
+            commands = [pokemon_showdown_connector.build_reject_challenge_message(username)]
+        elif action == "cancel_search":
+            commands = [pokemon_showdown_connector.build_cancel_search_message()]
+        elif action == "use_team":
+            commands = [pokemon_showdown_connector.build_use_team_message(payload.team)]
+        elif action == "choose_team":
+            commands = [pokemon_showdown_connector.build_choose_team(
+                _required(payload.room_id, "room_id"),
+                payload.slots or _raise_missing("slots"),
+                payload.request_id,
+            )]
+        elif action == "choose_move":
+            commands = [pokemon_showdown_connector.build_choose_move(
+                _required(payload.room_id, "room_id"),
+                payload.move_slot if payload.move_slot is not None else _raise_missing("move_slot"),
+                payload.target,
+                payload.request_id,
+                payload.modifier,
+            )]
+        elif action == "choose_switch":
+            commands = [pokemon_showdown_connector.build_choose_switch(
+                _required(payload.room_id, "room_id"),
+                payload.switch_slot if payload.switch_slot is not None else _raise_missing("switch_slot"),
+                payload.request_id,
+            )]
+        elif action == "choose_multi":
+            commands = [pokemon_showdown_connector.build_choose_multi(
+                _required(payload.room_id, "room_id"),
+                payload.choices or _raise_missing("choices"),
+                payload.request_id,
+            )]
+        elif action == "choose_default":
+            commands = [pokemon_showdown_connector.build_choose_default(_required(payload.room_id, "room_id"), payload.request_id)]
+        else:
+            raise ValueError(f"Unsupported Showdown command action: {action}")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"commands": commands}
+
+
+def _required(value: str | None, name: str) -> str:
+    if value is None or value == "":
+        raise ValueError(f"{name} is required.")
+    return value
+
+
+def _raise_missing(name: str):
+    raise ValueError(f"{name} is required.")
 
 
 # Data loading endpoint

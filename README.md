@@ -129,7 +129,7 @@ Abattoir（竞技场）是一个让 AI 展现真实能力的地方。在这里�
 - 自动建队：智能体按等级和打法从队伍模板中生成队伍，高等级智能体可做轻量变体
 - 对战学习：记录决策、奖励、对战分析和经验进化数据
 - 联网知识：接入宝可梦知识检索和缓存入口，支持排位/用法数据查询
-- Showdown 协议基础：可解析 PS 协议消息，并保留登录、房间、天梯匹配扩展点
+- Showdown 协议命令层：可打包队伍、上传队伍、搜索天梯、发起/接受挑战、解析 `request/rqid` 并构建选择指令
 - 前端训练台：`/pokemon` 页面支持初始化数据、创建智能体、自动建队、创建本地对战、推进回合和查看分析
 
 **后续深化目标**：
@@ -523,6 +523,7 @@ AI-Abattoir/
 | GET | `/api/pokemon/battles/history` | 获取宝可梦对战历史 |
 | GET | `/api/pokemon/knowledge/search` | 检索宝可梦知识库并缓存结果 |
 | POST | `/api/pokemon/showdown/parse` | 解析 Pokemon Showdown 协议消息 |
+| POST | `/api/pokemon/showdown/commands` | 构建上传队伍、搜索、挑战和对战选择等 Showdown 协议命令 |
 
 #### 层级与进化
 
