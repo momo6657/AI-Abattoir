@@ -293,6 +293,11 @@ class PokemonShowdownConnector:
             raise ShowdownConnectionError("Pokemon Showdown websocket is not connected.")
         await self.websocket.send(message)
 
+    async def receive(self) -> str:
+        if not self.websocket:
+            raise ShowdownConnectionError("Pokemon Showdown websocket is not connected.")
+        return await self.websocket.recv()
+
     async def close(self) -> None:
         if self.websocket:
             await self.websocket.close()

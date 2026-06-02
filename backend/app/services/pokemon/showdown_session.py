@@ -35,6 +35,7 @@ class ShowdownSessionState:
     search: dict[str, Any] | None = None
     challenges: dict[str, Any] | None = None
     command_log: list[str] = field(default_factory=list)
+    sent_log: list[str] = field(default_factory=list)
     event_log: list[dict[str, Any]] = field(default_factory=list)
     decisions: list[dict[str, Any]] = field(default_factory=list)
     result: dict[str, Any] | None = None
@@ -58,6 +59,7 @@ class ShowdownSessionState:
             "search": self.search,
             "challenges": self.challenges,
             "command_log": self.command_log,
+            "sent_log": self.sent_log,
             "event_log": self.event_log,
             "decisions": self.decisions,
             "result": self.result,
@@ -82,9 +84,10 @@ class PokemonShowdownSessionService:
         mode: str = "balanced",
         login_assertion: str | None = None,
         auto_search: bool = False,
+        connector: PokemonShowdownConnector | None = None,
     ) -> ShowdownSessionState:
         session_id = uuid4().hex
-        connector = PokemonShowdownConnector()
+        connector = connector or PokemonShowdownConnector()
         agent = PokemonShowdownBattleAgent(connector)
         state = ShowdownSessionState(
             session_id=session_id,
@@ -167,6 +170,78 @@ class PokemonShowdownSessionService:
             "commands": commands,
             "decision": None if plan is None else plan.to_dict(),
         }
+
+    async def connect_session(self, session_id: str, *, send_pending: bool = True) -> dict[str, Any]:
+        state = self._require_session(session_id)
+        connector = self.connectors[session_id]
+        await connector.connect()
+        state.status = "connected"
+        sent = []
+        if send_pending:
+            sent = await self.flush_pending_commands(session_id)
+        state.touch()
+        return {"session": state.to_dict(), "sent": sent}
+
+    async def flush_pending_commands(self, session_id: str) -> list[str]:
+        state = self._require_session(session_id)
+        connector = self.connectors[session_id]
+        pending = state.command_log[len(state.sent_log):]
+        for command in pending:
+            await connector.send(command)
+            state.sent_log.append(command)
+        state.touch()
+        return pending
+
+    async def run_once(
+        self,
+        session_id: str,
+        *,
+        auto_respond: bool = True,
+        send_commands: bool = True,
+        team_size: int | None = None,
+        allow_tera: bool = True,
+    ) -> dict[str, Any]:
+        state = self._require_session(session_id)
+        connector = self.connectors[session_id]
+        payload = await connector.receive()
+        result = self.process_payload(
+            session_id,
+            payload,
+            auto_respond=auto_respond,
+            team_size=team_size,
+            allow_tera=allow_tera,
+        )
+        sent = await self.flush_pending_commands(session_id) if send_commands else []
+        result["sent"] = sent
+        result["session"] = state.to_dict()
+        return result
+
+    async def run_until(
+        self,
+        session_id: str,
+        *,
+        max_messages: int = 50,
+        stop_on_finished: bool = True,
+        auto_respond: bool = True,
+        send_commands: bool = True,
+    ) -> dict[str, Any]:
+        results = []
+        for _ in range(max_messages):
+            result = await self.run_once(session_id, auto_respond=auto_respond, send_commands=send_commands)
+            results.append(result)
+            state = self._require_session(session_id)
+            if stop_on_finished and state.status == "finished":
+                break
+        return {"session": self._require_session(session_id).to_dict(), "steps": results}
+
+    async def close_session(self, session_id: str) -> dict[str, Any]:
+        state = self._require_session(session_id)
+        connector = self.connectors[session_id]
+        await connector.close()
+        if state.status != "finished":
+            state.status = "closed"
+        state.touch()
+        return state.to_dict()
 
     def start_ladder_search(self, session_id: str) -> list[str]:
         state = self._require_session(session_id)

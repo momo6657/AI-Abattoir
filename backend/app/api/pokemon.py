@@ -22,6 +22,7 @@ from app.schemas.pokemon import (
     ShowdownDecisionRequest,
     ShowdownSessionCreateRequest,
     ShowdownSessionMessageRequest,
+    ShowdownSessionRunRequest,
 )
 from app.models.pokemon import (
     PokemonSpecies,
@@ -517,6 +518,17 @@ async def start_showdown_ladder_search(session_id: str):
     return {"commands": commands, "session": session.to_dict() if session else None}
 
 
+@router.post("/showdown/sessions/{session_id}/connect")
+async def connect_showdown_session(session_id: str, send_pending: bool = True):
+    """Connect a Showdown session websocket and optionally flush queued commands."""
+    try:
+        return await pokemon_showdown_session_service.connect_session(session_id, send_pending=send_pending)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ShowdownConnectionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/showdown/sessions/{session_id}/message")
 async def process_showdown_session_message(session_id: str, payload: ShowdownSessionMessageRequest):
     """Process Showdown protocol payload and return commands to send back."""
@@ -528,6 +540,51 @@ async def process_showdown_session_message(session_id: str, payload: ShowdownSes
             team_size=payload.team_size,
             allow_tera=payload.allow_tera,
         )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ShowdownConnectionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/showdown/sessions/{session_id}/run-once")
+async def run_showdown_session_once(session_id: str, payload: ShowdownSessionRunRequest):
+    """Receive one Showdown websocket payload, process it, and send generated commands."""
+    try:
+        return await pokemon_showdown_session_service.run_once(
+            session_id,
+            auto_respond=payload.auto_respond,
+            send_commands=payload.send_commands,
+            team_size=payload.team_size,
+            allow_tera=payload.allow_tera,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ShowdownConnectionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/showdown/sessions/{session_id}/run-until")
+async def run_showdown_session_until(session_id: str, payload: ShowdownSessionRunRequest):
+    """Run a Showdown websocket automation loop for a bounded number of messages."""
+    try:
+        return await pokemon_showdown_session_service.run_until(
+            session_id,
+            max_messages=payload.max_messages,
+            stop_on_finished=payload.stop_on_finished,
+            auto_respond=payload.auto_respond,
+            send_commands=payload.send_commands,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ShowdownConnectionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/showdown/sessions/{session_id}/close")
+async def close_showdown_session(session_id: str):
+    """Close a connected Pokemon Showdown websocket session."""
+    try:
+        return await pokemon_showdown_session_service.close_session(session_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ShowdownConnectionError as exc:

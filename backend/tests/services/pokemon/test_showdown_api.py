@@ -147,3 +147,16 @@ async def test_showdown_session_search_endpoint_records_commands(client):
     assert data["session"]["status"] == "searching"
 
     await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
+
+
+@pytest.mark.asyncio
+async def test_showdown_session_run_once_requires_connected_socket(client):
+    created = await client.post("/api/pokemon/showdown/sessions", json={"username": "Bot", "team": None})
+    session_id = created.json()["session_id"]
+
+    response = await client.post(f"/api/pokemon/showdown/sessions/{session_id}/run-once", json={})
+
+    assert response.status_code == 400
+    assert "websocket is not connected" in response.json()["detail"]
+
+    await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")

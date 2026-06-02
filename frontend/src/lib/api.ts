@@ -168,8 +168,15 @@ export const pokemonApi = {
   planShowdownDecision: (data: Record<string, unknown>) => api.post("/pokemon/showdown/decision", data),
   createShowdownSession: (data: Record<string, unknown>) => api.post("/pokemon/showdown/sessions", data),
   startShowdownSearch: (sessionId: string) => api.post(`/pokemon/showdown/sessions/${sessionId}/search`),
+  connectShowdownSession: (sessionId: string, sendPending = true) =>
+    api.post(`/pokemon/showdown/sessions/${sessionId}/connect`, null, { params: { send_pending: sendPending } }),
   processShowdownSessionMessage: (sessionId: string, data: Record<string, unknown>) =>
     api.post(`/pokemon/showdown/sessions/${sessionId}/message`, data),
+  runShowdownSessionOnce: (sessionId: string, data: Record<string, unknown>) =>
+    api.post(`/pokemon/showdown/sessions/${sessionId}/run-once`, data),
+  runShowdownSessionUntil: (sessionId: string, data: Record<string, unknown>) =>
+    api.post(`/pokemon/showdown/sessions/${sessionId}/run-until`, data),
+  closeShowdownSession: (sessionId: string) => api.post(`/pokemon/showdown/sessions/${sessionId}/close`),
   deleteShowdownSession: (sessionId: string) => api.delete(`/pokemon/showdown/sessions/${sessionId}`),
 };
 

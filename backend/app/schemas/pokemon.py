@@ -165,3 +165,12 @@ class ShowdownSessionMessageRequest(BaseModel):
     auto_respond: bool = True
     team_size: Optional[int] = None
     allow_tera: bool = True
+
+
+class ShowdownSessionRunRequest(BaseModel):
+    auto_respond: bool = True
+    send_commands: bool = True
+    team_size: Optional[int] = None
+    allow_tera: bool = True
+    max_messages: int = 50
+    stop_on_finished: bool = True
