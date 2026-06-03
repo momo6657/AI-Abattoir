@@ -209,6 +209,47 @@ def test_attach_knowledge_context_updates_session_snapshot():
     assert snapshot["knowledge_context"]["sources"] == ["https://example.com/Incineroar"]
 
 
+def test_process_payload_passes_attached_knowledge_context_to_decision():
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None)
+    service.attach_knowledge_context(
+        session.session_id,
+        {
+            "members": [
+                {
+                    "species": "Incineroar",
+                    "results": [{"title": "Incineroar teams commonly use Knock Off"}],
+                }
+            ]
+        },
+    )
+    request = {
+        "rqid": 32,
+        "active": [
+            {
+                "moves": [
+                    {"id": "flareblitz", "target": "normal", "basePower": 80, "pp": 15},
+                    {"id": "knockoff", "target": "normal", "basePower": 75, "pp": 20},
+                ]
+            }
+        ],
+        "side": {
+            "pokemon": [
+                {"ident": "p1: Incineroar, L50, M", "condition": "100/100", "active": True},
+            ]
+        },
+    }
+
+    result = service.process_payload(
+        session.session_id,
+        f">battle-gen9vgc-9\n|request|{json.dumps(request)}",
+    )
+
+    assert result["commands"] == ["battle-gen9vgc-9|/choose move 2 -1|32"]
+    assert result["decision"]["choice_details"][0]["knowledge_used"]
+    assert result["session"]["has_knowledge_context"]
+
+
 @pytest.mark.asyncio
 async def test_connect_flushes_pending_commands_to_connector():
     connector = FakeShowdownConnector()

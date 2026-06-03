@@ -274,6 +274,7 @@ export default function PokemonBattlePage() {
       const result = (await pokemonApi.planShowdownDecision({
         payload: showdownPayload,
         mode: showdownMode,
+        knowledge_context: showdownSession?.knowledge_context || showdownTeamKnowledgeSummary || undefined,
       })).data;
       setShowdownPlan(result.plan);
       addMessage(`Showdown choice: ${result.plan?.command || result.plan?.decision_type || 'none'}`);
@@ -803,7 +804,9 @@ export default function PokemonBattlePage() {
                         <div key={`${detail.choice || detail.move || 'choice'}-${index}`} className="rounded bg-black/30 p-2">
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-mono text-gray-200">{detail.choice || detail.move || 'choice'}</span>
-                            {detail.score !== undefined && <span className="text-gray-500">score {detail.score}</span>}
+                            <span className="text-gray-500">
+                              {detail.knowledge_used ? 'knowledge · ' : ''}{detail.score !== undefined ? `score ${detail.score}` : ''}
+                            </span>
                           </div>
                           <div className="mt-1 text-gray-500">{detail.reason}</div>
                         </div>

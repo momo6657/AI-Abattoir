@@ -493,6 +493,7 @@ async def plan_showdown_decision(payload: ShowdownDecisionRequest):
                 mode=payload.mode,
                 team_size=payload.team_size,
                 allow_tera=payload.allow_tera,
+                knowledge_context=payload.knowledge_context,
             )
             return {
                 "events": [
@@ -510,6 +511,7 @@ async def plan_showdown_decision(payload: ShowdownDecisionRequest):
                 mode=payload.mode,
                 team_size=payload.team_size,
                 allow_tera=payload.allow_tera,
+                knowledge_context=payload.knowledge_context,
             )
             return {"events": [], "request": payload.request, "plan": plan.to_dict()}
     except (ShowdownConnectionError, ValueError) as exc:

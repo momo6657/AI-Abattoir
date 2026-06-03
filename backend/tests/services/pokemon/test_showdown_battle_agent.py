@@ -116,6 +116,47 @@ def test_plan_moves_prioritizes_tactical_utility_and_avoids_self_ko():
     assert plan.choice_details[0]["legal_candidates"][-1]["move"] == "explosion"
 
 
+def test_plan_moves_uses_knowledge_context_as_lightweight_bonus():
+    agent = PokemonShowdownBattleAgent()
+    payload = {
+        "rqid": 17,
+        "active": [
+            {
+                "moves": [
+                    {"id": "flareblitz", "target": "normal", "basePower": 80, "pp": 15},
+                    {"id": "knockoff", "target": "normal", "basePower": 75, "pp": 20},
+                ],
+            }
+        ],
+        "side": {
+            "pokemon": [
+                {"ident": "p1: Incineroar, L50, M", "condition": "100/100", "active": True},
+            ]
+        },
+    }
+    knowledge_context = {
+        "members": [
+            {
+                "species": "Incineroar",
+                "results": [{"title": "Incineroar VGC usage: Knock Off, Parting Shot, Fake Out"}],
+            }
+        ]
+    }
+
+    plan = agent.plan_from_raw_request(
+        payload,
+        "battle-gen9vgc-7",
+        knowledge_context=knowledge_context,
+    )
+
+    assert plan.command == "battle-gen9vgc-7|/choose move 2 -1|17"
+    assert plan.choice_details[0]["pokemon"] == "Incineroar"
+    assert plan.choice_details[0]["move"] == "knockoff"
+    assert plan.choice_details[0]["knowledge_used"]
+    assert "knowledge context mentions this move" in plan.choice_details[0]["reason"]
+    assert plan.choice_details[0]["legal_candidates"][0]["knowledge_used"]
+
+
 def test_plan_wait_request_returns_no_command():
     agent = PokemonShowdownBattleAgent()
 

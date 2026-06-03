@@ -110,6 +110,47 @@ async def test_showdown_decision_plans_next_choice_from_payload(client):
 
 
 @pytest.mark.asyncio
+async def test_showdown_decision_accepts_knowledge_context(client):
+    payload = {
+        "rqid": 18,
+        "active": [
+            {
+                "moves": [
+                    {"id": "flareblitz", "target": "normal", "basePower": 80, "pp": 15},
+                    {"id": "knockoff", "target": "normal", "basePower": 75, "pp": 20},
+                ]
+            }
+        ],
+        "side": {
+            "pokemon": [
+                {"ident": "p1: Incineroar, L50, M", "condition": "100/100", "active": True},
+            ]
+        },
+    }
+
+    response = await client.post(
+        "/api/pokemon/showdown/decision",
+        json={
+            "request": payload,
+            "room_id": "battle-gen9vgc-44",
+            "knowledge_context": {
+                "members": [
+                    {
+                        "species": "Incineroar",
+                        "results": [{"title": "Incineroar VGC usage recommends Knock Off"}],
+                    }
+                ]
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["plan"]["command"] == "battle-gen9vgc-44|/choose move 2 -1|18"
+    assert data["plan"]["choice_details"][0]["knowledge_used"]
+
+
+@pytest.mark.asyncio
 async def test_showdown_decision_requires_payload_or_request(client):
     response = await client.post("/api/pokemon/showdown/decision", json={})
 

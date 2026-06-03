@@ -58,10 +58,17 @@ class PokemonShowdownBattleAgent:
         mode: str = "balanced",
         team_size: int | None = None,
         allow_tera: bool = True,
+        knowledge_context: dict[str, Any] | None = None,
     ) -> tuple[list[ShowdownEvent], ShowdownBattleRequest | None, ShowdownChoicePlan]:
         events = self.connector.parse_message(payload)
         request = self.connector.parse_battle_request(events)
-        return events, request, self.plan(request, mode=mode, team_size=team_size, allow_tera=allow_tera)
+        return events, request, self.plan(
+            request,
+            mode=mode,
+            team_size=team_size,
+            allow_tera=allow_tera,
+            knowledge_context=knowledge_context,
+        )
 
     def plan_from_raw_request(
         self,
@@ -71,6 +78,7 @@ class PokemonShowdownBattleAgent:
         mode: str = "balanced",
         team_size: int | None = None,
         allow_tera: bool = True,
+        knowledge_context: dict[str, Any] | None = None,
     ) -> ShowdownChoicePlan:
         request = ShowdownBattleRequest(
             room_id=room_id,
@@ -81,7 +89,13 @@ class PokemonShowdownBattleAgent:
             wait=bool(raw_request.get("wait")),
             raw=raw_request,
         )
-        return self.plan(request, mode=mode, team_size=team_size, allow_tera=allow_tera)
+        return self.plan(
+            request,
+            mode=mode,
+            team_size=team_size,
+            allow_tera=allow_tera,
+            knowledge_context=knowledge_context,
+        )
 
     def plan(
         self,
@@ -90,6 +104,7 @@ class PokemonShowdownBattleAgent:
         mode: str = "balanced",
         team_size: int | None = None,
         allow_tera: bool = True,
+        knowledge_context: dict[str, Any] | None = None,
     ) -> ShowdownChoicePlan:
         if request is None:
             return ShowdownChoicePlan(
@@ -112,7 +127,7 @@ class PokemonShowdownBattleAgent:
         if request.force_switch:
             return self._plan_force_switch(request)
         if request.active:
-            return self._plan_moves(request, mode=mode, allow_tera=allow_tera)
+            return self._plan_moves(request, mode=mode, allow_tera=allow_tera, knowledge_context=knowledge_context)
         command = self.connector.build_choose_default(request.room_id, request.request_id)
         return ShowdownChoicePlan(
             room_id=request.room_id,
@@ -202,9 +217,24 @@ class PokemonShowdownBattleAgent:
             warnings=warnings,
         )
 
-    def _plan_moves(self, request: ShowdownBattleRequest, *, mode: str, allow_tera: bool) -> ShowdownChoicePlan:
+    def _plan_moves(
+        self,
+        request: ShowdownBattleRequest,
+        *,
+        mode: str,
+        allow_tera: bool,
+        knowledge_context: dict[str, Any] | None,
+    ) -> ShowdownChoicePlan:
+        active_species = self._active_species(request)
         planned = [
-            self._move_choice(active_request, mode=mode, allow_tera=allow_tera and index == 0, active_index=index)
+            self._move_choice(
+                active_request,
+                mode=mode,
+                allow_tera=allow_tera and index == 0,
+                active_index=index,
+                pokemon_name=active_species[index] if index < len(active_species) else "",
+                knowledge_context=knowledge_context,
+            )
             for index, active_request in enumerate(request.active)
         ]
         choices = [choice for choice, _detail in planned]
@@ -228,6 +258,8 @@ class PokemonShowdownBattleAgent:
         mode: str,
         allow_tera: bool,
         active_index: int,
+        pokemon_name: str,
+        knowledge_context: dict[str, Any] | None,
     ) -> tuple[str, dict[str, Any]]:
         moves = active_request.get("moves") or []
         legal_moves = [
@@ -242,7 +274,7 @@ class PokemonShowdownBattleAgent:
                 "reason": "no legal moves with PP were available",
             }
         scored_moves = [
-            (slot, move, *self._score_move(move, mode))
+            (slot, move, *self._score_move(move, mode, pokemon_name, knowledge_context))
             for slot, move in legal_moves
         ]
         move_slot, move, score, reason = max(scored_moves, key=lambda item: item[2])
@@ -256,17 +288,20 @@ class PokemonShowdownBattleAgent:
             "choice": choice,
             "move_slot": move_slot,
             "move": move.get("id") or move.get("move") or f"move {move_slot}",
+            "pokemon": pokemon_name,
             "target": target,
             "modifier": modifier,
             "score": round(score, 2),
             "reason": reason,
+            "knowledge_used": "knowledge context" in reason,
             "legal_candidates": [
                 {
                     "slot": slot,
                     "move": candidate.get("id") or candidate.get("move") or f"move {slot}",
                     "score": round(candidate_score, 2),
+                    "knowledge_used": "knowledge context" in candidate_reason,
                 }
-                for slot, candidate, candidate_score, _candidate_reason in sorted(
+                for slot, candidate, candidate_score, candidate_reason in sorted(
                     scored_moves,
                     key=lambda item: item[2],
                     reverse=True,
@@ -274,11 +309,18 @@ class PokemonShowdownBattleAgent:
             ],
         }
 
-    def _score_move(self, move: dict[str, Any], mode: str) -> tuple[float, str]:
+    def _score_move(
+        self,
+        move: dict[str, Any],
+        mode: str,
+        pokemon_name: str = "",
+        knowledge_context: dict[str, Any] | None = None,
+    ) -> tuple[float, str]:
         move_id = self.connector.to_id(move.get("id") or move.get("move"))
+        knowledge_bonus, knowledge_reason = self._knowledge_move_bonus(move_id, pokemon_name, knowledge_context)
         if move_id in {"protect", "detect", "spikyshield", "kingsshield"}:
             score = 35.0 if mode == "defensive" else 15.0
-            return score, f"protective move scored for {mode} mode"
+            return self._with_knowledge_bonus(score, f"protective move scored for {mode} mode", knowledge_bonus, knowledge_reason)
         utility_scores = {
             "fakeout": 90.0,
             "tailwind": 82.0,
@@ -298,7 +340,7 @@ class PokemonShowdownBattleAgent:
                 score += 6
             if mode == "aggressive" and move_id not in {"fakeout", "spore"}:
                 score -= 6
-            return score, f"utility move {move_id} matched tactical priority"
+            return self._with_knowledge_bonus(score, f"utility move {move_id} matched tactical priority", knowledge_bonus, knowledge_reason)
         score = float(move.get("basePower") or move.get("power") or 60)
         if move.get("target") in {"allAdjacentFoes", "allAdjacent", "foeSide"}:
             score += 15
@@ -308,7 +350,62 @@ class PokemonShowdownBattleAgent:
             score += min(float(move.get("pp") or 0), 8.0) * 0.25
         if mode == "aggressive":
             score += 10
-        return score, f"damage move scored from base power in {mode} mode"
+        return self._with_knowledge_bonus(score, f"damage move scored from base power in {mode} mode", knowledge_bonus, knowledge_reason)
+
+    def _with_knowledge_bonus(
+        self,
+        score: float,
+        reason: str,
+        knowledge_bonus: float,
+        knowledge_reason: str,
+    ) -> tuple[float, str]:
+        if not knowledge_bonus:
+            return score, reason
+        return score + knowledge_bonus, f"{reason}; {knowledge_reason}"
+
+    def _knowledge_move_bonus(
+        self,
+        move_id: str,
+        pokemon_name: str,
+        knowledge_context: dict[str, Any] | None,
+    ) -> tuple[float, str]:
+        if not move_id or not knowledge_context:
+            return 0.0, ""
+        member = self._knowledge_member_for_pokemon(pokemon_name, knowledge_context)
+        if member is None:
+            return 0.0, ""
+        text_parts = [
+            str(member.get("species") or ""),
+            str(member.get("query_key") or ""),
+        ]
+        for result in member.get("results") or []:
+            if isinstance(result, dict):
+                text_parts.extend(
+                    str(result.get(key) or "")
+                    for key in ("title", "snippet", "content", "description", "url")
+                )
+            else:
+                text_parts.append(str(result))
+        searchable_text = self.connector.to_id(" ".join(text_parts))
+        if move_id in searchable_text:
+            return 12.0, "knowledge context mentions this move"
+        return 0.0, ""
+
+    def _knowledge_member_for_pokemon(
+        self,
+        pokemon_name: str,
+        knowledge_context: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        pokemon_id = self.connector.to_id(pokemon_name)
+        if not pokemon_id:
+            return None
+        for member in knowledge_context.get("members") or []:
+            if not isinstance(member, dict):
+                continue
+            member_id = self.connector.to_id(member.get("species") or member.get("query_key"))
+            if member_id and (member_id == pokemon_id or member_id in pokemon_id or pokemon_id in member_id):
+                return member
+        return None
 
     def _target_for_move(self, move: dict[str, Any]) -> int | None:
         target_type = move.get("target")
@@ -342,9 +439,16 @@ class PokemonShowdownBattleAgent:
         condition = str(member.get("condition", "")).lower()
         return " fnt" in condition or condition == "0 fnt" or condition.endswith("/0")
 
+    def _active_species(self, request: ShowdownBattleRequest) -> list[str]:
+        pokemon = request.side.get("pokemon") or []
+        active = [self._display_pokemon(member) for member in pokemon if member.get("active")]
+        if active:
+            return active
+        return [self._display_pokemon(member) for member in pokemon[:len(request.active)]]
+
     def _display_pokemon(self, member: dict[str, Any]) -> str:
         ident = str(member.get("ident") or member.get("details") or member.get("name") or "Unknown")
-        return ident.split(": ", 1)[-1]
+        return ident.split(": ", 1)[-1].split(",", 1)[0]
 
 
 pokemon_showdown_battle_agent = PokemonShowdownBattleAgent()

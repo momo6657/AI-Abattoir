@@ -219,6 +219,7 @@ class PokemonShowdownSessionService:
                 mode=state.mode,
                 team_size=team_size or state.team_size,
                 allow_tera=allow_tera,
+                knowledge_context=state.knowledge_context or None,
             )
             if plan.command:
                 commands.append(plan.command)
