@@ -79,6 +79,7 @@ export default function PokemonBattlePage() {
   const [analysis, setAnalysis] = useState<any>(null);
   const [knowledgeQuery, setKnowledgeQuery] = useState('Incineroar');
   const [knowledge, setKnowledge] = useState<any>(null);
+  const [showdownTeamKnowledge, setShowdownTeamKnowledge] = useState<any[]>([]);
   const [showdownPayload, setShowdownPayload] = useState(SAMPLE_SHOWDOWN_PAYLOAD);
   const [showdownUsername, setShowdownUsername] = useState('PokemonBot');
   const [showdownPassword, setShowdownPassword] = useState('');
@@ -238,6 +239,38 @@ export default function PokemonBattlePage() {
       addMessage(`知识检索完成：${knowledgeQuery}`);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '知识检索失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function researchShowdownTeam() {
+    setBusy(true);
+    setError(null);
+    try {
+      const session = await ensureShowdownSession(false);
+      const species = (session.team_species || []).slice(0, 6);
+      if (!species.length) {
+        throw new Error('当前 Showdown 会话没有可研究的队伍成员。');
+      }
+      const results = await Promise.all(
+        species.map(async (pokemon: string) => {
+          try {
+            const response = await pokemonApi.knowledgeSearch('species_usage', pokemon, 3);
+            return { species: pokemon, ...response.data };
+          } catch (err: any) {
+            return {
+              species: pokemon,
+              error: err?.response?.data?.detail || err?.message || 'knowledge search failed',
+              results: [],
+            };
+          }
+        })
+      );
+      setShowdownTeamKnowledge(results);
+      addMessage(`整队知识检索完成：${results.length} members`);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '整队知识检索失败');
     } finally {
       setBusy(false);
     }
@@ -448,6 +481,7 @@ export default function PokemonBattlePage() {
                   setShowdownSession(null);
                   setShowdownAnalysis(null);
                   setShowdownLearning(null);
+                  setShowdownTeamKnowledge([]);
                 }}
                 className="mt-1 w-full rounded-md border border-border bg-black/30 px-3 py-2 text-sm normal-case text-gray-100 outline-none focus:border-accent"
               >
@@ -560,6 +594,30 @@ export default function PokemonBattlePage() {
                 '检索排位数据库和外部知识源，结果会进入后端缓存。'
               )}
             </div>
+            {showdownTeamKnowledge.length ? (
+              <div className="mt-3 space-y-2">
+                <div className="text-xs uppercase text-gray-500">Showdown team research</div>
+                {showdownTeamKnowledge.map((item) => {
+                  const firstResult = item.results?.[0];
+                  return (
+                    <div key={item.species} className="rounded-md border border-border bg-black/20 p-3 text-xs text-gray-400">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-gray-100">{item.species}</span>
+                        <span>{item.error ? 'error' : `${item.results?.length || 0} refs`}</span>
+                      </div>
+                      {item.cached !== undefined && <div className="mt-1 text-gray-500">cached: {String(item.cached)}</div>}
+                      {item.error ? (
+                        <div className="mt-1 text-red-200">{item.error}</div>
+                      ) : firstResult ? (
+                        <div className="mt-1 truncate text-gray-500">{firstResult.title || firstResult.url}</div>
+                      ) : (
+                        <div className="mt-1 text-gray-500">no external result</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
           </section>
 
           <section className="card p-4">
@@ -671,6 +729,9 @@ export default function PokemonBattlePage() {
               <button onClick={runLiveShowdownUntil} disabled={busy || !showdownSession?.session_id} className="btn-primary disabled:opacity-50">
                 自动运行
               </button>
+              <button onClick={researchShowdownTeam} disabled={busy} className="btn-secondary disabled:opacity-50">
+                研究队伍
+              </button>
               <button onClick={cancelShowdownSearch} disabled={busy || !showdownSession?.session_id} className="btn-secondary disabled:opacity-50">
                 取消搜索
               </button>
@@ -683,6 +744,7 @@ export default function PokemonBattlePage() {
                   setShowdownAnalysis(null);
                   setShowdownLearning(null);
                   setShowdownPlan(null);
+                  setShowdownTeamKnowledge([]);
                 }}
                 disabled={busy}
                 className="btn-secondary disabled:opacity-50"
