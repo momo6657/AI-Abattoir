@@ -253,3 +253,32 @@ class PokemonKnowledgeCache(Base):
         Index('idx_knowledge_query', 'query_type', 'query_key'),
         Index('idx_knowledge_expires', 'expires_at'),
     )
+
+
+class PokemonShowdownBattleRecord(Base):
+    """Persisted Pokemon Showdown battle result for long-term learning."""
+    __tablename__ = "pokemon_showdown_battle_records"
+
+    id = Column(PGUUID(), primary_key=True, default=uuid_module.uuid4)
+    session_id = Column(String(80), nullable=False, unique=True)
+    username = Column(String(100), nullable=False)
+    username_key = Column(String(100), nullable=False)
+    battle_format = Column(String(50), nullable=False)
+    showdown_format = Column(String(80), nullable=False)
+    mode = Column(String(20), default="balanced")
+    status = Column(String(20), nullable=False)
+    reward = Column(Float, default=0.0)
+    turns = Column(Integer, default=0)
+    faints_for = Column(Integer, default=0)
+    faints_against = Column(Integer, default=0)
+    decisions = Column(PGJSONB, default=list)
+    analysis = Column(PGJSONB, default=dict)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index('idx_showdown_record_session', 'session_id'),
+        Index('idx_showdown_record_user_format', 'username_key', 'battle_format'),
+        Index('idx_showdown_record_status', 'status'),
+        Index('idx_showdown_record_created', 'created_at'),
+    )

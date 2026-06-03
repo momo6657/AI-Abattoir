@@ -40,6 +40,7 @@ from app.services.pokemon.format_catalog import pokemon_format_catalog
 from app.services.pokemon.showdown_connector import ShowdownConnectionError, pokemon_showdown_connector
 from app.services.pokemon.showdown_battle_agent import pokemon_showdown_battle_agent
 from app.services.pokemon.showdown_session import pokemon_showdown_session_service
+from app.services.pokemon.showdown_learning_store import pokemon_showdown_learning_store
 
 router = APIRouter(prefix="/pokemon", tags=["pokemon"])
 
@@ -512,16 +513,21 @@ async def create_showdown_session(payload: ShowdownSessionCreateRequest):
 
 
 @router.get("/showdown/learning/profiles")
-async def list_showdown_learning_profiles():
+async def list_showdown_learning_profiles(db: AsyncSession = Depends(get_db)):
     """List learned Pokemon Showdown session performance profiles."""
-    return pokemon_showdown_session_service.list_learning_profiles()
+    return await pokemon_showdown_learning_store.list_profiles(db)
 
 
 @router.get("/showdown/learning/profile")
-async def get_showdown_learning_profile(username: str, battle_format: str = "vgc2024"):
+async def get_showdown_learning_profile(
+    username: str,
+    battle_format: str = "vgc2024",
+    db: AsyncSession = Depends(get_db),
+):
     """Get learned Showdown performance stats for one user and format."""
     try:
-        return pokemon_showdown_session_service.learning_profile(username, battle_format)
+        format_info = pokemon_format_catalog.get(battle_format)
+        return await pokemon_showdown_learning_store.profile(db, username=username, battle_format=format_info.id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -533,10 +539,14 @@ async def list_showdown_sessions():
 
 
 @router.get("/showdown/sessions/{session_id}/analysis")
-async def analyze_showdown_session(session_id: str):
+async def analyze_showdown_session(session_id: str, db: AsyncSession = Depends(get_db)):
     """Analyze one Pokemon Showdown automation session event log."""
     try:
-        return pokemon_showdown_session_service.analyze_session(session_id)
+        analysis = pokemon_showdown_session_service.analyze_session(session_id)
+        session = pokemon_showdown_session_service.get_session(session_id)
+        if session:
+            await _persist_showdown_learning(db, {"session": session.to_dict()})
+        return analysis
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -573,16 +583,22 @@ async def connect_showdown_session(session_id: str, send_pending: bool = True):
 
 
 @router.post("/showdown/sessions/{session_id}/message")
-async def process_showdown_session_message(session_id: str, payload: ShowdownSessionMessageRequest):
+async def process_showdown_session_message(
+    session_id: str,
+    payload: ShowdownSessionMessageRequest,
+    db: AsyncSession = Depends(get_db),
+):
     """Process Showdown protocol payload and return commands to send back."""
     try:
-        return pokemon_showdown_session_service.process_payload(
+        result = pokemon_showdown_session_service.process_payload(
             session_id,
             payload.payload,
             auto_respond=payload.auto_respond,
             team_size=payload.team_size,
             allow_tera=payload.allow_tera,
         )
+        result["learning_profile"] = await _persist_showdown_learning(db, result)
+        return result
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ShowdownConnectionError as exc:
@@ -590,16 +606,22 @@ async def process_showdown_session_message(session_id: str, payload: ShowdownSes
 
 
 @router.post("/showdown/sessions/{session_id}/run-once")
-async def run_showdown_session_once(session_id: str, payload: ShowdownSessionRunRequest):
+async def run_showdown_session_once(
+    session_id: str,
+    payload: ShowdownSessionRunRequest,
+    db: AsyncSession = Depends(get_db),
+):
     """Receive one Showdown websocket payload, process it, and send generated commands."""
     try:
-        return await pokemon_showdown_session_service.run_once(
+        result = await pokemon_showdown_session_service.run_once(
             session_id,
             auto_respond=payload.auto_respond,
             send_commands=payload.send_commands,
             team_size=payload.team_size,
             allow_tera=payload.allow_tera,
         )
+        result["learning_profile"] = await _persist_showdown_learning(db, result)
+        return result
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ShowdownConnectionError as exc:
@@ -607,16 +629,22 @@ async def run_showdown_session_once(session_id: str, payload: ShowdownSessionRun
 
 
 @router.post("/showdown/sessions/{session_id}/run-until")
-async def run_showdown_session_until(session_id: str, payload: ShowdownSessionRunRequest):
+async def run_showdown_session_until(
+    session_id: str,
+    payload: ShowdownSessionRunRequest,
+    db: AsyncSession = Depends(get_db),
+):
     """Run a Showdown websocket automation loop for a bounded number of messages."""
     try:
-        return await pokemon_showdown_session_service.run_until(
+        result = await pokemon_showdown_session_service.run_until(
             session_id,
             max_messages=payload.max_messages,
             stop_on_finished=payload.stop_on_finished,
             auto_respond=payload.auto_respond,
             send_commands=payload.send_commands,
         )
+        result["learning_profile"] = await _persist_showdown_learning(db, result)
+        return result
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ShowdownConnectionError as exc:
@@ -651,6 +679,23 @@ def _required(value: str | None, name: str) -> str:
 
 def _raise_missing(name: str):
     raise ValueError(f"{name} is required.")
+
+
+async def _persist_showdown_learning(db: AsyncSession, result: dict) -> dict:
+    session = result.get("session") or {}
+    analysis = session.get("analysis") or {}
+    if not session:
+        return {}
+    return await pokemon_showdown_learning_store.record_session(
+        db,
+        session_id=session.get("session_id", ""),
+        username=session.get("username", ""),
+        battle_format=session.get("battle_format", "vgc2024"),
+        showdown_format=session.get("showdown_format", session.get("battle_format", "vgc2024")),
+        mode=session.get("mode", "balanced"),
+        analysis=analysis,
+        decisions=session.get("decisions") or [],
+    )
 
 
 # Data loading endpoint

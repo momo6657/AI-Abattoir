@@ -115,7 +115,7 @@ async def test_showdown_decision_requires_payload_or_request(client):
 
 
 @pytest.mark.asyncio
-async def test_showdown_session_processes_payload_and_returns_commands(client):
+async def test_showdown_session_processes_payload_and_returns_commands(setup_db, client):
     created = await client.post(
         "/api/pokemon/showdown/sessions",
         json={"username": "Bot", "team": None, "battle_format": "gen9vgc2024regg", "login_assertion": "ASSERT"},
@@ -169,7 +169,7 @@ async def test_showdown_session_search_endpoint_records_commands(client):
 
 
 @pytest.mark.asyncio
-async def test_showdown_session_analysis_endpoint_returns_learning_signals(client):
+async def test_showdown_session_analysis_endpoint_returns_learning_signals(setup_db, client):
     created = await client.post("/api/pokemon/showdown/sessions", json={"username": "Bot", "team": None})
     session_id = created.json()["session_id"]
 
@@ -214,7 +214,7 @@ async def test_showdown_session_analysis_endpoint_returns_learning_signals(clien
 
 
 @pytest.mark.asyncio
-async def test_showdown_session_run_once_requires_connected_socket(client):
+async def test_showdown_session_run_once_requires_connected_socket(setup_db, client):
     created = await client.post("/api/pokemon/showdown/sessions", json={"username": "Bot", "team": None})
     session_id = created.json()["session_id"]
 
