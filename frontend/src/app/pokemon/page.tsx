@@ -80,7 +80,7 @@ export default function PokemonBattlePage() {
   const [knowledgeQuery, setKnowledgeQuery] = useState('Incineroar');
   const [knowledge, setKnowledge] = useState<any>(null);
   const [showdownPayload, setShowdownPayload] = useState(SAMPLE_SHOWDOWN_PAYLOAD);
-  const [showdownMode, setShowdownMode] = useState<'balanced' | 'aggressive' | 'defensive'>('balanced');
+  const [showdownMode, setShowdownMode] = useState<'auto' | 'balanced' | 'aggressive' | 'defensive'>('auto');
   const [showdownPlan, setShowdownPlan] = useState<any>(null);
   const [showdownSession, setShowdownSession] = useState<any>(null);
   const [showdownAnalysis, setShowdownAnalysis] = useState<any>(null);
@@ -466,8 +466,8 @@ export default function PokemonBattlePage() {
               </button>
             </div>
 
-            <div className="mt-3 grid grid-cols-3 gap-1 rounded-md border border-border bg-black/20 p-1">
-              {(['balanced', 'aggressive', 'defensive'] as const).map((mode) => (
+            <div className="mt-3 grid grid-cols-4 gap-1 rounded-md border border-border bg-black/20 p-1">
+              {(['auto', 'balanced', 'aggressive', 'defensive'] as const).map((mode) => (
                 <button
                   key={mode}
                   onClick={() => setShowdownMode(mode)}
@@ -537,6 +537,18 @@ export default function PokemonBattlePage() {
                     <span className="text-gray-500">Session</span>
                     <span className="text-gray-200">{showdownSession.status}</span>
                   </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-gray-500">Mode</span>
+                    <span className="text-gray-200">
+                      {showdownSession.mode}
+                      {showdownSession.requested_mode === 'auto' ? ' · auto' : ''}
+                    </span>
+                  </div>
+                  {showdownSession.mode_recommendation?.reason && (
+                    <div className="rounded bg-black/30 p-2 text-gray-500">
+                      {showdownSession.mode_recommendation.reason}
+                    </div>
+                  )}
                   <div className="break-all font-mono text-gray-500">{showdownSession.session_id}</div>
                   <div className="text-gray-500">Commands: {showdownSession.command_log?.length || 0}</div>
                   <div className="grid grid-cols-2 gap-2 pt-1">

@@ -499,13 +499,25 @@ async def plan_showdown_decision(payload: ShowdownDecisionRequest):
 
 
 @router.post("/showdown/sessions")
-async def create_showdown_session(payload: ShowdownSessionCreateRequest):
+async def create_showdown_session(payload: ShowdownSessionCreateRequest, db: AsyncSession = Depends(get_db)):
     """Create an autonomous Pokemon Showdown session state machine."""
+    try:
+        resolved_mode, mode_source, mode_recommendation = await _resolve_showdown_mode(
+            db,
+            username=payload.username,
+            battle_format=payload.battle_format,
+            requested_mode=payload.mode,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     session = pokemon_showdown_session_service.create_session(
         username=payload.username,
         team=payload.team,
         battle_format=payload.battle_format,
-        mode=payload.mode,
+        mode=resolved_mode,
+        requested_mode=payload.mode,
+        mode_source=mode_source,
+        mode_recommendation=mode_recommendation,
         login_assertion=payload.login_assertion,
         auto_search=payload.auto_search,
     )
@@ -696,6 +708,32 @@ async def _persist_showdown_learning(db: AsyncSession, result: dict) -> dict:
         analysis=analysis,
         decisions=session.get("decisions") or [],
     )
+
+
+async def _resolve_showdown_mode(
+    db: AsyncSession,
+    *,
+    username: str,
+    battle_format: str,
+    requested_mode: str,
+) -> tuple[str, str, dict]:
+    allowed_modes = {"balanced", "aggressive", "defensive"}
+    if requested_mode in allowed_modes:
+        return requested_mode, "manual", {}
+    if requested_mode != "auto":
+        raise ValueError(f"Unsupported Showdown mode: {requested_mode}")
+
+    format_info = pokemon_format_catalog.get(battle_format)
+    profile = await pokemon_showdown_learning_store.profile(db, username=username, battle_format=format_info.id)
+    recommendation = profile.get("recommendation") or {}
+    recommended_mode = recommendation.get("mode")
+    if recommended_mode not in allowed_modes:
+        recommended_mode = "balanced"
+        recommendation = {
+            "mode": recommended_mode,
+            "reason": "No reliable learned mode was available, so balanced was selected.",
+        }
+    return recommended_mode, "learning_profile", recommendation
 
 
 # Data loading endpoint

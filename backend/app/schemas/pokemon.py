@@ -155,7 +155,10 @@ class ShowdownSessionCreateRequest(BaseModel):
     username: str
     team: Optional[Union[List[Dict[str, Any]], str]] = None
     battle_format: str = "gen9vgc2024regg"
-    mode: str = "balanced"
+    mode: str = Field(
+        "balanced",
+        description="Battle policy mode: auto, balanced, aggressive, or defensive. auto selects from the learned Showdown profile.",
+    )
     login_assertion: Optional[str] = None
     auto_search: bool = False
 

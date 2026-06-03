@@ -4,6 +4,8 @@ import json
 
 import pytest
 
+from app.services.pokemon.showdown_learning_store import pokemon_showdown_learning_store
+
 
 @pytest.mark.asyncio
 async def test_showdown_commands_build_ladder_search(client):
@@ -121,7 +123,11 @@ async def test_showdown_session_processes_payload_and_returns_commands(setup_db,
         json={"username": "Bot", "team": None, "battle_format": "gen9vgc2024regg", "login_assertion": "ASSERT"},
     )
     assert created.status_code == 200
-    session_id = created.json()["session_id"]
+    created_data = created.json()
+    session_id = created_data["session_id"]
+    assert created_data["mode"] == "balanced"
+    assert created_data["requested_mode"] == "balanced"
+    assert created_data["mode_source"] == "manual"
     request = {
         "rqid": 21,
         "active": [
@@ -147,6 +153,34 @@ async def test_showdown_session_processes_payload_and_returns_commands(setup_db,
 
     deleted = await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
     assert deleted.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_showdown_session_auto_mode_uses_learning_recommendation(setup_db, db, client):
+    await pokemon_showdown_learning_store.record_session(
+        db,
+        session_id="auto-mode-seed",
+        username="Bot",
+        battle_format="vgc2024",
+        showdown_format="gen9vgc2024regg",
+        mode="aggressive",
+        analysis={"status": "win", "reward": 140.0, "turns": 4, "faints_for": 2, "faints_against": 0},
+        decisions=[{"decision_type": "move"}],
+    )
+
+    created = await client.post(
+        "/api/pokemon/showdown/sessions",
+        json={"username": "Bot", "team": None, "battle_format": "vgc2024", "mode": "auto"},
+    )
+
+    assert created.status_code == 200
+    data = created.json()
+    assert data["requested_mode"] == "auto"
+    assert data["mode"] == "aggressive"
+    assert data["mode_source"] == "learning_profile"
+    assert data["mode_recommendation"]["mode"] == "aggressive"
+
+    await client.delete(f"/api/pokemon/showdown/sessions/{data['session_id']}")
 
 
 @pytest.mark.asyncio

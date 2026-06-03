@@ -36,6 +36,9 @@ class ShowdownSessionState:
     active_pokemon: int = 2
     requires_team: bool = True
     mode: str = "balanced"
+    requested_mode: str = "balanced"
+    mode_source: str = "manual"
+    mode_recommendation: dict[str, Any] = field(default_factory=dict)
     status: str = "ready"
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -66,6 +69,9 @@ class ShowdownSessionState:
             "active_pokemon": self.active_pokemon,
             "requires_team": self.requires_team,
             "mode": self.mode,
+            "requested_mode": self.requested_mode,
+            "mode_source": self.mode_source,
+            "mode_recommendation": self.mode_recommendation,
             "status": self.status,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
@@ -98,6 +104,9 @@ class PokemonShowdownSessionService:
         team: list[dict[str, Any]] | str | None,
         battle_format: str = "gen9vgc2024regg",
         mode: str = "balanced",
+        requested_mode: str | None = None,
+        mode_source: str = "manual",
+        mode_recommendation: dict[str, Any] | None = None,
         login_assertion: str | None = None,
         auto_search: bool = False,
         connector: PokemonShowdownConnector | None = None,
@@ -116,6 +125,9 @@ class PokemonShowdownSessionService:
             active_pokemon=format_info.active_pokemon,
             requires_team=format_info.requires_team,
             mode=mode,
+            requested_mode=requested_mode or mode,
+            mode_source=mode_source,
+            mode_recommendation=mode_recommendation or {},
             status="searching" if auto_search else "ready",
             team=team,
             login_assertion=login_assertion,
