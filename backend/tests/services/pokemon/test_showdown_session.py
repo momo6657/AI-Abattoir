@@ -202,6 +202,44 @@ def test_accept_and_reject_challenge_queue_session_commands():
     assert snapshot["last_command"] == "|/reject rival"
 
 
+def test_auto_accept_challenge_accepts_matching_format_only_once():
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None, auto_accept_challenges=True)
+
+    result = service.process_payload(
+        session.session_id,
+        '|updatechallenges|{"challengesFrom":{"rival":"gen9vgc2024regg"}}',
+        auto_respond=False,
+    )
+    repeated = service.process_payload(
+        session.session_id,
+        '|updatechallenges|{"challengesFrom":{"rival":"gen9vgc2024regg"}}',
+        auto_respond=False,
+    )
+
+    assert result["commands"][0].startswith("|/utm ")
+    assert result["commands"][1] == "|/accept rival"
+    assert result["session"]["status"] == "challenge_accepted"
+    assert result["session"]["auto_accept_challenges"]
+    assert result["session"]["accepted_challenges"] == ["rival"]
+    assert repeated["commands"] == []
+
+
+def test_auto_accept_challenge_ignores_mismatched_format():
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None, battle_format="gen9ou", auto_accept_challenges=True)
+
+    result = service.process_payload(
+        session.session_id,
+        '|updatechallenges|{"challengesFrom":{"rival":"gen9vgc2024regg"}}',
+        auto_respond=False,
+    )
+
+    assert result["commands"] == []
+    assert result["session"]["challenge_count"] == 1
+    assert result["session"]["accepted_challenges"] == []
+
+
 def test_accept_challenge_requires_known_or_explicit_challenger():
     service = PokemonShowdownSessionService()
     session = service.create_session(username="Bot", team=None)

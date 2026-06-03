@@ -170,6 +170,7 @@ class ShowdownSessionCreateRequest(BaseModel):
     login_assertion: Optional[str] = None
     login_password: Optional[str] = None
     auto_login: bool = True
+    auto_accept_challenges: bool = False
     auto_search: bool = False
 
 

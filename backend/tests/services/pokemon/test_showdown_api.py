@@ -414,6 +414,33 @@ async def test_showdown_session_challenge_endpoints_queue_commands(setup_db, cli
 
 
 @pytest.mark.asyncio
+async def test_showdown_session_auto_accepts_matching_challenge(setup_db, client):
+    created = await client.post(
+        "/api/pokemon/showdown/sessions",
+        json={"username": "Bot", "team": None, "auto_accept_challenges": True},
+    )
+    session_id = created.json()["session_id"]
+    assert created.json()["auto_accept_challenges"]
+
+    updated = await client.post(
+        f"/api/pokemon/showdown/sessions/{session_id}/message",
+        json={
+            "payload": '|updatechallenges|{"challengesFrom":{"rival":"gen9vgc2024regg","ou-rival":"gen9ou"}}',
+            "auto_respond": False,
+        },
+    )
+
+    assert updated.status_code == 200
+    data = updated.json()
+    assert data["commands"][0].startswith("|/utm ")
+    assert data["commands"][1] == "|/accept rival"
+    assert data["session"]["accepted_challenges"] == ["rival"]
+    assert data["session"]["pending_command_count"] == 2
+
+    await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
+
+
+@pytest.mark.asyncio
 async def test_showdown_session_accept_challenge_requires_challenger(client):
     created = await client.post("/api/pokemon/showdown/sessions", json={"username": "Bot", "team": None})
     session_id = created.json()["session_id"]

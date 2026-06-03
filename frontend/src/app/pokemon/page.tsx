@@ -85,6 +85,7 @@ export default function PokemonBattlePage() {
   const [showdownUsername, setShowdownUsername] = useState('PokemonBot');
   const [showdownPassword, setShowdownPassword] = useState('');
   const [showdownAutoLogin, setShowdownAutoLogin] = useState(true);
+  const [showdownAutoAccept, setShowdownAutoAccept] = useState(false);
   const [showdownRunLimit, setShowdownRunLimit] = useState(10);
   const [showdownMode, setShowdownMode] = useState<'auto' | 'balanced' | 'aggressive' | 'defensive'>('auto');
   const [showdownPlan, setShowdownPlan] = useState<any>(null);
@@ -296,6 +297,7 @@ export default function PokemonBattlePage() {
       battle_format: selectedFormatInfo?.id || selectedFormat,
       mode: showdownMode,
       auto_login: showdownAutoLogin,
+      auto_accept_challenges: showdownAutoAccept,
       login_password: showdownPassword || undefined,
       auto_search: autoSearch,
     })).data;
@@ -747,6 +749,15 @@ export default function PokemonBattlePage() {
                 Auto login
               </label>
             </div>
+            <label className="mt-2 flex items-center justify-between gap-2 rounded-md border border-border bg-black/20 px-3 py-2 text-xs text-gray-300">
+              <span>Auto accept matching challenges</span>
+              <input
+                type="checkbox"
+                checked={showdownAutoAccept}
+                onChange={(event) => setShowdownAutoAccept(event.target.checked)}
+                className="h-4 w-4 accent-accent"
+              />
+            </label>
 
             <div className="mt-3 grid grid-cols-4 gap-1 rounded-md border border-border bg-black/20 p-1">
               {(['auto', 'balanced', 'aggressive', 'defensive'] as const).map((mode) => (
@@ -904,6 +915,7 @@ export default function PokemonBattlePage() {
                   </div>
                   <div className="grid grid-cols-2 gap-2 pt-1">
                     <Metric label="Auto Login" value={showdownSession.auto_login ? 'on' : 'off'} compact />
+                    <Metric label="Auto Accept" value={showdownSession.auto_accept_challenges ? 'on' : 'off'} compact />
                     <Metric label="Assertion" value={showdownSession.has_login_assertion ? 'ready' : 'none'} compact />
                     <Metric label="Knowledge" value={showdownSession.has_knowledge_context ? 'ready' : 'none'} compact />
                     <Metric label="Sources" value={showdownSession.knowledge_context?.sources?.length ?? 0} compact />

@@ -62,6 +62,8 @@ class ShowdownSessionState:
     login_assertion: str | None = None
     login_password: str | None = None
     auto_login: bool = True
+    auto_accept_challenges: bool = False
+    accepted_challenges: list[str] = field(default_factory=list)
 
     def touch(self) -> None:
         self.updated_at = datetime.now(timezone.utc)
@@ -95,6 +97,8 @@ class ShowdownSessionState:
             "team_species": self.team_species,
             "has_team": self.team is not None,
             "auto_login": self.auto_login,
+            "auto_accept_challenges": self.auto_accept_challenges,
+            "accepted_challenges": self.accepted_challenges,
             "has_login_assertion": self.login_assertion is not None,
             "has_login_password": self.login_password is not None,
             "pending_command_count": max(0, len(self.command_log) - len(self.sent_log)),
@@ -138,6 +142,7 @@ class PokemonShowdownSessionService:
         login_assertion: str | None = None,
         login_password: str | None = None,
         auto_login: bool = True,
+        auto_accept_challenges: bool = False,
         auto_search: bool = False,
         connector: PokemonShowdownConnector | None = None,
     ) -> ShowdownSessionState:
@@ -167,6 +172,7 @@ class PokemonShowdownSessionService:
             login_assertion=login_assertion,
             login_password=login_password,
             auto_login=auto_login,
+            auto_accept_challenges=auto_accept_challenges,
         )
         self._ensure_team(state)
         if auto_search:
@@ -238,6 +244,8 @@ class PokemonShowdownSessionService:
         challenges = connector.parse_challenge_update(events)
         if challenges is not None:
             state.challenges = challenges
+            if state.auto_accept_challenges:
+                commands.extend(self._auto_accept_challenge_commands(state, challenges))
 
         if commands:
             state.command_log.extend(commands)
@@ -347,10 +355,8 @@ class PokemonShowdownSessionService:
 
     def accept_challenge(self, session_id: str, username: str | None = None) -> list[str]:
         state = self._require_session(session_id)
-        connector = self.connectors[session_id]
         challenger = self._resolve_challenge_username(state, username)
-        self._ensure_team(state)
-        commands = connector.build_accept_challenge_messages(challenger, state.team)
+        commands = self._build_accept_challenge_commands(state, challenger)
         state.command_log.extend(commands)
         state.status = "challenge_accepted"
         state.touch()
@@ -374,6 +380,35 @@ class PokemonShowdownSessionService:
             if challenger:
                 return str(challenger)
         raise ValueError("No incoming Pokemon Showdown challenge is available.")
+
+    def _auto_accept_challenge_commands(self, state: ShowdownSessionState, challenges: dict[str, Any]) -> list[str]:
+        challenges_from = challenges.get("challengesFrom") or {}
+        for challenger, challenge_format in challenges_from.items():
+            challenger_name = str(challenger or "")
+            if not challenger_name or challenger_name in state.accepted_challenges:
+                continue
+            if not self._challenge_format_matches(state, challenge_format):
+                continue
+            commands = self._build_accept_challenge_commands(state, challenger_name)
+            state.status = "challenge_accepted"
+            return commands
+        return []
+
+    def _build_accept_challenge_commands(self, state: ShowdownSessionState, challenger: str) -> list[str]:
+        connector = self.connectors[state.session_id]
+        self._ensure_team(state)
+        commands = connector.build_accept_challenge_messages(challenger, state.team)
+        if challenger not in state.accepted_challenges:
+            state.accepted_challenges.append(challenger)
+        return commands
+
+    def _challenge_format_matches(self, state: ShowdownSessionState, challenge_format: Any) -> bool:
+        if not challenge_format:
+            return False
+        try:
+            return pokemon_format_catalog.get(str(challenge_format)).showdown_format == state.showdown_format
+        except ValueError:
+            return str(challenge_format).lower() == state.showdown_format.lower()
 
     async def _prepare_login_assertion_from_payload(
         self,
