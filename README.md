@@ -135,6 +135,7 @@ Abattoir（竞技场）是一个让 AI 展现真实能力的地方。在这里�
 - Showdown 自动会话：可创建会话、连接 websocket、记录搜索/房间/胜负状态，并对 PS payload 自动产生命令流
 - Showdown 自动建队：创建或搜索需要队伍的格式时，缺省 `team` 会按格式自动选择本地模板队或生成 Showdown 可上传队伍
 - Showdown 实战控制台：前端可创建会话、搜索天梯、连接 PS websocket、单步/有界自动运行、取消搜索和关闭连接
+- Showdown 自动登录：收到 `challstr` 后可自动向 PS 请求 assertion 并发送 `/trn`，支持游客名或可选密码登录，密码不会回传到会话响应
 - Showdown 学习摘要：可从真实协议事件中汇总回合、出招、换人、受伤、击倒、胜负和奖励信号
 - Showdown 学习档案：将已完成实战摘要持久化到数据库，按用户和格式聚合胜率、平均奖励、决策类型收益，并给出下一局模式建议
 - Showdown 自适应策略：创建会话时可使用 `mode=auto`，系统会读取学习档案并选择当前格式下收益最高的策略模式
@@ -738,6 +739,7 @@ alembic history
 - [x] 宝可梦多格式目录与 Showdown 格式选择（VGC、单打 OU、双打 OU、随机战）
 - [x] 宝可梦 Showdown 缺省自动建队和队伍上传命令生成
 - [x] 宝可梦 Showdown 前端实战控制台（创建、搜索、连接、单步/有界运行、取消、关闭）
+- [x] 宝可梦 Showdown challstr 自动 assertion 登录
 - [x] 宝可梦 Showdown 会话事件分析与奖励信号
 - [ ] Pokemon Showdown 真实登录、房间同步和天梯实战
 - [ ] 宝可梦完整多格式战斗策略（单打、随机战、不同世代规则）

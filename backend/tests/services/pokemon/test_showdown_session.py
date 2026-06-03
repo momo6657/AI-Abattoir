@@ -15,6 +15,7 @@ class FakeShowdownConnector(PokemonShowdownConnector):
         self.sent: list[str] = []
         self.connected = False
         self.closed = False
+        self.assertion_requests: list[dict[str, str | None]] = []
 
     async def connect(self) -> None:
         self.connected = True
@@ -31,6 +32,10 @@ class FakeShowdownConnector(PokemonShowdownConnector):
     async def close(self) -> None:
         self.closed = True
         self.websocket = None
+
+    async def request_assertion(self, username: str, challstr: str, password: str | None = None) -> str:
+        self.assertion_requests.append({"username": username, "challstr": challstr, "password": password})
+        return "ASSERT-FROM-PS"
 
 
 def test_create_session_can_prepare_ladder_search_commands():
@@ -230,6 +235,47 @@ async def test_run_once_receives_payload_auto_responds_and_sends_command():
     assert result["sent"] == ["battle-gen9vgc-7|/choose move 2 -1|31"]
     assert connector.sent == ["battle-gen9vgc-7|/choose move 2 -1|31"]
     assert result["session"]["status"] == "responded"
+
+
+@pytest.mark.asyncio
+async def test_run_once_auto_requests_assertion_from_challstr():
+    connector = FakeShowdownConnector(["|challstr|42|abcdef"])
+    service = PokemonShowdownSessionService()
+    session = service.create_session(
+        username="Bot",
+        team=None,
+        login_password="SECRET",
+        connector=connector,
+    )
+
+    result = await service.run_once(session.session_id)
+
+    assert connector.assertion_requests == [{"username": "Bot", "challstr": "42|abcdef", "password": "SECRET"}]
+    assert result["commands"] == ["|/trn Bot,0,ASSERT-FROM-PS"]
+    assert result["sent"] == ["|/trn Bot,0,ASSERT-FROM-PS"]
+    assert result["session"]["status"] == "authenticated"
+    assert result["session"]["has_login_assertion"]
+    assert result["session"]["has_login_password"]
+    assert "SECRET" not in json.dumps(result["session"])
+
+
+@pytest.mark.asyncio
+async def test_run_once_can_disable_auto_login():
+    connector = FakeShowdownConnector(["|challstr|42|abcdef"])
+    service = PokemonShowdownSessionService()
+    session = service.create_session(
+        username="Bot",
+        team=None,
+        auto_login=False,
+        connector=connector,
+    )
+
+    result = await service.run_once(session.session_id)
+
+    assert connector.assertion_requests == []
+    assert result["commands"] == []
+    assert result["sent"] == []
+    assert not result["session"]["has_login_assertion"]
 
 
 @pytest.mark.asyncio

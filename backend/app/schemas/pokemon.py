@@ -160,6 +160,8 @@ class ShowdownSessionCreateRequest(BaseModel):
         description="Battle policy mode: auto, balanced, aggressive, or defensive. auto selects from the learned Showdown profile.",
     )
     login_assertion: Optional[str] = None
+    login_password: Optional[str] = None
+    auto_login: bool = True
     auto_search: bool = False
 
 

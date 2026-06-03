@@ -519,6 +519,8 @@ async def create_showdown_session(payload: ShowdownSessionCreateRequest, db: Asy
         mode_source=mode_source,
         mode_recommendation=mode_recommendation,
         login_assertion=payload.login_assertion,
+        login_password=payload.login_password,
+        auto_login=payload.auto_login,
         auto_search=payload.auto_search,
     )
     return session.to_dict()

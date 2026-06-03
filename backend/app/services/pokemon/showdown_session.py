@@ -20,6 +20,7 @@ from app.services.pokemon.showdown_battle_agent import (
 from app.services.pokemon.showdown_analysis import pokemon_showdown_analysis_service
 from app.services.pokemon.showdown_connector import (
     PokemonShowdownConnector,
+    ShowdownConnectionError,
     ShowdownEvent,
 )
 from app.services.pokemon.showdown_learning import PokemonShowdownLearningService
@@ -58,6 +59,8 @@ class ShowdownSessionState:
     last_error: str | None = None
     team: list[dict[str, Any]] | str | None = None
     login_assertion: str | None = None
+    login_password: str | None = None
+    auto_login: bool = True
 
     def touch(self) -> None:
         self.updated_at = datetime.now(timezone.utc)
@@ -86,6 +89,9 @@ class ShowdownSessionState:
             "team_reason": self.team_reason,
             "team_species": self.team_species,
             "has_team": self.team is not None,
+            "auto_login": self.auto_login,
+            "has_login_assertion": self.login_assertion is not None,
+            "has_login_password": self.login_password is not None,
             "pending_command_count": max(0, len(self.command_log) - len(self.sent_log)),
             "command_count": len(self.command_log),
             "sent_count": len(self.sent_log),
@@ -125,6 +131,8 @@ class PokemonShowdownSessionService:
         mode_source: str = "manual",
         mode_recommendation: dict[str, Any] | None = None,
         login_assertion: str | None = None,
+        login_password: str | None = None,
+        auto_login: bool = True,
         auto_search: bool = False,
         connector: PokemonShowdownConnector | None = None,
     ) -> ShowdownSessionState:
@@ -152,6 +160,8 @@ class PokemonShowdownSessionService:
             team_reason=team_reason,
             team_species=team_species,
             login_assertion=login_assertion,
+            login_password=login_password,
+            auto_login=auto_login,
         )
         self._ensure_team(state)
         if auto_search:
@@ -268,6 +278,7 @@ class PokemonShowdownSessionService:
         state = self._require_session(session_id)
         connector = self.connectors[session_id]
         payload = await connector.receive()
+        await self._prepare_login_assertion_from_payload(state, connector, payload)
         result = self.process_payload(
             session_id,
             payload,
@@ -326,6 +337,36 @@ class PokemonShowdownSessionService:
             state.status = "ready"
         state.touch()
         return commands
+
+    async def _prepare_login_assertion_from_payload(
+        self,
+        state: ShowdownSessionState,
+        connector: PokemonShowdownConnector,
+        payload: str,
+    ) -> None:
+        if not state.auto_login or state.login_assertion:
+            return
+        challstr = self._extract_challstr_from_payload(payload)
+        if not challstr:
+            return
+        try:
+            state.login_assertion = await connector.request_assertion(
+                state.username,
+                challstr,
+                password=state.login_password,
+            )
+        except Exception as exc:
+            state.last_error = f"Pokemon Showdown assertion request failed: {exc}"
+            state.status = "error"
+            raise ShowdownConnectionError(state.last_error) from exc
+
+    def _extract_challstr_from_payload(self, payload: str) -> str | None:
+        for raw_line in payload.splitlines():
+            if not raw_line.startswith("|challstr|"):
+                continue
+            parts = raw_line.split("|")
+            return "|".join(parts[2:]) if len(parts) > 2 else None
+        return None
 
     def _ensure_team(self, state: ShowdownSessionState) -> None:
         if state.team is not None or not state.requires_team:

@@ -81,6 +81,8 @@ export default function PokemonBattlePage() {
   const [knowledge, setKnowledge] = useState<any>(null);
   const [showdownPayload, setShowdownPayload] = useState(SAMPLE_SHOWDOWN_PAYLOAD);
   const [showdownUsername, setShowdownUsername] = useState('PokemonBot');
+  const [showdownPassword, setShowdownPassword] = useState('');
+  const [showdownAutoLogin, setShowdownAutoLogin] = useState(true);
   const [showdownRunLimit, setShowdownRunLimit] = useState(10);
   const [showdownMode, setShowdownMode] = useState<'auto' | 'balanced' | 'aggressive' | 'defensive'>('auto');
   const [showdownPlan, setShowdownPlan] = useState<any>(null);
@@ -265,6 +267,8 @@ export default function PokemonBattlePage() {
       username: showdownUsername || 'PokemonBot',
       battle_format: selectedFormatInfo?.id || selectedFormat,
       mode: showdownMode,
+      auto_login: showdownAutoLogin,
+      login_password: showdownPassword || undefined,
       auto_search: autoSearch,
     })).data;
     setShowdownSession(session);
@@ -615,6 +619,27 @@ export default function PokemonBattlePage() {
                 />
               </label>
             </div>
+            <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+              <label className="text-xs text-gray-500">
+                Password
+                <input
+                  value={showdownPassword}
+                  onChange={(event) => setShowdownPassword(event.target.value)}
+                  type="password"
+                  className="mt-1 w-full rounded-md border border-border bg-black/30 px-3 py-2 text-sm normal-case text-gray-100 outline-none focus:border-accent"
+                  placeholder="optional"
+                />
+              </label>
+              <label className="mt-5 flex items-center gap-2 rounded-md border border-border bg-black/20 px-3 py-2 text-xs text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={showdownAutoLogin}
+                  onChange={(event) => setShowdownAutoLogin(event.target.checked)}
+                  className="h-4 w-4 accent-accent"
+                />
+                Auto login
+              </label>
+            </div>
 
             <div className="mt-3 grid grid-cols-4 gap-1 rounded-md border border-border bg-black/20 p-1">
               {(['auto', 'balanced', 'aggressive', 'defensive'] as const).map((mode) => (
@@ -734,6 +759,10 @@ export default function PokemonBattlePage() {
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-gray-500">Team</span>
                     <span className="text-right text-gray-200">{showdownSession.team_source || 'none'}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <Metric label="Auto Login" value={showdownSession.auto_login ? 'on' : 'off'} compact />
+                    <Metric label="Assertion" value={showdownSession.has_login_assertion ? 'ready' : 'none'} compact />
                   </div>
                   {showdownSession.team_species?.length ? (
                     <div className="rounded bg-black/30 p-2 text-gray-500">

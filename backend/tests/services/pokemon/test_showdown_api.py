@@ -188,6 +188,28 @@ async def test_showdown_session_auto_mode_uses_learning_recommendation(setup_db,
 
 
 @pytest.mark.asyncio
+async def test_showdown_session_create_accepts_auto_login_without_leaking_password(client):
+    created = await client.post(
+        "/api/pokemon/showdown/sessions",
+        json={
+            "username": "Bot",
+            "team": None,
+            "auto_login": True,
+            "login_password": "SECRET",
+        },
+    )
+
+    assert created.status_code == 200
+    data = created.json()
+    assert data["auto_login"]
+    assert data["has_login_password"]
+    assert not data["has_login_assertion"]
+    assert "SECRET" not in json.dumps(data)
+
+    await client.delete(f"/api/pokemon/showdown/sessions/{data['session_id']}")
+
+
+@pytest.mark.asyncio
 async def test_showdown_session_search_endpoint_records_commands(client):
     created = await client.post(
         "/api/pokemon/showdown/sessions",
