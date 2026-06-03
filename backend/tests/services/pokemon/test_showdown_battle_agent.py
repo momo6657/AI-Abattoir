@@ -157,6 +157,31 @@ def test_plan_moves_uses_knowledge_context_as_lightweight_bonus():
     assert plan.choice_details[0]["legal_candidates"][0]["knowledge_used"]
 
 
+def test_plan_moves_omits_target_for_singles_format():
+    agent = PokemonShowdownBattleAgent()
+    payload = {
+        "rqid": 19,
+        "active": [
+            {
+                "moves": [
+                    {"id": "shadowball", "target": "normal", "basePower": 80, "pp": 15},
+                    {"id": "protect", "target": "self", "pp": 16},
+                ],
+            }
+        ],
+    }
+
+    plan = agent.plan_from_raw_request(
+        payload,
+        "battle-gen9ou-1",
+        active_pokemon=1,
+    )
+
+    assert plan.command == "battle-gen9ou-1|/choose move 1|19"
+    assert plan.choices == ["move 1"]
+    assert plan.choice_details[0]["target"] is None
+
+
 def test_plan_wait_request_returns_no_command():
     agent = PokemonShowdownBattleAgent()
 

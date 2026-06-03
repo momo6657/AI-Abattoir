@@ -492,6 +492,7 @@ async def plan_showdown_decision(payload: ShowdownDecisionRequest):
                 payload.payload,
                 mode=payload.mode,
                 team_size=payload.team_size,
+                active_pokemon=payload.active_pokemon,
                 allow_tera=payload.allow_tera,
                 knowledge_context=payload.knowledge_context,
             )
@@ -510,6 +511,7 @@ async def plan_showdown_decision(payload: ShowdownDecisionRequest):
                 room_id,
                 mode=payload.mode,
                 team_size=payload.team_size,
+                active_pokemon=payload.active_pokemon,
                 allow_tera=payload.allow_tera,
                 knowledge_context=payload.knowledge_context,
             )

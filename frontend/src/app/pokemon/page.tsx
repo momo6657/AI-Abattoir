@@ -103,6 +103,7 @@ export default function PokemonBattlePage() {
     () => formats.find((format) => format.id === selectedFormat) || formats[0],
     [formats, selectedFormat]
   );
+  const showdownTargetPolicy = selectedFormatInfo?.active_pokemon === 1 ? 'no target' : 'targeted';
 
   useEffect(() => {
     refreshOverview();
@@ -274,6 +275,7 @@ export default function PokemonBattlePage() {
       const result = (await pokemonApi.planShowdownDecision({
         payload: showdownPayload,
         mode: showdownMode,
+        active_pokemon: selectedFormatInfo?.active_pokemon,
         knowledge_context: showdownSession?.knowledge_context || showdownTeamKnowledgeSummary || undefined,
       })).data;
       setShowdownPlan(result.plan);
@@ -449,6 +451,7 @@ export default function PokemonBattlePage() {
     ['Phase 2', '知识检索、缓存、决策记录、强化学习雏形'],
     ['Phase 3', '等级驱动队伍构建、对战分析、经验进化'],
     ['Phase 4', '多格式目录、Showdown 队伍上传、会话运行器和自动选择命令'],
+    ['Phase 5', '按格式选择目标策略，单打省略 target，双打保留精确目标'],
   ];
 
   return (
@@ -754,11 +757,17 @@ export default function PokemonBattlePage() {
             </div>
 
             <div className="mt-3 rounded-md border border-border bg-black/20 px-3 py-2 text-xs text-gray-400">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-gray-500">Showdown format</span>
-                <span className="break-all text-right font-mono text-gray-200">
-                  {selectedFormatInfo?.showdown_format || selectedFormat}
-                </span>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-gray-500">Showdown format</span>
+                  <span className="break-all text-right font-mono text-gray-200">
+                    {selectedFormatInfo?.showdown_format || selectedFormat}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Metric label="Active" value={selectedFormatInfo?.active_pokemon || 1} compact />
+                  <Metric label="Targeting" value={showdownTargetPolicy} compact />
+                </div>
               </div>
             </div>
 

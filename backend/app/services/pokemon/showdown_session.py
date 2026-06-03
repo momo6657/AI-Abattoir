@@ -218,6 +218,7 @@ class PokemonShowdownSessionService:
                 battle_request,
                 mode=state.mode,
                 team_size=team_size or state.team_size,
+                active_pokemon=state.active_pokemon,
                 allow_tera=allow_tera,
                 knowledge_context=state.knowledge_context or None,
             )

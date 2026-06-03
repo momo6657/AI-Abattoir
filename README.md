@@ -132,6 +132,7 @@ Abattoir（竞技场）是一个让 AI 展现真实能力的地方。在这里�
 - 多格式目录：统一管理本地训练格式、Showdown 格式 ID、队伍人数、上场数量和是否需要自建队伍
 - Showdown 协议命令层：可打包队伍、上传队伍、搜索天梯、发起/接受挑战、解析 `request/rqid` 并构建选择指令
 - Showdown 自动选择：可将队伍预览、强制换人、普通出招请求转换为下一条 `/choose` 命令
+- Showdown 多格式目标策略：单打/随机战会省略普通招式 target 位，双打/VGC 会保留精确目标位，降低跨格式指令不合法风险
 - Showdown 战术评分：对合法招式按伤害、功能招、铺场、模式偏好和自爆风险打分，并在前端显示选择依据
 - Showdown 自动会话：可创建会话、连接 websocket、记录搜索/房间/胜负状态，并对 PS payload 自动产生命令流
 - Showdown 知识上下文：可将整队联网研究结果绑定到当前会话，供 UI、后续策略和学习流程复用
@@ -538,7 +539,7 @@ AI-Abattoir/
 | POST | `/api/pokemon/knowledge/team` | 批量检索 Showdown 队伍成员用法知识并返回整队上下文 |
 | POST | `/api/pokemon/showdown/parse` | 解析 Pokemon Showdown 协议消息 |
 | POST | `/api/pokemon/showdown/commands` | 构建上传队伍、搜索、挑战和对战选择等 Showdown 协议命令 |
-| POST | `/api/pokemon/showdown/decision` | 将 Showdown `request` 转换为下一步自动选择计划 |
+| POST | `/api/pokemon/showdown/decision` | 将 Showdown `request` 转换为下一步自动选择计划，可传 `active_pokemon` 适配单打/双打 target 策略 |
 | GET | `/api/pokemon/showdown/learning/profiles` | 列出 Showdown 学习档案 |
 | GET | `/api/pokemon/showdown/learning/profile` | 获取指定用户和格式的胜率、平均奖励和模式建议 |
 | POST | `/api/pokemon/showdown/sessions` | 创建 Showdown 自动会话状态机，缺省队伍时自动建队，`mode=auto` 时按学习档案选择策略模式 |
@@ -747,6 +748,7 @@ alembic history
 - [x] 宝可梦 Showdown 前端实战控制台（创建、搜索、连接、单步/有界运行、取消、关闭）
 - [x] 宝可梦 Showdown challstr 自动 assertion 登录
 - [x] 宝可梦 Showdown 战术评分和选择解释
+- [x] 宝可梦 Showdown 单打/双打 target 策略适配
 - [x] 宝可梦 Showdown 会话事件分析与奖励信号
 - [ ] Pokemon Showdown 真实登录、房间同步和天梯实战
 - [ ] 宝可梦完整多格式战斗策略（单打、随机战、不同世代规则）

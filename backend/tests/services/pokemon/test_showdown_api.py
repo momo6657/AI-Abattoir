@@ -151,6 +151,35 @@ async def test_showdown_decision_accepts_knowledge_context(client):
 
 
 @pytest.mark.asyncio
+async def test_showdown_decision_accepts_singles_active_count(client):
+    payload = {
+        "rqid": 19,
+        "active": [
+            {
+                "moves": [
+                    {"id": "shadowball", "target": "normal", "basePower": 80, "pp": 15},
+                    {"id": "protect", "target": "self", "pp": 16},
+                ]
+            }
+        ],
+    }
+
+    response = await client.post(
+        "/api/pokemon/showdown/decision",
+        json={
+            "request": payload,
+            "room_id": "battle-gen9ou-2",
+            "active_pokemon": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["plan"]["command"] == "battle-gen9ou-2|/choose move 1|19"
+    assert data["plan"]["choice_details"][0]["target"] is None
+
+
+@pytest.mark.asyncio
 async def test_showdown_decision_requires_payload_or_request(client):
     response = await client.post("/api/pokemon/showdown/decision", json={})
 

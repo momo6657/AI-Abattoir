@@ -250,6 +250,31 @@ def test_process_payload_passes_attached_knowledge_context_to_decision():
     assert result["session"]["has_knowledge_context"]
 
 
+def test_process_payload_uses_singles_target_policy_for_ou_session():
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None, battle_format="gen9ou")
+    request = {
+        "rqid": 33,
+        "active": [
+            {
+                "moves": [
+                    {"id": "shadowball", "target": "normal", "basePower": 80, "pp": 15},
+                    {"id": "protect", "target": "self", "pp": 16},
+                ]
+            }
+        ],
+    }
+
+    result = service.process_payload(
+        session.session_id,
+        f">battle-gen9ou-10\n|request|{json.dumps(request)}",
+    )
+
+    assert session.active_pokemon == 1
+    assert result["commands"] == ["battle-gen9ou-10|/choose move 1|33"]
+    assert result["decision"]["choice_details"][0]["target"] is None
+
+
 @pytest.mark.asyncio
 async def test_connect_flushes_pending_commands_to_connector():
     connector = FakeShowdownConnector()

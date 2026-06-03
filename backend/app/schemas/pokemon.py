@@ -148,6 +148,7 @@ class ShowdownDecisionRequest(BaseModel):
     room_id: Optional[str] = None
     mode: str = "balanced"
     team_size: Optional[int] = None
+    active_pokemon: Optional[int] = None
     allow_tera: bool = True
     knowledge_context: Optional[Dict[str, Any]] = None
 

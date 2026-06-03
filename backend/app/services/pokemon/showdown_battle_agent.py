@@ -57,6 +57,7 @@ class PokemonShowdownBattleAgent:
         *,
         mode: str = "balanced",
         team_size: int | None = None,
+        active_pokemon: int | None = None,
         allow_tera: bool = True,
         knowledge_context: dict[str, Any] | None = None,
     ) -> tuple[list[ShowdownEvent], ShowdownBattleRequest | None, ShowdownChoicePlan]:
@@ -66,6 +67,7 @@ class PokemonShowdownBattleAgent:
             request,
             mode=mode,
             team_size=team_size,
+            active_pokemon=active_pokemon,
             allow_tera=allow_tera,
             knowledge_context=knowledge_context,
         )
@@ -77,6 +79,7 @@ class PokemonShowdownBattleAgent:
         *,
         mode: str = "balanced",
         team_size: int | None = None,
+        active_pokemon: int | None = None,
         allow_tera: bool = True,
         knowledge_context: dict[str, Any] | None = None,
     ) -> ShowdownChoicePlan:
@@ -93,6 +96,7 @@ class PokemonShowdownBattleAgent:
             request,
             mode=mode,
             team_size=team_size,
+            active_pokemon=active_pokemon,
             allow_tera=allow_tera,
             knowledge_context=knowledge_context,
         )
@@ -103,6 +107,7 @@ class PokemonShowdownBattleAgent:
         *,
         mode: str = "balanced",
         team_size: int | None = None,
+        active_pokemon: int | None = None,
         allow_tera: bool = True,
         knowledge_context: dict[str, Any] | None = None,
     ) -> ShowdownChoicePlan:
@@ -127,7 +132,13 @@ class PokemonShowdownBattleAgent:
         if request.force_switch:
             return self._plan_force_switch(request)
         if request.active:
-            return self._plan_moves(request, mode=mode, allow_tera=allow_tera, knowledge_context=knowledge_context)
+            return self._plan_moves(
+                request,
+                mode=mode,
+                active_pokemon=active_pokemon,
+                allow_tera=allow_tera,
+                knowledge_context=knowledge_context,
+            )
         command = self.connector.build_choose_default(request.room_id, request.request_id)
         return ShowdownChoicePlan(
             room_id=request.room_id,
@@ -222,6 +233,7 @@ class PokemonShowdownBattleAgent:
         request: ShowdownBattleRequest,
         *,
         mode: str,
+        active_pokemon: int | None,
         allow_tera: bool,
         knowledge_context: dict[str, Any] | None,
     ) -> ShowdownChoicePlan:
@@ -232,6 +244,7 @@ class PokemonShowdownBattleAgent:
                 mode=mode,
                 allow_tera=allow_tera and index == 0,
                 active_index=index,
+                active_pokemon=active_pokemon,
                 pokemon_name=active_species[index] if index < len(active_species) else "",
                 knowledge_context=knowledge_context,
             )
@@ -258,6 +271,7 @@ class PokemonShowdownBattleAgent:
         mode: str,
         allow_tera: bool,
         active_index: int,
+        active_pokemon: int | None,
         pokemon_name: str,
         knowledge_context: dict[str, Any] | None,
     ) -> tuple[str, dict[str, Any]]:
@@ -278,7 +292,7 @@ class PokemonShowdownBattleAgent:
             for slot, move in legal_moves
         ]
         move_slot, move, score, reason = max(scored_moves, key=lambda item: item[2])
-        target = self._target_for_move(move)
+        target = self._target_for_move(move, active_pokemon)
         modifier = "terastallize" if allow_tera and self._should_terastallize(active_request, move, mode) else None
         target_part = f" {target}" if target is not None else ""
         modifier_part = f" {modifier}" if modifier else ""
@@ -407,11 +421,15 @@ class PokemonShowdownBattleAgent:
                 return member
         return None
 
-    def _target_for_move(self, move: dict[str, Any]) -> int | None:
+    def _target_for_move(self, move: dict[str, Any], active_pokemon: int | None = None) -> int | None:
         target_type = move.get("target")
         if target_type in {"normal", "any", "adjacentFoe"}:
+            if active_pokemon == 1:
+                return None
             return -1
         if target_type in {"adjacentAlly", "allyTeam"}:
+            if active_pokemon == 1:
+                return None
             return 1
         return None
 
