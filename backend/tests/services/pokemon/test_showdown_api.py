@@ -383,6 +383,63 @@ async def test_showdown_session_cancel_search_endpoint_records_command(client):
 
 
 @pytest.mark.asyncio
+async def test_showdown_session_challenge_endpoints_queue_commands(setup_db, client):
+    created = await client.post("/api/pokemon/showdown/sessions", json={"username": "Bot", "team": None})
+    session_id = created.json()["session_id"]
+    updated = await client.post(
+        f"/api/pokemon/showdown/sessions/{session_id}/message",
+        json={
+            "payload": '|updatechallenges|{"challengesFrom":{"rival":"gen9vgc2024regg"}}',
+            "auto_respond": False,
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["session"]["challenge_usernames"] == ["rival"]
+
+    accepted = await client.post(f"/api/pokemon/showdown/sessions/{session_id}/accept-challenge")
+    rejected = await client.post(
+        f"/api/pokemon/showdown/sessions/{session_id}/reject-challenge",
+        params={"username": "rival"},
+    )
+
+    assert accepted.status_code == 200
+    assert accepted.json()["commands"][0].startswith("|/utm ")
+    assert accepted.json()["commands"][1] == "|/accept rival"
+    assert accepted.json()["session"]["status"] == "challenge_accepted"
+    assert rejected.status_code == 200
+    assert rejected.json()["commands"] == ["|/reject rival"]
+    assert rejected.json()["session"]["pending_command_count"] == 3
+
+    await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
+
+
+@pytest.mark.asyncio
+async def test_showdown_session_accept_challenge_requires_challenger(client):
+    created = await client.post("/api/pokemon/showdown/sessions", json={"username": "Bot", "team": None})
+    session_id = created.json()["session_id"]
+
+    response = await client.post(f"/api/pokemon/showdown/sessions/{session_id}/accept-challenge")
+
+    assert response.status_code == 400
+    assert "No incoming Pokemon Showdown challenge" in response.json()["detail"]
+
+    await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
+
+
+@pytest.mark.asyncio
+async def test_showdown_session_flush_requires_connected_socket(client):
+    created = await client.post("/api/pokemon/showdown/sessions", json={"username": "Bot", "team": None, "auto_search": True})
+    session_id = created.json()["session_id"]
+
+    response = await client.post(f"/api/pokemon/showdown/sessions/{session_id}/flush")
+
+    assert response.status_code == 400
+    assert "websocket is not connected" in response.json()["detail"]
+
+    await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
+
+
+@pytest.mark.asyncio
 async def test_showdown_session_analysis_endpoint_returns_learning_signals(setup_db, client):
     created = await client.post("/api/pokemon/showdown/sessions", json={"username": "Bot", "team": None})
     session_id = created.json()["session_id"]

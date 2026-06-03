@@ -175,8 +175,13 @@ export const pokemonApi = {
   createShowdownSession: (data: Record<string, unknown>) => api.post("/pokemon/showdown/sessions", data),
   startShowdownSearch: (sessionId: string) => api.post(`/pokemon/showdown/sessions/${sessionId}/search`),
   cancelShowdownSearch: (sessionId: string) => api.post(`/pokemon/showdown/sessions/${sessionId}/cancel-search`),
+  acceptShowdownChallenge: (sessionId: string, username?: string) =>
+    api.post(`/pokemon/showdown/sessions/${sessionId}/accept-challenge`, null, username ? { params: { username } } : undefined),
+  rejectShowdownChallenge: (sessionId: string, username?: string) =>
+    api.post(`/pokemon/showdown/sessions/${sessionId}/reject-challenge`, null, username ? { params: { username } } : undefined),
   connectShowdownSession: (sessionId: string, sendPending = true) =>
     api.post(`/pokemon/showdown/sessions/${sessionId}/connect`, null, { params: { send_pending: sendPending } }),
+  flushShowdownSession: (sessionId: string) => api.post(`/pokemon/showdown/sessions/${sessionId}/flush`),
   processShowdownSessionMessage: (sessionId: string, data: Record<string, unknown>) =>
     api.post(`/pokemon/showdown/sessions/${sessionId}/message`, data),
   researchShowdownSessionTeam: (sessionId: string, maxResults = 3) =>

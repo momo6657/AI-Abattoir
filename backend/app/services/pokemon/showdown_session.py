@@ -86,6 +86,8 @@ class ShowdownSessionState:
             "rooms": self.rooms,
             "search": self.search,
             "challenges": self.challenges,
+            "challenge_count": len((self.challenges or {}).get("challengesFrom") or {}),
+            "challenge_usernames": list(((self.challenges or {}).get("challengesFrom") or {}).keys()),
             "knowledge_context": self.knowledge_context,
             "has_knowledge_context": bool(self.knowledge_context),
             "team_source": self.team_source,
@@ -342,6 +344,36 @@ class PokemonShowdownSessionService:
             state.status = "ready"
         state.touch()
         return commands
+
+    def accept_challenge(self, session_id: str, username: str | None = None) -> list[str]:
+        state = self._require_session(session_id)
+        connector = self.connectors[session_id]
+        challenger = self._resolve_challenge_username(state, username)
+        self._ensure_team(state)
+        commands = connector.build_accept_challenge_messages(challenger, state.team)
+        state.command_log.extend(commands)
+        state.status = "challenge_accepted"
+        state.touch()
+        return commands
+
+    def reject_challenge(self, session_id: str, username: str | None = None) -> list[str]:
+        state = self._require_session(session_id)
+        connector = self.connectors[session_id]
+        challenger = self._resolve_challenge_username(state, username)
+        commands = [connector.build_reject_challenge_message(challenger)]
+        state.command_log.extend(commands)
+        state.status = "challenge_rejected"
+        state.touch()
+        return commands
+
+    def _resolve_challenge_username(self, state: ShowdownSessionState, username: str | None) -> str:
+        if username:
+            return username
+        challenges_from = (state.challenges or {}).get("challengesFrom") or {}
+        for challenger in challenges_from.keys():
+            if challenger:
+                return str(challenger)
+        raise ValueError("No incoming Pokemon Showdown challenge is available.")
 
     async def _prepare_login_assertion_from_payload(
         self,

@@ -643,6 +643,45 @@ async def cancel_showdown_ladder_search(session_id: str):
     return {"commands": commands, "session": session.to_dict() if session else None}
 
 
+@router.post("/showdown/sessions/{session_id}/accept-challenge")
+async def accept_showdown_challenge(session_id: str, username: str | None = None):
+    """Queue commands to accept an incoming Pokemon Showdown challenge."""
+    try:
+        commands = pokemon_showdown_session_service.accept_challenge(session_id, username)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    session = pokemon_showdown_session_service.get_session(session_id)
+    return {"commands": commands, "session": session.to_dict() if session else None}
+
+
+@router.post("/showdown/sessions/{session_id}/reject-challenge")
+async def reject_showdown_challenge(session_id: str, username: str | None = None):
+    """Queue a command to reject an incoming Pokemon Showdown challenge."""
+    try:
+        commands = pokemon_showdown_session_service.reject_challenge(session_id, username)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    session = pokemon_showdown_session_service.get_session(session_id)
+    return {"commands": commands, "session": session.to_dict() if session else None}
+
+
+@router.post("/showdown/sessions/{session_id}/flush")
+async def flush_showdown_session_commands(session_id: str):
+    """Send all queued Pokemon Showdown commands over an already connected websocket."""
+    try:
+        sent = await pokemon_showdown_session_service.flush_pending_commands(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ShowdownConnectionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    session = pokemon_showdown_session_service.get_session(session_id)
+    return {"sent": sent, "session": session.to_dict() if session else None}
+
+
 @router.post("/showdown/sessions/{session_id}/connect")
 async def connect_showdown_session(session_id: str, send_pending: bool = True):
     """Connect a Showdown session websocket and optionally flush queued commands."""

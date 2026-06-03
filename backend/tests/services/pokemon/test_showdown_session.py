@@ -180,6 +180,40 @@ def test_cancel_ladder_search_records_cancel_command():
     assert snapshot["last_command"] == "|/cancelsearch"
 
 
+def test_accept_and_reject_challenge_queue_session_commands():
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None)
+    service.process_payload(
+        session.session_id,
+        '|updatechallenges|{"challengesFrom":{"rival":"gen9vgc2024regg"}}',
+        auto_respond=False,
+    )
+
+    accepted = service.accept_challenge(session.session_id)
+    rejected = service.reject_challenge(session.session_id, "rival")
+    snapshot = session.to_dict()
+
+    assert accepted[0].startswith("|/utm ")
+    assert accepted[1] == "|/accept rival"
+    assert rejected == ["|/reject rival"]
+    assert snapshot["challenge_count"] == 1
+    assert snapshot["challenge_usernames"] == ["rival"]
+    assert snapshot["pending_command_count"] == 3
+    assert snapshot["last_command"] == "|/reject rival"
+
+
+def test_accept_challenge_requires_known_or_explicit_challenger():
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None)
+
+    with pytest.raises(ValueError):
+        service.accept_challenge(session.session_id)
+
+    commands = service.accept_challenge(session.session_id, "manual-rival")
+
+    assert commands[1] == "|/accept manual-rival"
+
+
 def test_create_singles_session_auto_generates_showdown_team():
     service = PokemonShowdownSessionService()
 
@@ -291,6 +325,27 @@ async def test_connect_flushes_pending_commands_to_connector():
     assert result["session"]["sent_log"] == result["sent"]
     assert result["session"]["pending_command_count"] == 0
     assert result["session"]["sent_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_flush_pending_commands_sends_accepted_challenge():
+    connector = FakeShowdownConnector()
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None, connector=connector)
+    await service.connect_session(session.session_id, send_pending=False)
+    service.process_payload(
+        session.session_id,
+        '|updatechallenges|{"challengesFrom":{"rival":"gen9vgc2024regg"}}',
+        auto_respond=False,
+    )
+    service.accept_challenge(session.session_id)
+
+    sent = await service.flush_pending_commands(session.session_id)
+
+    assert sent[0].startswith("|/utm ")
+    assert sent[1] == "|/accept rival"
+    assert connector.sent == sent
+    assert session.to_dict()["pending_command_count"] == 0
 
 
 @pytest.mark.asyncio

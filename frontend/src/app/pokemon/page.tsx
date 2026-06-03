@@ -104,6 +104,8 @@ export default function PokemonBattlePage() {
     [formats, selectedFormat]
   );
   const showdownTargetPolicy = selectedFormatInfo?.active_pokemon === 1 ? 'no target' : 'targeted';
+  const showdownChallengeUsers = Object.keys(showdownSession?.challenges?.challengesFrom || {});
+  const showdownChallengeUser = showdownChallengeUsers[0];
 
   useEffect(() => {
     refreshOverview();
@@ -370,6 +372,36 @@ export default function PokemonBattlePage() {
     }
   }
 
+  async function acceptShowdownChallenge() {
+    if (!showdownSession?.session_id) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = (await pokemonApi.acceptShowdownChallenge(showdownSession.session_id, showdownChallengeUser)).data;
+      setShowdownSession(result.session);
+      addMessage(`Challenge accepted: ${(result.commands || []).join(' / ')}`);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '接受挑战失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function rejectShowdownChallenge() {
+    if (!showdownSession?.session_id) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = (await pokemonApi.rejectShowdownChallenge(showdownSession.session_id, showdownChallengeUser)).data;
+      setShowdownSession(result.session);
+      addMessage(`Challenge rejected: ${(result.commands || []).join(' / ')}`);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '拒绝挑战失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function connectShowdownSession() {
     setBusy(true);
     setError(null);
@@ -380,6 +412,21 @@ export default function PokemonBattlePage() {
       addMessage(`Connected to Showdown, sent ${result.sent?.length || 0} pending command(s).`);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '连接 Showdown websocket 失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function flushShowdownPending() {
+    if (!showdownSession?.session_id) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = (await pokemonApi.flushShowdownSession(showdownSession.session_id)).data;
+      setShowdownSession(result.session);
+      addMessage(`Sent pending: ${result.sent?.length || 0} command(s).`);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '发送待发命令失败');
     } finally {
       setBusy(false);
     }
@@ -737,6 +784,15 @@ export default function PokemonBattlePage() {
               <button onClick={cancelShowdownSearch} disabled={busy || !showdownSession?.session_id} className="btn-secondary disabled:opacity-50">
                 取消搜索
               </button>
+              <button onClick={acceptShowdownChallenge} disabled={busy || !showdownSession?.session_id || !showdownChallengeUser} className="btn-primary disabled:opacity-50">
+                接受挑战
+              </button>
+              <button onClick={rejectShowdownChallenge} disabled={busy || !showdownSession?.session_id || !showdownChallengeUser} className="btn-secondary disabled:opacity-50">
+                拒绝挑战
+              </button>
+              <button onClick={flushShowdownPending} disabled={busy || !showdownSession?.session_id || !showdownSession?.pending_command_count} className="btn-secondary disabled:opacity-50">
+                发送待发
+              </button>
               <button onClick={closeShowdownSession} disabled={busy || !showdownSession?.session_id} className="btn-secondary disabled:opacity-50">
                 关闭连接
               </button>
@@ -872,8 +928,13 @@ export default function PokemonBattlePage() {
                     <Metric label="Pending" value={showdownSession.pending_command_count ?? 0} compact />
                     <Metric label="Sent" value={showdownSession.sent_count ?? 0} compact />
                     <Metric label="Events" value={showdownSession.event_count ?? 0} compact />
-                    <Metric label="Decisions" value={showdownSession.decision_count ?? 0} compact />
+                    <Metric label="Challenges" value={showdownSession.challenge_count ?? 0} compact />
                   </div>
+                  {showdownChallengeUsers.length ? (
+                    <div className="rounded bg-black/30 p-2 text-gray-500">
+                      Challenges: {showdownChallengeUsers.join(' / ')}
+                    </div>
+                  ) : null}
                   {showdownSession.last_command && (
                     <div className="break-all rounded bg-black/30 p-2 font-mono text-gray-500">
                       {showdownSession.last_command}

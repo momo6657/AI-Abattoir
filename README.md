@@ -135,6 +135,7 @@ Abattoir（竞技场）是一个让 AI 展现真实能力的地方。在这里�
 - Showdown 多格式目标策略：单打/随机战会省略普通招式 target 位，双打/VGC 会保留精确目标位，降低跨格式指令不合法风险
 - Showdown 战术评分：对合法招式按伤害、功能招、铺场、模式偏好和自爆风险打分，并在前端显示选择依据
 - Showdown 自动会话：可创建会话、连接 websocket、记录搜索/房间/胜负状态，并对 PS payload 自动产生命令流
+- Showdown 挑战对战：会话可解析 `updatechallenges`，接受或拒绝指定挑战者，并将挑战命令发送到已连接 websocket
 - Showdown 知识上下文：可将整队联网研究结果绑定到当前会话，供 UI、后续策略和学习流程复用
 - Showdown 自动建队：创建或搜索需要队伍的格式时，缺省 `team` 会按格式自动选择本地模板队或生成 Showdown 可上传队伍
 - Showdown 实战控制台：前端可创建会话、搜索天梯、连接 PS websocket、单步/有界自动运行、取消搜索和关闭连接
@@ -546,7 +547,10 @@ AI-Abattoir/
 | GET | `/api/pokemon/showdown/sessions` | 列出 Showdown 自动会话 |
 | POST | `/api/pokemon/showdown/sessions/{id}/search` | 为会话生成并记录天梯搜索命令 |
 | POST | `/api/pokemon/showdown/sessions/{id}/cancel-search` | 为会话生成并记录取消天梯搜索命令 |
+| POST | `/api/pokemon/showdown/sessions/{id}/accept-challenge` | 接受指定或首个收到的 Showdown 挑战 |
+| POST | `/api/pokemon/showdown/sessions/{id}/reject-challenge` | 拒绝指定或首个收到的 Showdown 挑战 |
 | POST | `/api/pokemon/showdown/sessions/{id}/connect` | 连接 Showdown websocket 并发送待发命令 |
+| POST | `/api/pokemon/showdown/sessions/{id}/flush` | 将会话队列里的待发命令发送到已连接 websocket |
 | POST | `/api/pokemon/showdown/sessions/{id}/message` | 输入 PS payload 并返回自动响应命令 |
 | POST | `/api/pokemon/showdown/sessions/{id}/knowledge` | 检索并绑定当前 Showdown 会话队伍的整队知识上下文 |
 | GET | `/api/pokemon/showdown/sessions/{id}/analysis` | 汇总 Showdown 会话的胜负、击倒、奖励和决策学习信号 |
@@ -747,6 +751,7 @@ alembic history
 - [x] 宝可梦 Showdown 缺省自动建队和队伍上传命令生成
 - [x] 宝可梦 Showdown 前端实战控制台（创建、搜索、连接、单步/有界运行、取消、关闭）
 - [x] 宝可梦 Showdown challstr 自动 assertion 登录
+- [x] 宝可梦 Showdown 挑战接受/拒绝和待发命令发送
 - [x] 宝可梦 Showdown 战术评分和选择解释
 - [x] 宝可梦 Showdown 单打/双打 target 策略适配
 - [x] 宝可梦 Showdown 会话事件分析与奖励信号
