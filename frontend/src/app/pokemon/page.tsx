@@ -736,6 +736,19 @@ export default function PokemonBattlePage() {
                     {showdownPlan.command || 'waiting'}
                   </div>
                   <div>{showdownPlan.reason}</div>
+                  {showdownPlan.choice_details?.length ? (
+                    <div className="space-y-1">
+                      {showdownPlan.choice_details.map((detail: any, index: number) => (
+                        <div key={`${detail.choice || detail.move || 'choice'}-${index}`} className="rounded bg-black/30 p-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-mono text-gray-200">{detail.choice || detail.move || 'choice'}</span>
+                            {detail.score !== undefined && <span className="text-gray-500">score {detail.score}</span>}
+                          </div>
+                          <div className="mt-1 text-gray-500">{detail.reason}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 '等待 Showdown payload。'

@@ -132,6 +132,7 @@ Abattoir（竞技场）是一个让 AI 展现真实能力的地方。在这里�
 - 多格式目录：统一管理本地训练格式、Showdown 格式 ID、队伍人数、上场数量和是否需要自建队伍
 - Showdown 协议命令层：可打包队伍、上传队伍、搜索天梯、发起/接受挑战、解析 `request/rqid` 并构建选择指令
 - Showdown 自动选择：可将队伍预览、强制换人、普通出招请求转换为下一条 `/choose` 命令
+- Showdown 战术评分：对合法招式按伤害、功能招、铺场、模式偏好和自爆风险打分，并在前端显示选择依据
 - Showdown 自动会话：可创建会话、连接 websocket、记录搜索/房间/胜负状态，并对 PS payload 自动产生命令流
 - Showdown 自动建队：创建或搜索需要队伍的格式时，缺省 `team` 会按格式自动选择本地模板队或生成 Showdown 可上传队伍
 - Showdown 实战控制台：前端可创建会话、搜索天梯、连接 PS websocket、单步/有界自动运行、取消搜索和关闭连接
@@ -740,6 +741,7 @@ alembic history
 - [x] 宝可梦 Showdown 缺省自动建队和队伍上传命令生成
 - [x] 宝可梦 Showdown 前端实战控制台（创建、搜索、连接、单步/有界运行、取消、关闭）
 - [x] 宝可梦 Showdown challstr 自动 assertion 登录
+- [x] 宝可梦 Showdown 战术评分和选择解释
 - [x] 宝可梦 Showdown 会话事件分析与奖励信号
 - [ ] Pokemon Showdown 真实登录、房间同步和天梯实战
 - [ ] 宝可梦完整多格式战斗策略（单打、随机战、不同世代规则）

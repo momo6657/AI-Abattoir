@@ -28,6 +28,7 @@ def test_plan_team_preview_uses_max_team_size_and_rqid():
     assert plan.decision_type == "team_preview"
     assert plan.command == "battle-gen9vgc-1|/choose team 1234|11"
     assert plan.choices == ["team 1234"]
+    assert plan.choice_details[0]["pokemon"] == "Incineroar"
 
 
 def test_plan_force_switch_chooses_healthy_bench_and_passes_unforced_slot():
@@ -50,6 +51,8 @@ def test_plan_force_switch_chooses_healthy_bench_and_passes_unforced_slot():
     assert plan.decision_type == "force_switch"
     assert plan.command == "battle-gen9vgc-2|/choose switch 3, pass|12"
     assert plan.choices == ["switch 3", "pass"]
+    assert plan.choice_details[0]["pokemon"] == "Rillaboom"
+    assert plan.choice_details[1]["reason"] == "slot was not forced to switch"
 
 
 def test_plan_moves_skips_disabled_moves_targets_foe_and_can_tera():
@@ -79,6 +82,38 @@ def test_plan_moves_skips_disabled_moves_targets_foe_and_can_tera():
     assert plan.decision_type == "move"
     assert plan.command == "battle-gen9vgc-3|/choose move 2 -1 terastallize, move 1 -1|13"
     assert plan.choices == ["move 2 -1 terastallize", "move 1 -1"]
+    assert plan.choice_details[0]["move"] == "flareblitz"
+    assert plan.choice_details[0]["modifier"] == "terastallize"
+    assert plan.choice_details[0]["legal_candidates"][0]["move"] == "flareblitz"
+
+
+def test_plan_moves_prioritizes_tactical_utility_and_avoids_self_ko():
+    agent = PokemonShowdownBattleAgent()
+    payload = {
+        "rqid": 16,
+        "active": [
+            {
+                "moves": [
+                    {"id": "explosion", "target": "allAdjacent", "basePower": 250, "pp": 5},
+                    {"id": "fakeout", "target": "normal", "basePower": 40, "pp": 10},
+                    {"id": "tackle", "target": "normal", "basePower": 40, "pp": 35},
+                ],
+            },
+            {
+                "moves": [
+                    {"id": "tailwind", "target": "allySide", "pp": 15},
+                    {"id": "airslash", "target": "normal", "basePower": 75, "pp": 15},
+                ],
+            },
+        ],
+    }
+
+    plan = agent.plan_from_raw_request(payload, "battle-gen9vgc-6", mode="balanced")
+
+    assert plan.command == "battle-gen9vgc-6|/choose move 2 -1, move 1|16"
+    assert plan.choice_details[0]["move"] == "fakeout"
+    assert plan.choice_details[1]["move"] == "tailwind"
+    assert plan.choice_details[0]["legal_candidates"][-1]["move"] == "explosion"
 
 
 def test_plan_wait_request_returns_no_command():
@@ -104,3 +139,4 @@ def test_plan_from_payload_returns_events_request_and_plan():
     assert parsed_request is not None
     assert parsed_request.request_id == 15
     assert plan.command == "battle-gen9vgc-5|/choose move 1|15"
+    assert plan.choice_details[0]["reason"] == "protective move scored for defensive mode"
