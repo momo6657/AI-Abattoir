@@ -143,6 +143,7 @@ async def test_showdown_session_processes_payload_and_returns_commands(client):
     data = response.json()
     assert data["commands"] == ["|/trn Bot,0,ASSERT", "battle-gen9vgc-99|/choose move 2 -1|21"]
     assert data["session"]["status"] == "responded"
+    assert data["session"]["analysis"]["decision_count"] == 1
 
     deleted = await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
     assert deleted.status_code == 200
@@ -163,6 +164,41 @@ async def test_showdown_session_search_endpoint_records_commands(client):
     assert data["commands"][0].startswith("|/utm Incineroar||")
     assert data["commands"][1] == "|/search gen9vgc2024regg"
     assert data["session"]["status"] == "searching"
+
+    await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
+
+
+@pytest.mark.asyncio
+async def test_showdown_session_analysis_endpoint_returns_learning_signals(client):
+    created = await client.post("/api/pokemon/showdown/sessions", json={"username": "Bot", "team": None})
+    session_id = created.json()["session_id"]
+
+    response = await client.post(
+        f"/api/pokemon/showdown/sessions/{session_id}/message",
+        json={
+            "payload": (
+                ">battle-gen9vgc-100\n"
+                "|player|p1|Bot\n"
+                "|player|p2|Rival\n"
+                "|turn|1\n"
+                "|move|p1a: Flutter Mane|Moonblast|p2a: Urshifu\n"
+                "|faint|p2a: Urshifu\n"
+                "|win|Bot"
+            ),
+            "auto_respond": False,
+        },
+    )
+    assert response.status_code == 200
+
+    analysis = await client.get(f"/api/pokemon/showdown/sessions/{session_id}/analysis")
+
+    assert analysis.status_code == 200
+    data = analysis.json()
+    assert data["status"] == "win"
+    assert data["agent_side"] == "p1"
+    assert data["turns"] == 1
+    assert data["faints_for"] == 1
+    assert data["reward"] == 120.0
 
     await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
 

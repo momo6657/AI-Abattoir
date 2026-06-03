@@ -17,6 +17,7 @@ from app.services.pokemon.showdown_battle_agent import (
     PokemonShowdownBattleAgent,
     ShowdownChoicePlan,
 )
+from app.services.pokemon.showdown_analysis import pokemon_showdown_analysis_service
 from app.services.pokemon.showdown_connector import (
     PokemonShowdownConnector,
     ShowdownEvent,
@@ -44,6 +45,7 @@ class ShowdownSessionState:
     sent_log: list[str] = field(default_factory=list)
     event_log: list[dict[str, Any]] = field(default_factory=list)
     decisions: list[dict[str, Any]] = field(default_factory=list)
+    analysis: dict[str, Any] = field(default_factory=dict)
     result: dict[str, Any] | None = None
     last_error: str | None = None
     team: list[dict[str, Any]] | str | None = None
@@ -73,6 +75,7 @@ class ShowdownSessionState:
             "sent_log": self.sent_log,
             "event_log": self.event_log,
             "decisions": self.decisions,
+            "analysis": self.analysis,
             "result": self.result,
             "last_error": self.last_error,
         }
@@ -185,6 +188,7 @@ class PokemonShowdownSessionService:
 
         if commands:
             state.command_log.extend(commands)
+        self._update_analysis(state)
         state.touch()
         return {
             "session": state.to_dict(),
@@ -274,6 +278,12 @@ class PokemonShowdownSessionService:
         state.touch()
         return commands
 
+    def analyze_session(self, session_id: str) -> dict[str, Any]:
+        state = self._require_session(session_id)
+        self._update_analysis(state)
+        state.touch()
+        return state.analysis
+
     def _require_session(self, session_id: str) -> ShowdownSessionState:
         state = self.sessions.get(session_id)
         if state is None:
@@ -295,6 +305,13 @@ class PokemonShowdownSessionService:
             state.result = {"type": "tie"}
         elif event.event_type == "error":
             state.last_error = "|".join(event.args)
+
+    def _update_analysis(self, state: ShowdownSessionState) -> None:
+        state.analysis = pokemon_showdown_analysis_service.summarize(
+            state.event_log,
+            state.decisions,
+            username=state.username,
+        )
 
     def _serialize_event(self, event: ShowdownEvent) -> dict[str, Any]:
         return {

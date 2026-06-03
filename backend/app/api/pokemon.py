@@ -517,6 +517,15 @@ async def list_showdown_sessions():
     return [session.to_dict() for session in pokemon_showdown_session_service.list_sessions()]
 
 
+@router.get("/showdown/sessions/{session_id}/analysis")
+async def analyze_showdown_session(session_id: str):
+    """Analyze one Pokemon Showdown automation session event log."""
+    try:
+        return pokemon_showdown_session_service.analyze_session(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.get("/showdown/sessions/{session_id}")
 async def get_showdown_session(session_id: str):
     """Get a Pokemon Showdown automation session."""

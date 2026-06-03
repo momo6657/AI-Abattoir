@@ -173,6 +173,7 @@ export const pokemonApi = {
     api.post(`/pokemon/showdown/sessions/${sessionId}/connect`, null, { params: { send_pending: sendPending } }),
   processShowdownSessionMessage: (sessionId: string, data: Record<string, unknown>) =>
     api.post(`/pokemon/showdown/sessions/${sessionId}/message`, data),
+  analyzeShowdownSession: (sessionId: string) => api.get(`/pokemon/showdown/sessions/${sessionId}/analysis`),
   runShowdownSessionOnce: (sessionId: string, data: Record<string, unknown>) =>
     api.post(`/pokemon/showdown/sessions/${sessionId}/run-once`, data),
   runShowdownSessionUntil: (sessionId: string, data: Record<string, unknown>) =>

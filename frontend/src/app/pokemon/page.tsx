@@ -83,6 +83,7 @@ export default function PokemonBattlePage() {
   const [showdownMode, setShowdownMode] = useState<'balanced' | 'aggressive' | 'defensive'>('balanced');
   const [showdownPlan, setShowdownPlan] = useState<any>(null);
   const [showdownSession, setShowdownSession] = useState<any>(null);
+  const [showdownAnalysis, setShowdownAnalysis] = useState<any>(null);
   const [messages, setMessages] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -273,7 +274,9 @@ export default function PokemonBattlePage() {
         payload: showdownPayload,
         auto_respond: true,
       })).data;
+      const nextAnalysis = result.session?.analysis || (await pokemonApi.analyzeShowdownSession(session.session_id)).data;
       setShowdownSession(result.session);
+      setShowdownAnalysis(nextAnalysis);
       setShowdownPlan(result.decision || showdownPlan);
       addMessage(`Showdown session ${result.session?.status || 'ready'}: ${(result.commands || []).join(' / ') || 'no command'}`);
     } catch (err: any) {
@@ -309,6 +312,7 @@ export default function PokemonBattlePage() {
                 onChange={(event) => {
                   setSelectedFormat(event.target.value);
                   setShowdownSession(null);
+                  setShowdownAnalysis(null);
                 }}
                 className="mt-1 w-full rounded-md border border-border bg-black/30 px-3 py-2 text-sm normal-case text-gray-100 outline-none focus:border-accent"
               >
@@ -532,6 +536,12 @@ export default function PokemonBattlePage() {
                   </div>
                   <div className="break-all font-mono text-gray-500">{showdownSession.session_id}</div>
                   <div className="text-gray-500">Commands: {showdownSession.command_log?.length || 0}</div>
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <Metric label="Reward" value={showdownAnalysis?.reward ?? 0} compact />
+                    <Metric label="Result" value={showdownAnalysis?.status ?? 'in_progress'} compact />
+                    <Metric label="Turns" value={showdownAnalysis?.turns ?? 0} compact />
+                    <Metric label="Faints" value={showdownAnalysis?.faints ?? 0} compact />
+                  </div>
                 </div>
               ) : (
                 '推进会话后会记录登录、搜索、对战选择和结果状态。'

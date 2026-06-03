@@ -105,6 +105,37 @@ def test_process_payload_updates_search_challenges_and_result():
     assert result["session"]["challenges"]["challengesFrom"]["rival"] == "gen9vgc2024regg"
     assert result["session"]["status"] == "finished"
     assert result["session"]["result"] == {"type": "win", "winner": "Bot"}
+    assert result["session"]["analysis"]["status"] == "win"
+    assert result["session"]["analysis"]["reward"] == 100.0
+
+
+def test_process_payload_updates_showdown_analysis_signals():
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None)
+
+    result = service.process_payload(
+        session.session_id,
+        ">battle-gen9vgc-3\n"
+        "|player|p1|Bot\n"
+        "|player|p2|Rival\n"
+        "|turn|3\n"
+        "|move|p1a: Flutter Mane|Moonblast|p2a: Urshifu\n"
+        "|-damage|p2a: Urshifu|0 fnt\n"
+        "|faint|p2a: Urshifu\n"
+        "|win|Bot",
+        auto_respond=False,
+    )
+
+    analysis = result["session"]["analysis"]
+    assert analysis["agent_side"] == "p1"
+    assert analysis["turns"] == 3
+    assert analysis["moves"] == 1
+    assert analysis["damage_events"] == 1
+    assert analysis["faints_for"] == 1
+    assert analysis["reward"] == 120.0
+
+    refreshed = service.analyze_session(session.session_id)
+    assert refreshed == analysis
 
 
 def test_start_search_and_delete_session():
