@@ -545,8 +545,17 @@ async def create_showdown_session(payload: ShowdownSessionCreateRequest, db: Asy
         login_password=payload.login_password,
         auto_login=payload.auto_login,
         auto_accept_challenges=payload.auto_accept_challenges,
+        auto_research_team=payload.auto_research_team,
         auto_search=payload.auto_search,
     )
+    if payload.auto_research_team and session.team_species:
+        context = await pokemon_knowledge_service.search_team(
+            db,
+            session.team_species,
+            query_type="species_usage",
+            max_results=3,
+        )
+        session = pokemon_showdown_session_service.attach_knowledge_context(session.session_id, context)
     return session.to_dict()
 
 

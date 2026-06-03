@@ -86,6 +86,7 @@ export default function PokemonBattlePage() {
   const [showdownPassword, setShowdownPassword] = useState('');
   const [showdownAutoLogin, setShowdownAutoLogin] = useState(true);
   const [showdownAutoAccept, setShowdownAutoAccept] = useState(false);
+  const [showdownAutoResearch, setShowdownAutoResearch] = useState(false);
   const [showdownRunLimit, setShowdownRunLimit] = useState(10);
   const [showdownMode, setShowdownMode] = useState<'auto' | 'balanced' | 'aggressive' | 'defensive'>('auto');
   const [showdownPlan, setShowdownPlan] = useState<any>(null);
@@ -298,11 +299,16 @@ export default function PokemonBattlePage() {
       mode: showdownMode,
       auto_login: showdownAutoLogin,
       auto_accept_challenges: showdownAutoAccept,
+      auto_research_team: showdownAutoResearch,
       login_password: showdownPassword || undefined,
       auto_search: autoSearch,
     })).data;
     setShowdownSession(session);
     setShowdownAnalysis(session.analysis || null);
+    if (session.knowledge_context?.members?.length) {
+      setShowdownTeamKnowledge(session.knowledge_context.members);
+      setShowdownTeamKnowledgeSummary(session.knowledge_context);
+    }
     addMessage(`Showdown session ready: ${session.showdown_format}`);
     return session;
   }
@@ -501,6 +507,7 @@ export default function PokemonBattlePage() {
     ['Phase 3', '等级驱动队伍构建、对战分析、经验进化'],
     ['Phase 4', '多格式目录、Showdown 队伍上传、会话运行器和自动选择命令'],
     ['Phase 5', '按格式选择目标策略，单打省略 target，双打保留精确目标'],
+    ['Phase 6', '自动接受同格式挑战，并在建队后自动研究整队知识'],
   ];
 
   return (
@@ -758,6 +765,15 @@ export default function PokemonBattlePage() {
                 className="h-4 w-4 accent-accent"
               />
             </label>
+            <label className="mt-2 flex items-center justify-between gap-2 rounded-md border border-border bg-black/20 px-3 py-2 text-xs text-gray-300">
+              <span>Auto research generated team</span>
+              <input
+                type="checkbox"
+                checked={showdownAutoResearch}
+                onChange={(event) => setShowdownAutoResearch(event.target.checked)}
+                className="h-4 w-4 accent-accent"
+              />
+            </label>
 
             <div className="mt-3 grid grid-cols-4 gap-1 rounded-md border border-border bg-black/20 p-1">
               {(['auto', 'balanced', 'aggressive', 'defensive'] as const).map((mode) => (
@@ -916,6 +932,7 @@ export default function PokemonBattlePage() {
                   <div className="grid grid-cols-2 gap-2 pt-1">
                     <Metric label="Auto Login" value={showdownSession.auto_login ? 'on' : 'off'} compact />
                     <Metric label="Auto Accept" value={showdownSession.auto_accept_challenges ? 'on' : 'off'} compact />
+                    <Metric label="Auto Research" value={showdownSession.auto_research_team ? 'on' : 'off'} compact />
                     <Metric label="Assertion" value={showdownSession.has_login_assertion ? 'ready' : 'none'} compact />
                     <Metric label="Knowledge" value={showdownSession.has_knowledge_context ? 'ready' : 'none'} compact />
                     <Metric label="Sources" value={showdownSession.knowledge_context?.sources?.length ?? 0} compact />

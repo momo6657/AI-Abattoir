@@ -63,6 +63,7 @@ class ShowdownSessionState:
     login_password: str | None = None
     auto_login: bool = True
     auto_accept_challenges: bool = False
+    auto_research_team: bool = False
     accepted_challenges: list[str] = field(default_factory=list)
 
     def touch(self) -> None:
@@ -98,6 +99,7 @@ class ShowdownSessionState:
             "has_team": self.team is not None,
             "auto_login": self.auto_login,
             "auto_accept_challenges": self.auto_accept_challenges,
+            "auto_research_team": self.auto_research_team,
             "accepted_challenges": self.accepted_challenges,
             "has_login_assertion": self.login_assertion is not None,
             "has_login_password": self.login_password is not None,
@@ -143,6 +145,7 @@ class PokemonShowdownSessionService:
         login_password: str | None = None,
         auto_login: bool = True,
         auto_accept_challenges: bool = False,
+        auto_research_team: bool = False,
         auto_search: bool = False,
         connector: PokemonShowdownConnector | None = None,
     ) -> ShowdownSessionState:
@@ -173,6 +176,7 @@ class PokemonShowdownSessionService:
             login_password=login_password,
             auto_login=auto_login,
             auto_accept_challenges=auto_accept_challenges,
+            auto_research_team=auto_research_team,
         )
         self._ensure_team(state)
         if auto_search:

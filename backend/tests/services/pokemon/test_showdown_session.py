@@ -56,6 +56,15 @@ def test_create_session_can_prepare_ladder_search_commands():
     assert session.command_log[1] == "|/search gen9vgc2024regg"
 
 
+def test_create_session_records_auto_research_flag():
+    service = PokemonShowdownSessionService()
+
+    session = service.create_session(username="Bot", team=None, auto_research_team=True)
+
+    assert session.auto_research_team
+    assert session.to_dict()["auto_research_team"]
+
+
 def test_create_random_battle_session_uses_no_team_showdown_format():
     service = PokemonShowdownSessionService()
 

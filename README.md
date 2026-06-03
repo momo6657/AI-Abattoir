@@ -137,6 +137,7 @@ Abattoir（竞技场）是一个让 AI 展现真实能力的地方。在这里�
 - Showdown 自动会话：可创建会话、连接 websocket、记录搜索/房间/胜负状态，并对 PS payload 自动产生命令流
 - Showdown 挑战对战：会话可解析 `updatechallenges`，接受或拒绝指定挑战者；开启 `auto_accept_challenges` 后会自动接受同格式挑战，并将挑战命令发送到已连接 websocket
 - Showdown 知识上下文：可将整队联网研究结果绑定到当前会话，供 UI、后续策略和学习流程复用
+- Showdown 自动知识研究：创建会话时可开启 `auto_research_team`，系统会在自动建队后立即检索整队用法知识并绑定到会话
 - Showdown 自动建队：创建或搜索需要队伍的格式时，缺省 `team` 会按格式自动选择本地模板队或生成 Showdown 可上传队伍
 - Showdown 实战控制台：前端可创建会话、搜索天梯、连接 PS websocket、单步/有界自动运行、取消搜索和关闭连接
 - Showdown 自动登录：收到 `challstr` 后可自动向 PS 请求 assertion 并发送 `/trn`，支持游客名或可选密码登录，密码不会回传到会话响应
@@ -543,7 +544,7 @@ AI-Abattoir/
 | POST | `/api/pokemon/showdown/decision` | 将 Showdown `request` 转换为下一步自动选择计划，可传 `active_pokemon` 适配单打/双打 target 策略 |
 | GET | `/api/pokemon/showdown/learning/profiles` | 列出 Showdown 学习档案 |
 | GET | `/api/pokemon/showdown/learning/profile` | 获取指定用户和格式的胜率、平均奖励和模式建议 |
-| POST | `/api/pokemon/showdown/sessions` | 创建 Showdown 自动会话状态机，缺省队伍时自动建队，`mode=auto` 时按学习档案选择策略模式，可用 `auto_accept_challenges` 自动接受同格式挑战 |
+| POST | `/api/pokemon/showdown/sessions` | 创建 Showdown 自动会话状态机，缺省队伍时自动建队，`mode=auto` 时按学习档案选择策略模式，可用 `auto_accept_challenges` 自动接受同格式挑战，或用 `auto_research_team` 自动检索整队知识 |
 | GET | `/api/pokemon/showdown/sessions` | 列出 Showdown 自动会话 |
 | POST | `/api/pokemon/showdown/sessions/{id}/search` | 为会话生成并记录天梯搜索命令 |
 | POST | `/api/pokemon/showdown/sessions/{id}/cancel-search` | 为会话生成并记录取消天梯搜索命令 |
@@ -746,6 +747,7 @@ alembic history
 - [x] 联网搜索
 - [x] 宝可梦 Showdown 整队联网研究入口
 - [x] 宝可梦 Showdown 会话级知识上下文绑定
+- [x] 宝可梦 Showdown 创建会话时自动整队知识研究
 - [x] 宝可梦本地训练台（自动建队、本地对战、日志分析、知识检索入口）
 - [x] 宝可梦多格式目录与 Showdown 格式选择（VGC、单打 OU、双打 OU、随机战）
 - [x] 宝可梦 Showdown 缺省自动建队和队伍上传命令生成

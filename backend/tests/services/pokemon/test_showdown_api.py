@@ -315,6 +315,37 @@ async def test_showdown_session_create_accepts_auto_login_without_leaking_passwo
 
 
 @pytest.mark.asyncio
+async def test_showdown_session_create_can_auto_research_team(setup_db, monkeypatch, client):
+    async def fake_search_team(db, species, query_type="species_usage", max_results=3):
+        return {
+            "query_type": query_type,
+            "species": species,
+            "members": [{"species": species[0], "results": [{"title": "usage"}], "result_count": 1}],
+            "member_count": len(species),
+            "cached_count": 0,
+            "result_count": 1,
+            "failed_count": 0,
+            "sources": ["https://example.com/usage"],
+        }
+
+    monkeypatch.setattr(pokemon_knowledge_service, "search_team", fake_search_team)
+
+    created = await client.post(
+        "/api/pokemon/showdown/sessions",
+        json={"username": "Bot", "team": None, "auto_research_team": True},
+    )
+
+    assert created.status_code == 200
+    data = created.json()
+    assert data["auto_research_team"]
+    assert data["has_knowledge_context"]
+    assert data["knowledge_context"]["result_count"] == 1
+    assert data["knowledge_context"]["sources"] == ["https://example.com/usage"]
+
+    await client.delete(f"/api/pokemon/showdown/sessions/{data['session_id']}")
+
+
+@pytest.mark.asyncio
 async def test_showdown_session_search_endpoint_records_commands(client):
     created = await client.post(
         "/api/pokemon/showdown/sessions",
