@@ -133,9 +133,15 @@ def test_process_payload_updates_showdown_analysis_signals():
     assert analysis["damage_events"] == 1
     assert analysis["faints_for"] == 1
     assert analysis["reward"] == 120.0
+    assert result["learning_profile"]["battles"] == 1
+    assert result["learning_profile"]["wins"] == 1
+    assert result["learning_profile"]["average_reward"] == 120.0
 
     refreshed = service.analyze_session(session.session_id)
     assert refreshed == analysis
+    profile = service.learning_profile("Bot", "vgc2024")
+    assert profile["battles"] == 1
+    assert profile["recommendation"]["mode"] == "balanced"
 
 
 def test_start_search_and_delete_session():

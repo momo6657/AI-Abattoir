@@ -511,6 +511,21 @@ async def create_showdown_session(payload: ShowdownSessionCreateRequest):
     return session.to_dict()
 
 
+@router.get("/showdown/learning/profiles")
+async def list_showdown_learning_profiles():
+    """List learned Pokemon Showdown session performance profiles."""
+    return pokemon_showdown_session_service.list_learning_profiles()
+
+
+@router.get("/showdown/learning/profile")
+async def get_showdown_learning_profile(username: str, battle_format: str = "vgc2024"):
+    """Get learned Showdown performance stats for one user and format."""
+    try:
+        return pokemon_showdown_session_service.learning_profile(username, battle_format)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.get("/showdown/sessions")
 async def list_showdown_sessions():
     """List in-memory Pokemon Showdown automation sessions."""

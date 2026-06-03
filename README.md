@@ -134,6 +134,7 @@ Abattoir（竞技场）是一个让 AI 展现真实能力的地方。在这里�
 - Showdown 自动选择：可将队伍预览、强制换人、普通出招请求转换为下一条 `/choose` 命令
 - Showdown 自动会话：可创建会话、连接 websocket、记录搜索/房间/胜负状态，并对 PS payload 自动产生命令流
 - Showdown 学习摘要：可从真实协议事件中汇总回合、出招、换人、受伤、击倒、胜负和奖励信号
+- Showdown 学习档案：按用户和格式聚合胜率、平均奖励、决策类型收益，并给出下一局模式建议
 - 前端训练台：`/pokemon` 页面支持初始化数据、创建智能体、自动建队、创建本地对战、推进回合、查看分析和调试 Showdown payload/会话
 
 **后续深化目标**：
@@ -531,6 +532,8 @@ AI-Abattoir/
 | POST | `/api/pokemon/showdown/parse` | 解析 Pokemon Showdown 协议消息 |
 | POST | `/api/pokemon/showdown/commands` | 构建上传队伍、搜索、挑战和对战选择等 Showdown 协议命令 |
 | POST | `/api/pokemon/showdown/decision` | 将 Showdown `request` 转换为下一步自动选择计划 |
+| GET | `/api/pokemon/showdown/learning/profiles` | 列出 Showdown 学习档案 |
+| GET | `/api/pokemon/showdown/learning/profile` | 获取指定用户和格式的胜率、平均奖励和模式建议 |
 | POST | `/api/pokemon/showdown/sessions` | 创建 Showdown 自动会话状态机 |
 | GET | `/api/pokemon/showdown/sessions` | 列出 Showdown 自动会话 |
 | POST | `/api/pokemon/showdown/sessions/{id}/search` | 为会话生成并记录天梯搜索命令 |

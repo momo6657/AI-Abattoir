@@ -167,6 +167,9 @@ export const pokemonApi = {
   parseShowdown: (payload: string) => api.post("/pokemon/showdown/parse", { payload }),
   buildShowdownCommands: (data: Record<string, unknown>) => api.post("/pokemon/showdown/commands", data),
   planShowdownDecision: (data: Record<string, unknown>) => api.post("/pokemon/showdown/decision", data),
+  listShowdownLearningProfiles: () => api.get("/pokemon/showdown/learning/profiles"),
+  getShowdownLearningProfile: (username: string, battleFormat = "vgc2024") =>
+    api.get("/pokemon/showdown/learning/profile", { params: { username, battle_format: battleFormat } }),
   createShowdownSession: (data: Record<string, unknown>) => api.post("/pokemon/showdown/sessions", data),
   startShowdownSearch: (sessionId: string) => api.post(`/pokemon/showdown/sessions/${sessionId}/search`),
   connectShowdownSession: (sessionId: string, sendPending = true) =>

@@ -84,6 +84,7 @@ export default function PokemonBattlePage() {
   const [showdownPlan, setShowdownPlan] = useState<any>(null);
   const [showdownSession, setShowdownSession] = useState<any>(null);
   const [showdownAnalysis, setShowdownAnalysis] = useState<any>(null);
+  const [showdownLearning, setShowdownLearning] = useState<any>(null);
   const [messages, setMessages] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -277,6 +278,7 @@ export default function PokemonBattlePage() {
       const nextAnalysis = result.session?.analysis || (await pokemonApi.analyzeShowdownSession(session.session_id)).data;
       setShowdownSession(result.session);
       setShowdownAnalysis(nextAnalysis);
+      setShowdownLearning(result.learning_profile || showdownLearning);
       setShowdownPlan(result.decision || showdownPlan);
       addMessage(`Showdown session ${result.session?.status || 'ready'}: ${(result.commands || []).join(' / ') || 'no command'}`);
     } catch (err: any) {
@@ -313,6 +315,7 @@ export default function PokemonBattlePage() {
                   setSelectedFormat(event.target.value);
                   setShowdownSession(null);
                   setShowdownAnalysis(null);
+                  setShowdownLearning(null);
                 }}
                 className="mt-1 w-full rounded-md border border-border bg-black/30 px-3 py-2 text-sm normal-case text-gray-100 outline-none focus:border-accent"
               >
@@ -542,6 +545,17 @@ export default function PokemonBattlePage() {
                     <Metric label="Turns" value={showdownAnalysis?.turns ?? 0} compact />
                     <Metric label="Faints" value={showdownAnalysis?.faints ?? 0} compact />
                   </div>
+                  {showdownLearning && (
+                    <div className="rounded-md border border-border bg-black/20 p-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <Metric label="Win Rate" value={`${Math.round((showdownLearning.win_rate || 0) * 100)}%`} compact />
+                        <Metric label="Avg Reward" value={Number(showdownLearning.average_reward || 0).toFixed(1)} compact />
+                      </div>
+                      <div className="mt-2 text-gray-500">
+                        Suggested mode: <span className="text-gray-200">{showdownLearning.recommendation?.mode || 'balanced'}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 '推进会话后会记录登录、搜索、对战选择和结果状态。'

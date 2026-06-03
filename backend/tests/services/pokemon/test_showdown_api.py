@@ -200,6 +200,16 @@ async def test_showdown_session_analysis_endpoint_returns_learning_signals(clien
     assert data["faints_for"] == 1
     assert data["reward"] == 120.0
 
+    profile = await client.get(
+        "/api/pokemon/showdown/learning/profile",
+        params={"username": "Bot", "battle_format": "vgc2024"},
+    )
+    assert profile.status_code == 200
+    profile_data = profile.json()
+    assert profile_data["battles"] >= 1
+    assert profile_data["wins"] >= 1
+    assert profile_data["recommendation"]["mode"] == "balanced"
+
     await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
 
 

@@ -22,6 +22,7 @@ from app.services.pokemon.showdown_connector import (
     PokemonShowdownConnector,
     ShowdownEvent,
 )
+from app.services.pokemon.showdown_learning import PokemonShowdownLearningService
 
 
 @dataclass
@@ -84,10 +85,11 @@ class ShowdownSessionState:
 class PokemonShowdownSessionService:
     """In-memory orchestration layer for autonomous Showdown sessions."""
 
-    def __init__(self):
+    def __init__(self, learning_service: PokemonShowdownLearningService | None = None):
         self.sessions: dict[str, ShowdownSessionState] = {}
         self.connectors: dict[str, PokemonShowdownConnector] = {}
         self.agents: dict[str, PokemonShowdownBattleAgent] = {}
+        self.learning_service = learning_service or PokemonShowdownLearningService()
 
     def create_session(
         self,
@@ -189,12 +191,14 @@ class PokemonShowdownSessionService:
         if commands:
             state.command_log.extend(commands)
         self._update_analysis(state)
+        learning_profile = self._record_learning_if_finished(state)
         state.touch()
         return {
             "session": state.to_dict(),
             "events": [self._serialize_event(event) for event in events],
             "commands": commands,
             "decision": None if plan is None else plan.to_dict(),
+            "learning_profile": learning_profile,
         }
 
     async def connect_session(self, session_id: str, *, send_pending: bool = True) -> dict[str, Any]:
@@ -281,8 +285,19 @@ class PokemonShowdownSessionService:
     def analyze_session(self, session_id: str) -> dict[str, Any]:
         state = self._require_session(session_id)
         self._update_analysis(state)
+        self._record_learning_if_finished(state)
         state.touch()
         return state.analysis
+
+    def learning_profile(self, username: str, battle_format: str) -> dict[str, Any]:
+        format_info = pokemon_format_catalog.get(battle_format)
+        return self.learning_service.profile(
+            username=username,
+            battle_format=format_info.id,
+        )
+
+    def list_learning_profiles(self) -> list[dict[str, Any]]:
+        return self.learning_service.list_profiles()
 
     def _require_session(self, session_id: str) -> ShowdownSessionState:
         state = self.sessions.get(session_id)
@@ -311,6 +326,17 @@ class PokemonShowdownSessionService:
             state.event_log,
             state.decisions,
             username=state.username,
+        )
+
+    def _record_learning_if_finished(self, state: ShowdownSessionState) -> dict[str, Any]:
+        return self.learning_service.record_session(
+            session_id=state.session_id,
+            username=state.username,
+            battle_format=state.battle_format,
+            showdown_format=state.showdown_format,
+            mode=state.mode,
+            analysis=state.analysis,
+            decisions=state.decisions,
         )
 
     def _serialize_event(self, event: ShowdownEvent) -> dict[str, Any]:
