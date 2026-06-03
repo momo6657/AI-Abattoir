@@ -544,6 +544,20 @@ export default function PokemonBattlePage() {
                       {showdownSession.requested_mode === 'auto' ? ' · auto' : ''}
                     </span>
                   </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-gray-500">Team</span>
+                    <span className="text-right text-gray-200">{showdownSession.team_source || 'none'}</span>
+                  </div>
+                  {showdownSession.team_species?.length ? (
+                    <div className="rounded bg-black/30 p-2 text-gray-500">
+                      {showdownSession.team_species.join(' / ')}
+                    </div>
+                  ) : null}
+                  {showdownSession.team_reason && (
+                    <div className="rounded bg-black/30 p-2 text-gray-500">
+                      {showdownSession.team_reason}
+                    </div>
+                  )}
                   {showdownSession.mode_recommendation?.reason && (
                     <div className="rounded bg-black/30 p-2 text-gray-500">
                       {showdownSession.mode_recommendation.reason}

@@ -128,6 +128,8 @@ async def test_showdown_session_processes_payload_and_returns_commands(setup_db,
     assert created_data["mode"] == "balanced"
     assert created_data["requested_mode"] == "balanced"
     assert created_data["mode_source"] == "manual"
+    assert created_data["team_source"] == "template"
+    assert len(created_data["team_species"]) == 4
     request = {
         "rqid": 21,
         "active": [
@@ -179,6 +181,8 @@ async def test_showdown_session_auto_mode_uses_learning_recommendation(setup_db,
     assert data["mode"] == "aggressive"
     assert data["mode_source"] == "learning_profile"
     assert data["mode_recommendation"]["mode"] == "aggressive"
+    assert data["team_source"] == "template"
+    assert len(data["team_species"]) == 4
 
     await client.delete(f"/api/pokemon/showdown/sessions/{data['session_id']}")
 

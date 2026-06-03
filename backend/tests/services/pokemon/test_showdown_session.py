@@ -59,6 +59,7 @@ def test_create_random_battle_session_uses_no_team_showdown_format():
     assert session.battle_format == "gen9randombattle"
     assert session.showdown_format == "gen9randombattle"
     assert not session.requires_team
+    assert session.team_source == "not_required"
     assert session.command_log == ["|/utm null", "|/search gen9randombattle"]
 
 
@@ -150,9 +151,27 @@ def test_start_search_and_delete_session():
 
     commands = service.start_ladder_search(session.session_id)
 
-    assert commands == ["|/utm null", "|/search gen9vgc2024regg"]
+    assert session.team_source == "template"
+    assert len(session.team_species) == 4
+    assert commands[0].startswith("|/utm ")
+    assert commands[0] != "|/utm null"
+    assert commands[1] == "|/search gen9vgc2024regg"
     assert service.delete_session(session.session_id)
     assert service.get_session(session.session_id) is None
+
+
+def test_create_singles_session_auto_generates_showdown_team():
+    service = PokemonShowdownSessionService()
+
+    session = service.create_session(username="Bot", team=None, battle_format="gen9ou", auto_search=True)
+
+    assert session.battle_format == "gen9ou"
+    assert session.showdown_format == "gen9ou"
+    assert session.team_source == "showdown_factory"
+    assert session.team_species == ["Great Tusk", "Kingambit", "Gholdengo", "Dragapult", "Iron Valiant", "Ting-Lu"]
+    assert session.command_log[0].startswith("|/utm Great Tusk||boosterenergy|protosynthesis|")
+    assert "|50|" not in session.command_log[0]
+    assert session.command_log[1] == "|/search gen9ou"
 
 
 @pytest.mark.asyncio
@@ -164,7 +183,9 @@ async def test_connect_flushes_pending_commands_to_connector():
     result = await service.connect_session(session.session_id)
 
     assert connector.connected
-    assert result["sent"] == ["|/utm null", "|/search gen9vgc2024regg"]
+    assert result["sent"][0].startswith("|/utm ")
+    assert result["sent"][0] != "|/utm null"
+    assert result["sent"][1] == "|/search gen9vgc2024regg"
     assert connector.sent == result["sent"]
     assert result["session"]["sent_log"] == result["sent"]
 

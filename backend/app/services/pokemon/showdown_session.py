@@ -23,6 +23,7 @@ from app.services.pokemon.showdown_connector import (
     ShowdownEvent,
 )
 from app.services.pokemon.showdown_learning import PokemonShowdownLearningService
+from app.services.pokemon.showdown_team_factory import pokemon_showdown_team_factory
 
 
 @dataclass
@@ -45,6 +46,9 @@ class ShowdownSessionState:
     rooms: list[str] = field(default_factory=list)
     search: dict[str, Any] | None = None
     challenges: dict[str, Any] | None = None
+    team_source: str = "none"
+    team_reason: str = ""
+    team_species: list[str] = field(default_factory=list)
     command_log: list[str] = field(default_factory=list)
     sent_log: list[str] = field(default_factory=list)
     event_log: list[dict[str, Any]] = field(default_factory=list)
@@ -78,6 +82,10 @@ class ShowdownSessionState:
             "rooms": self.rooms,
             "search": self.search,
             "challenges": self.challenges,
+            "team_source": self.team_source,
+            "team_reason": self.team_reason,
+            "team_species": self.team_species,
+            "has_team": self.team is not None,
             "command_log": self.command_log,
             "sent_log": self.sent_log,
             "event_log": self.event_log,
@@ -114,6 +122,7 @@ class PokemonShowdownSessionService:
         session_id = uuid4().hex
         connector = connector or PokemonShowdownConnector()
         format_info = pokemon_format_catalog.get(battle_format)
+        team_source, team_reason, team_species = self._prepare_team(team, format_info.id, mode)
         agent = PokemonShowdownBattleAgent(connector)
         state = ShowdownSessionState(
             session_id=session_id,
@@ -130,10 +139,14 @@ class PokemonShowdownSessionService:
             mode_recommendation=mode_recommendation or {},
             status="searching" if auto_search else "ready",
             team=team,
+            team_source=team_source,
+            team_reason=team_reason,
+            team_species=team_species,
             login_assertion=login_assertion,
         )
+        self._ensure_team(state)
         if auto_search:
-            state.command_log.extend(connector.build_ladder_search_messages(team, format_info.showdown_format))
+            state.command_log.extend(connector.build_ladder_search_messages(state.team, format_info.showdown_format))
         self.sessions[session_id] = state
         self.connectors[session_id] = connector
         self.agents[session_id] = agent
@@ -288,11 +301,42 @@ class PokemonShowdownSessionService:
     def start_ladder_search(self, session_id: str) -> list[str]:
         state = self._require_session(session_id)
         connector = self.connectors[session_id]
+        self._ensure_team(state)
         commands = connector.build_ladder_search_messages(state.team, state.showdown_format)
         state.command_log.extend(commands)
         state.status = "searching"
         state.touch()
         return commands
+
+    def _ensure_team(self, state: ShowdownSessionState) -> None:
+        if state.team is not None or not state.requires_team:
+            return
+        generated = pokemon_showdown_team_factory.generate(state.battle_format, mode=state.mode)
+        if not generated:
+            return
+        state.team = generated.team
+        state.team_source = generated.source
+        state.team_reason = generated.reason
+        state.team_species = generated.species()
+
+    def _prepare_team(
+        self,
+        team: list[dict[str, Any]] | str | None,
+        battle_format: str,
+        mode: str,
+    ) -> tuple[str, str, list[str]]:
+        format_info = pokemon_format_catalog.get(battle_format)
+        if isinstance(team, list):
+            return (
+                "provided",
+                "Using the team provided in the session request.",
+                [str(member.get("species") or member.get("name") or "Unknown") for member in team],
+            )
+        if isinstance(team, str) and team:
+            return "packed", "Using the packed Showdown team provided in the session request.", []
+        if not format_info.requires_team:
+            return "not_required", f"{format_info.name} supplies teams on Pokemon Showdown.", []
+        return "auto", f"No team was provided; an autonomous {mode} team will be generated.", []
 
     def analyze_session(self, session_id: str) -> dict[str, Any]:
         state = self._require_session(session_id)
