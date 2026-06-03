@@ -83,6 +83,60 @@ class PokemonKnowledgeService:
         await self.set_cached(db, query_type, query_key, content, source_url)
         return {"cached": False, **content}
 
+    async def search_team(
+        self,
+        db: AsyncSession,
+        species: list[str],
+        query_type: str = "species_usage",
+        max_results: int = 3,
+    ) -> dict[str, Any]:
+        normalized_species = []
+        seen = set()
+        for name in species:
+            normalized = str(name or "").strip()
+            if not normalized or normalized.lower() in seen:
+                continue
+            seen.add(normalized.lower())
+            normalized_species.append(normalized)
+        normalized_species = normalized_species[:6]
+
+        members = []
+        sources = []
+        for name in normalized_species:
+            try:
+                member = await self.search(db, query_type, name, max_results=max_results)
+                member_payload = {
+                    "species": name,
+                    **member,
+                    "result_count": len(member.get("results") or []),
+                }
+                for result in member.get("results") or []:
+                    url = result.get("url")
+                    if url and url not in sources:
+                        sources.append(url)
+            except Exception as exc:
+                member_payload = {
+                    "species": name,
+                    "query_type": query_type,
+                    "query_key": name,
+                    "cached": False,
+                    "results": [],
+                    "result_count": 0,
+                    "error": str(exc),
+                }
+            members.append(member_payload)
+
+        return {
+            "query_type": query_type,
+            "species": normalized_species,
+            "members": members,
+            "member_count": len(members),
+            "cached_count": sum(1 for member in members if member.get("cached")),
+            "result_count": sum(int(member.get("result_count") or 0) for member in members),
+            "failed_count": sum(1 for member in members if member.get("error")),
+            "sources": sources,
+        }
+
     def _build_query(self, query_type: str, query_key: str) -> str:
         sources = "site:pokechamdb.com OR site:pokedb.tokyo OR site:limitlessvgc.com"
         if query_type == "species_usage":

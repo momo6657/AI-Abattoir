@@ -80,6 +80,7 @@ export default function PokemonBattlePage() {
   const [knowledgeQuery, setKnowledgeQuery] = useState('Incineroar');
   const [knowledge, setKnowledge] = useState<any>(null);
   const [showdownTeamKnowledge, setShowdownTeamKnowledge] = useState<any[]>([]);
+  const [showdownTeamKnowledgeSummary, setShowdownTeamKnowledgeSummary] = useState<any>(null);
   const [showdownPayload, setShowdownPayload] = useState(SAMPLE_SHOWDOWN_PAYLOAD);
   const [showdownUsername, setShowdownUsername] = useState('PokemonBot');
   const [showdownPassword, setShowdownPassword] = useState('');
@@ -253,22 +254,10 @@ export default function PokemonBattlePage() {
       if (!species.length) {
         throw new Error('当前 Showdown 会话没有可研究的队伍成员。');
       }
-      const results = await Promise.all(
-        species.map(async (pokemon: string) => {
-          try {
-            const response = await pokemonApi.knowledgeSearch('species_usage', pokemon, 3);
-            return { species: pokemon, ...response.data };
-          } catch (err: any) {
-            return {
-              species: pokemon,
-              error: err?.response?.data?.detail || err?.message || 'knowledge search failed',
-              results: [],
-            };
-          }
-        })
-      );
-      setShowdownTeamKnowledge(results);
-      addMessage(`整队知识检索完成：${results.length} members`);
+      const result = (await pokemonApi.teamKnowledge(species, 'species_usage', 3)).data;
+      setShowdownTeamKnowledge(result.members || []);
+      setShowdownTeamKnowledgeSummary(result);
+      addMessage(`整队知识检索完成：${result.member_count || 0} members / ${result.result_count || 0} refs`);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '整队知识检索失败');
     } finally {
@@ -482,6 +471,7 @@ export default function PokemonBattlePage() {
                   setShowdownAnalysis(null);
                   setShowdownLearning(null);
                   setShowdownTeamKnowledge([]);
+                  setShowdownTeamKnowledgeSummary(null);
                 }}
                 className="mt-1 w-full rounded-md border border-border bg-black/30 px-3 py-2 text-sm normal-case text-gray-100 outline-none focus:border-accent"
               >
@@ -596,7 +586,14 @@ export default function PokemonBattlePage() {
             </div>
             {showdownTeamKnowledge.length ? (
               <div className="mt-3 space-y-2">
-                <div className="text-xs uppercase text-gray-500">Showdown team research</div>
+                <div className="flex items-center justify-between gap-2 text-xs uppercase text-gray-500">
+                  <span>Showdown team research</span>
+                  {showdownTeamKnowledgeSummary && (
+                    <span>
+                      {showdownTeamKnowledgeSummary.result_count || 0} refs · {showdownTeamKnowledgeSummary.cached_count || 0} cached
+                    </span>
+                  )}
+                </div>
                 {showdownTeamKnowledge.map((item) => {
                   const firstResult = item.results?.[0];
                   return (
@@ -745,6 +742,7 @@ export default function PokemonBattlePage() {
                   setShowdownLearning(null);
                   setShowdownPlan(null);
                   setShowdownTeamKnowledge([]);
+                  setShowdownTeamKnowledgeSummary(null);
                 }}
                 disabled={busy}
                 className="btn-secondary disabled:opacity-50"

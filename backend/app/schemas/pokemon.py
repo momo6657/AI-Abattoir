@@ -151,6 +151,12 @@ class ShowdownDecisionRequest(BaseModel):
     allow_tera: bool = True
 
 
+class PokemonTeamKnowledgeRequest(BaseModel):
+    species: List[str]
+    query_type: str = "species_usage"
+    max_results: int = 3
+
+
 class ShowdownSessionCreateRequest(BaseModel):
     username: str
     team: Optional[Union[List[Dict[str, Any]], str]] = None

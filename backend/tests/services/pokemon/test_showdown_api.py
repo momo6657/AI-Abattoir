@@ -5,6 +5,7 @@ import json
 import pytest
 
 from app.services.pokemon.showdown_learning_store import pokemon_showdown_learning_store
+from app.services.pokemon.knowledge_service import pokemon_knowledge_service
 
 
 @pytest.mark.asyncio
@@ -114,6 +115,40 @@ async def test_showdown_decision_requires_payload_or_request(client):
 
     assert response.status_code == 400
     assert response.json()["detail"] == "payload or request is required."
+
+
+@pytest.mark.asyncio
+async def test_team_knowledge_endpoint_returns_batch_context(setup_db, monkeypatch, client):
+    async def fake_search(db, query_type, query_key, max_results=5):
+        return {
+            "cached": query_key == "Incineroar",
+            "query_type": query_type,
+            "query_key": query_key,
+            "results": [{"title": f"{query_key} usage", "url": f"https://example.com/{query_key}"}],
+        }
+
+    monkeypatch.setattr(pokemon_knowledge_service, "search", fake_search)
+
+    response = await client.post(
+        "/api/pokemon/knowledge/team",
+        json={"species": ["Incineroar", "Flutter Mane", "Incineroar"], "max_results": 2},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["species"] == ["Incineroar", "Flutter Mane"]
+    assert data["member_count"] == 2
+    assert data["cached_count"] == 1
+    assert data["result_count"] == 2
+    assert data["sources"] == ["https://example.com/Incineroar", "https://example.com/Flutter Mane"]
+
+
+@pytest.mark.asyncio
+async def test_team_knowledge_endpoint_validates_payload(client):
+    response = await client.post("/api/pokemon/knowledge/team", json={"species": [], "max_results": 3})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "species is required."
 
 
 @pytest.mark.asyncio

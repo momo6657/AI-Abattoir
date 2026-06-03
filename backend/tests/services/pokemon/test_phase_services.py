@@ -96,6 +96,34 @@ def test_knowledge_query_builder_targets_vgc_sources():
     assert "pokechamdb.com" in query
 
 
+@pytest.mark.asyncio
+async def test_team_knowledge_search_deduplicates_and_summarizes(monkeypatch, db):
+    service = PokemonKnowledgeService()
+
+    async def fake_search(_db, query_type, query_key, max_results=5):
+        return {
+            "cached": query_key == "Incineroar",
+            "query_type": query_type,
+            "query_key": query_key,
+            "results": [{"title": f"{query_key} usage", "url": f"https://example.com/{query_key}"}],
+        }
+
+    monkeypatch.setattr(service, "search", fake_search)
+
+    result = await service.search_team(
+        db,
+        ["Incineroar", "Flutter Mane", "Incineroar", ""],
+        max_results=2,
+    )
+
+    assert result["species"] == ["Incineroar", "Flutter Mane"]
+    assert result["member_count"] == 2
+    assert result["cached_count"] == 1
+    assert result["result_count"] == 2
+    assert result["failed_count"] == 0
+    assert result["sources"] == ["https://example.com/Incineroar", "https://example.com/Flutter Mane"]
+
+
 def test_showdown_parser_tracks_room_events():
     connector = PokemonShowdownConnector()
     events = connector.parse_message(">battle-gen9vgc-1\n|turn|1\n|move|p1a: Flutter Mane|Moonblast|p2a: Urshifu")

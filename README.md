@@ -534,6 +534,7 @@ AI-Abattoir/
 | POST | `/api/pokemon/battles/{id}/finalize` | 结算对战并写入经验进化 |
 | GET | `/api/pokemon/battles/history` | 获取宝可梦对战历史 |
 | GET | `/api/pokemon/knowledge/search` | 检索宝可梦知识库并缓存结果 |
+| POST | `/api/pokemon/knowledge/team` | 批量检索 Showdown 队伍成员用法知识并返回整队上下文 |
 | POST | `/api/pokemon/showdown/parse` | 解析 Pokemon Showdown 协议消息 |
 | POST | `/api/pokemon/showdown/commands` | 构建上传队伍、搜索、挑战和对战选择等 Showdown 协议命令 |
 | POST | `/api/pokemon/showdown/decision` | 将 Showdown `request` 转换为下一步自动选择计划 |

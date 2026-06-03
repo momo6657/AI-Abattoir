@@ -18,6 +18,7 @@ from app.schemas.pokemon import (
     BattleResponse,
     BattleStateResponse,
     BattleTurnRequest,
+    PokemonTeamKnowledgeRequest,
     ShowdownCommandRequest,
     ShowdownDecisionRequest,
     ShowdownSessionCreateRequest,
@@ -374,6 +375,24 @@ async def search_knowledge(
 ):
     """Search Pokemon knowledge sources with database caching."""
     return await pokemon_knowledge_service.search(db, query_type, query_key, max_results)
+
+
+@router.post("/knowledge/team")
+async def search_team_knowledge(
+    payload: PokemonTeamKnowledgeRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Batch-search knowledge for a Showdown team and return a compact team context."""
+    if not payload.species:
+        raise HTTPException(status_code=400, detail="species is required.")
+    if payload.max_results < 1 or payload.max_results > 10:
+        raise HTTPException(status_code=400, detail="max_results must be between 1 and 10.")
+    return await pokemon_knowledge_service.search_team(
+        db,
+        payload.species,
+        query_type=payload.query_type,
+        max_results=payload.max_results,
+    )
 
 
 @router.post("/showdown/parse")
