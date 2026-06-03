@@ -47,6 +47,7 @@ class ShowdownSessionState:
     rooms: list[str] = field(default_factory=list)
     search: dict[str, Any] | None = None
     challenges: dict[str, Any] | None = None
+    knowledge_context: dict[str, Any] = field(default_factory=dict)
     team_source: str = "none"
     team_reason: str = ""
     team_species: list[str] = field(default_factory=list)
@@ -85,6 +86,8 @@ class ShowdownSessionState:
             "rooms": self.rooms,
             "search": self.search,
             "challenges": self.challenges,
+            "knowledge_context": self.knowledge_context,
+            "has_knowledge_context": bool(self.knowledge_context),
             "team_source": self.team_source,
             "team_reason": self.team_reason,
             "team_species": self.team_species,
@@ -414,6 +417,12 @@ class PokemonShowdownSessionService:
 
     def list_learning_profiles(self) -> list[dict[str, Any]]:
         return self.learning_service.list_profiles()
+
+    def attach_knowledge_context(self, session_id: str, context: dict[str, Any]) -> ShowdownSessionState:
+        state = self._require_session(session_id)
+        state.knowledge_context = context
+        state.touch()
+        return state
 
     def _require_session(self, session_id: str) -> ShowdownSessionState:
         state = self.sessions.get(session_id)

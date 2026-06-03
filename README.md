@@ -134,6 +134,7 @@ Abattoir（竞技场）是一个让 AI 展现真实能力的地方。在这里�
 - Showdown 自动选择：可将队伍预览、强制换人、普通出招请求转换为下一条 `/choose` 命令
 - Showdown 战术评分：对合法招式按伤害、功能招、铺场、模式偏好和自爆风险打分，并在前端显示选择依据
 - Showdown 自动会话：可创建会话、连接 websocket、记录搜索/房间/胜负状态，并对 PS payload 自动产生命令流
+- Showdown 知识上下文：可将整队联网研究结果绑定到当前会话，供 UI、后续策略和学习流程复用
 - Showdown 自动建队：创建或搜索需要队伍的格式时，缺省 `team` 会按格式自动选择本地模板队或生成 Showdown 可上传队伍
 - Showdown 实战控制台：前端可创建会话、搜索天梯、连接 PS websocket、单步/有界自动运行、取消搜索和关闭连接
 - Showdown 自动登录：收到 `challstr` 后可自动向 PS 请求 assertion 并发送 `/trn`，支持游客名或可选密码登录，密码不会回传到会话响应
@@ -546,6 +547,7 @@ AI-Abattoir/
 | POST | `/api/pokemon/showdown/sessions/{id}/cancel-search` | 为会话生成并记录取消天梯搜索命令 |
 | POST | `/api/pokemon/showdown/sessions/{id}/connect` | 连接 Showdown websocket 并发送待发命令 |
 | POST | `/api/pokemon/showdown/sessions/{id}/message` | 输入 PS payload 并返回自动响应命令 |
+| POST | `/api/pokemon/showdown/sessions/{id}/knowledge` | 检索并绑定当前 Showdown 会话队伍的整队知识上下文 |
 | GET | `/api/pokemon/showdown/sessions/{id}/analysis` | 汇总 Showdown 会话的胜负、击倒、奖励和决策学习信号 |
 | POST | `/api/pokemon/showdown/sessions/{id}/run-once` | 从 websocket 读取一条消息、自动决策并发送命令 |
 | POST | `/api/pokemon/showdown/sessions/{id}/run-until` | 有界运行 Showdown 自动会话循环 |
@@ -738,6 +740,7 @@ alembic history
 - [x] 用户认证
 - [x] 联网搜索
 - [x] 宝可梦 Showdown 整队联网研究入口
+- [x] 宝可梦 Showdown 会话级知识上下文绑定
 - [x] 宝可梦本地训练台（自动建队、本地对战、日志分析、知识检索入口）
 - [x] 宝可梦多格式目录与 Showdown 格式选择（VGC、单打 OU、双打 OU、随机战）
 - [x] 宝可梦 Showdown 缺省自动建队和队伍上传命令生成

@@ -179,6 +179,8 @@ export const pokemonApi = {
     api.post(`/pokemon/showdown/sessions/${sessionId}/connect`, null, { params: { send_pending: sendPending } }),
   processShowdownSessionMessage: (sessionId: string, data: Record<string, unknown>) =>
     api.post(`/pokemon/showdown/sessions/${sessionId}/message`, data),
+  researchShowdownSessionTeam: (sessionId: string, maxResults = 3) =>
+    api.post(`/pokemon/showdown/sessions/${sessionId}/knowledge`, null, { params: { max_results: maxResults } }),
   analyzeShowdownSession: (sessionId: string) => api.get(`/pokemon/showdown/sessions/${sessionId}/analysis`),
   runShowdownSessionOnce: (sessionId: string, data: Record<string, unknown>) =>
     api.post(`/pokemon/showdown/sessions/${sessionId}/run-once`, data),

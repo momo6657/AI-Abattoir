@@ -584,6 +584,30 @@ async def analyze_showdown_session(session_id: str, db: AsyncSession = Depends(g
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.post("/showdown/sessions/{session_id}/knowledge")
+async def research_showdown_session_team(
+    session_id: str,
+    max_results: int = 3,
+    db: AsyncSession = Depends(get_db),
+):
+    """Research and attach knowledge context for the current Showdown session team."""
+    session = pokemon_showdown_session_service.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Pokemon Showdown session not found")
+    if not session.team_species:
+        raise HTTPException(status_code=400, detail="Showdown session has no team species to research.")
+    if max_results < 1 or max_results > 10:
+        raise HTTPException(status_code=400, detail="max_results must be between 1 and 10.")
+    context = await pokemon_knowledge_service.search_team(
+        db,
+        session.team_species,
+        query_type="species_usage",
+        max_results=max_results,
+    )
+    updated = pokemon_showdown_session_service.attach_knowledge_context(session_id, context)
+    return {"knowledge_context": context, "session": updated.to_dict()}
+
+
 @router.get("/showdown/sessions/{session_id}")
 async def get_showdown_session(session_id: str):
     """Get a Pokemon Showdown automation session."""

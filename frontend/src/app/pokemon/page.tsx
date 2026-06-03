@@ -250,14 +250,15 @@ export default function PokemonBattlePage() {
     setError(null);
     try {
       const session = await ensureShowdownSession(false);
-      const species = (session.team_species || []).slice(0, 6);
-      if (!species.length) {
+      if (!session.team_species?.length) {
         throw new Error('当前 Showdown 会话没有可研究的队伍成员。');
       }
-      const result = (await pokemonApi.teamKnowledge(species, 'species_usage', 3)).data;
-      setShowdownTeamKnowledge(result.members || []);
-      setShowdownTeamKnowledgeSummary(result);
-      addMessage(`整队知识检索完成：${result.member_count || 0} members / ${result.result_count || 0} refs`);
+      const result = (await pokemonApi.researchShowdownSessionTeam(session.session_id, 3)).data;
+      const context = result.knowledge_context || {};
+      setShowdownSession(result.session || session);
+      setShowdownTeamKnowledge(context.members || []);
+      setShowdownTeamKnowledgeSummary(context);
+      addMessage(`整队知识检索完成：${context.member_count || 0} members / ${context.result_count || 0} refs`);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '整队知识检索失败');
     } finally {
@@ -836,6 +837,8 @@ export default function PokemonBattlePage() {
                   <div className="grid grid-cols-2 gap-2 pt-1">
                     <Metric label="Auto Login" value={showdownSession.auto_login ? 'on' : 'off'} compact />
                     <Metric label="Assertion" value={showdownSession.has_login_assertion ? 'ready' : 'none'} compact />
+                    <Metric label="Knowledge" value={showdownSession.has_knowledge_context ? 'ready' : 'none'} compact />
+                    <Metric label="Sources" value={showdownSession.knowledge_context?.sources?.length ?? 0} compact />
                   </div>
                   {showdownSession.team_species?.length ? (
                     <div className="rounded bg-black/30 p-2 text-gray-500">

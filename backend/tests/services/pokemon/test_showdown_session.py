@@ -194,6 +194,21 @@ def test_create_singles_session_auto_generates_showdown_team():
     assert session.command_log[1] == "|/search gen9ou"
 
 
+def test_attach_knowledge_context_updates_session_snapshot():
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None)
+
+    updated = service.attach_knowledge_context(
+        session.session_id,
+        {"member_count": 1, "sources": ["https://example.com/Incineroar"]},
+    )
+    snapshot = updated.to_dict()
+
+    assert snapshot["has_knowledge_context"]
+    assert snapshot["knowledge_context"]["member_count"] == 1
+    assert snapshot["knowledge_context"]["sources"] == ["https://example.com/Incineroar"]
+
+
 @pytest.mark.asyncio
 async def test_connect_flushes_pending_commands_to_connector():
     connector = FakeShowdownConnector()
