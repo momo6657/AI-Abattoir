@@ -207,6 +207,26 @@ async def test_showdown_session_search_endpoint_records_commands(client):
 
 
 @pytest.mark.asyncio
+async def test_showdown_session_cancel_search_endpoint_records_command(client):
+    created = await client.post(
+        "/api/pokemon/showdown/sessions",
+        json={"username": "Bot", "team": None, "auto_search": True},
+    )
+    session_id = created.json()["session_id"]
+
+    response = await client.post(f"/api/pokemon/showdown/sessions/{session_id}/cancel-search")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["commands"] == ["|/cancelsearch"]
+    assert data["session"]["status"] == "ready"
+    assert data["session"]["last_command"] == "|/cancelsearch"
+    assert data["session"]["pending_command_count"] == 3
+
+    await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
+
+
+@pytest.mark.asyncio
 async def test_showdown_session_analysis_endpoint_returns_learning_signals(setup_db, client):
     created = await client.post("/api/pokemon/showdown/sessions", json={"username": "Bot", "team": None})
     session_id = created.json()["session_id"]

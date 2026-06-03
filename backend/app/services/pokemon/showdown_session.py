@@ -86,6 +86,15 @@ class ShowdownSessionState:
             "team_reason": self.team_reason,
             "team_species": self.team_species,
             "has_team": self.team is not None,
+            "pending_command_count": max(0, len(self.command_log) - len(self.sent_log)),
+            "command_count": len(self.command_log),
+            "sent_count": len(self.sent_log),
+            "event_count": len(self.event_log),
+            "decision_count": len(self.decisions),
+            "room_count": len(self.rooms),
+            "last_command": self.command_log[-1] if self.command_log else None,
+            "last_sent": self.sent_log[-1] if self.sent_log else None,
+            "last_event": self.event_log[-1] if self.event_log else None,
             "command_log": self.command_log,
             "sent_log": self.sent_log,
             "event_log": self.event_log,
@@ -305,6 +314,16 @@ class PokemonShowdownSessionService:
         commands = connector.build_ladder_search_messages(state.team, state.showdown_format)
         state.command_log.extend(commands)
         state.status = "searching"
+        state.touch()
+        return commands
+
+    def cancel_ladder_search(self, session_id: str) -> list[str]:
+        state = self._require_session(session_id)
+        connector = self.connectors[session_id]
+        commands = [connector.build_cancel_search_message()]
+        state.command_log.extend(commands)
+        if state.status == "searching":
+            state.status = "ready"
         state.touch()
         return commands
 

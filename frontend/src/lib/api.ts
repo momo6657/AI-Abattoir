@@ -172,6 +172,7 @@ export const pokemonApi = {
     api.get("/pokemon/showdown/learning/profile", { params: { username, battle_format: battleFormat } }),
   createShowdownSession: (data: Record<string, unknown>) => api.post("/pokemon/showdown/sessions", data),
   startShowdownSearch: (sessionId: string) => api.post(`/pokemon/showdown/sessions/${sessionId}/search`),
+  cancelShowdownSearch: (sessionId: string) => api.post(`/pokemon/showdown/sessions/${sessionId}/cancel-search`),
   connectShowdownSession: (sessionId: string, sendPending = true) =>
     api.post(`/pokemon/showdown/sessions/${sessionId}/connect`, null, { params: { send_pending: sendPending } }),
   processShowdownSessionMessage: (sessionId: string, data: Record<string, unknown>) =>

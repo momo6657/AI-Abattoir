@@ -156,8 +156,23 @@ def test_start_search_and_delete_session():
     assert commands[0].startswith("|/utm ")
     assert commands[0] != "|/utm null"
     assert commands[1] == "|/search gen9vgc2024regg"
+    assert session.to_dict()["pending_command_count"] == 2
+    assert session.to_dict()["last_command"] == "|/search gen9vgc2024regg"
     assert service.delete_session(session.session_id)
     assert service.get_session(session.session_id) is None
+
+
+def test_cancel_ladder_search_records_cancel_command():
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None, auto_search=True)
+
+    commands = service.cancel_ladder_search(session.session_id)
+    snapshot = session.to_dict()
+
+    assert commands == ["|/cancelsearch"]
+    assert session.status == "ready"
+    assert snapshot["pending_command_count"] == 3
+    assert snapshot["last_command"] == "|/cancelsearch"
 
 
 def test_create_singles_session_auto_generates_showdown_team():
@@ -188,6 +203,8 @@ async def test_connect_flushes_pending_commands_to_connector():
     assert result["sent"][1] == "|/search gen9vgc2024regg"
     assert connector.sent == result["sent"]
     assert result["session"]["sent_log"] == result["sent"]
+    assert result["session"]["pending_command_count"] == 0
+    assert result["session"]["sent_count"] == 2
 
 
 @pytest.mark.asyncio

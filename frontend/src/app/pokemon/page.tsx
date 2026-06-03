@@ -80,6 +80,8 @@ export default function PokemonBattlePage() {
   const [knowledgeQuery, setKnowledgeQuery] = useState('Incineroar');
   const [knowledge, setKnowledge] = useState<any>(null);
   const [showdownPayload, setShowdownPayload] = useState(SAMPLE_SHOWDOWN_PAYLOAD);
+  const [showdownUsername, setShowdownUsername] = useState('PokemonBot');
+  const [showdownRunLimit, setShowdownRunLimit] = useState(10);
   const [showdownMode, setShowdownMode] = useState<'auto' | 'balanced' | 'aggressive' | 'defensive'>('auto');
   const [showdownPlan, setShowdownPlan] = useState<any>(null);
   const [showdownSession, setShowdownSession] = useState<any>(null);
@@ -257,20 +259,40 @@ export default function PokemonBattlePage() {
     }
   }
 
+  async function ensureShowdownSession(autoSearch = false) {
+    if (showdownSession?.session_id) return showdownSession;
+    const session = (await pokemonApi.createShowdownSession({
+      username: showdownUsername || 'PokemonBot',
+      battle_format: selectedFormatInfo?.id || selectedFormat,
+      mode: showdownMode,
+      auto_search: autoSearch,
+    })).data;
+    setShowdownSession(session);
+    setShowdownAnalysis(session.analysis || null);
+    addMessage(`Showdown session ready: ${session.showdown_format}`);
+    return session;
+  }
+
+  async function createShowdownSession(autoSearch = false) {
+    setBusy(true);
+    setError(null);
+    try {
+      const session = await ensureShowdownSession(autoSearch);
+      setShowdownSession(session);
+      addMessage(autoSearch ? 'Showdown session created with ladder search queued.' : 'Showdown session created.');
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '创建 Showdown 会话失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function runShowdownSessionStep() {
     if (!showdownPayload.trim()) return;
     setBusy(true);
     setError(null);
     try {
-      let session = showdownSession;
-      if (!session?.session_id) {
-        session = (await pokemonApi.createShowdownSession({
-          username: 'PokemonBot',
-          battle_format: selectedFormatInfo?.id || selectedFormat,
-          mode: showdownMode,
-          auto_search: true,
-        })).data;
-      }
+      const session = await ensureShowdownSession(false);
       const result = (await pokemonApi.processShowdownSessionMessage(session.session_id, {
         payload: showdownPayload,
         auto_respond: true,
@@ -283,6 +305,112 @@ export default function PokemonBattlePage() {
       addMessage(`Showdown session ${result.session?.status || 'ready'}: ${(result.commands || []).join(' / ') || 'no command'}`);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '推进 Showdown 会话失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startShowdownSearch() {
+    setBusy(true);
+    setError(null);
+    try {
+      const session = await ensureShowdownSession(false);
+      const result = (await pokemonApi.startShowdownSearch(session.session_id)).data;
+      setShowdownSession(result.session);
+      addMessage(`Search queued: ${(result.commands || []).join(' / ')}`);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '生成搜索命令失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancelShowdownSearch() {
+    if (!showdownSession?.session_id) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = (await pokemonApi.cancelShowdownSearch(showdownSession.session_id)).data;
+      setShowdownSession(result.session);
+      addMessage(`Cancel search queued: ${(result.commands || []).join(' / ')}`);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '取消搜索失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function connectShowdownSession() {
+    setBusy(true);
+    setError(null);
+    try {
+      const session = await ensureShowdownSession(false);
+      const result = (await pokemonApi.connectShowdownSession(session.session_id, true)).data;
+      setShowdownSession(result.session);
+      addMessage(`Connected to Showdown, sent ${result.sent?.length || 0} pending command(s).`);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '连接 Showdown websocket 失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runLiveShowdownOnce() {
+    if (!showdownSession?.session_id) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = (await pokemonApi.runShowdownSessionOnce(showdownSession.session_id, {
+        auto_respond: true,
+        send_commands: true,
+      })).data;
+      setShowdownSession(result.session);
+      setShowdownAnalysis(result.session?.analysis || showdownAnalysis);
+      setShowdownLearning(result.learning_profile || showdownLearning);
+      setShowdownPlan(result.decision || showdownPlan);
+      addMessage(`Live step ${result.session?.status || 'ready'}: ${result.sent?.length || 0} sent.`);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '执行 Showdown 单步失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runLiveShowdownUntil() {
+    if (!showdownSession?.session_id) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = (await pokemonApi.runShowdownSessionUntil(showdownSession.session_id, {
+        auto_respond: true,
+        send_commands: true,
+        max_messages: showdownRunLimit,
+        stop_on_finished: true,
+      })).data;
+      setShowdownSession(result.session);
+      setShowdownAnalysis(result.session?.analysis || showdownAnalysis);
+      setShowdownLearning(result.learning_profile || showdownLearning);
+      const steps = result.steps || [];
+      const lastDecision = [...steps].reverse().find((step: any) => step.decision)?.decision;
+      setShowdownPlan(lastDecision || showdownPlan);
+      addMessage(`Auto run stopped at ${result.session?.status || 'ready'} after ${steps.length} message(s).`);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '自动运行 Showdown 会话失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function closeShowdownSession() {
+    if (!showdownSession?.session_id) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const session = (await pokemonApi.closeShowdownSession(showdownSession.session_id)).data;
+      setShowdownSession(session);
+      addMessage('Showdown websocket closed.');
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '关闭 Showdown 会话失败');
     } finally {
       setBusy(false);
     }
@@ -456,7 +584,7 @@ export default function PokemonBattlePage() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold text-white">Showdown 控制台</h2>
-                <p className="mt-1 text-xs text-gray-500">解析 PS request 并生成下一步选择命令。</p>
+                <p className="mt-1 text-xs text-gray-500">创建队伍、搜索天梯、连接 websocket，并有界运行自动选择循环。</p>
               </div>
               <button
                 onClick={() => setShowdownPayload(SAMPLE_SHOWDOWN_PAYLOAD)}
@@ -464,6 +592,28 @@ export default function PokemonBattlePage() {
               >
                 示例
               </button>
+            </div>
+
+            <div className="mt-3 grid grid-cols-[minmax(0,1fr)_88px] gap-2">
+              <label className="text-xs text-gray-500">
+                Username
+                <input
+                  value={showdownUsername}
+                  onChange={(event) => setShowdownUsername(event.target.value)}
+                  className="mt-1 w-full rounded-md border border-border bg-black/30 px-3 py-2 text-sm normal-case text-gray-100 outline-none focus:border-accent"
+                />
+              </label>
+              <label className="text-xs text-gray-500">
+                Steps
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={showdownRunLimit}
+                  onChange={(event) => setShowdownRunLimit(Math.max(1, Math.min(50, Number(event.target.value) || 1)))}
+                  className="mt-1 w-full rounded-md border border-border bg-black/30 px-3 py-2 text-sm normal-case text-gray-100 outline-none focus:border-accent"
+                />
+              </label>
             </div>
 
             <div className="mt-3 grid grid-cols-4 gap-1 rounded-md border border-border bg-black/20 p-1">
@@ -479,6 +629,43 @@ export default function PokemonBattlePage() {
                 </button>
               ))}
             </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button onClick={() => createShowdownSession(false)} disabled={busy} className="btn-secondary disabled:opacity-50">
+                创建会话
+              </button>
+              <button onClick={startShowdownSearch} disabled={busy} className="btn-primary disabled:opacity-50">
+                搜索天梯
+              </button>
+              <button onClick={connectShowdownSession} disabled={busy} className="btn-secondary disabled:opacity-50">
+                连接 PS
+              </button>
+              <button onClick={runLiveShowdownOnce} disabled={busy || !showdownSession?.session_id} className="btn-secondary disabled:opacity-50">
+                跑一步
+              </button>
+              <button onClick={runLiveShowdownUntil} disabled={busy || !showdownSession?.session_id} className="btn-primary disabled:opacity-50">
+                自动运行
+              </button>
+              <button onClick={cancelShowdownSearch} disabled={busy || !showdownSession?.session_id} className="btn-secondary disabled:opacity-50">
+                取消搜索
+              </button>
+              <button onClick={closeShowdownSession} disabled={busy || !showdownSession?.session_id} className="btn-secondary disabled:opacity-50">
+                关闭连接
+              </button>
+              <button
+                onClick={() => {
+                  setShowdownSession(null);
+                  setShowdownAnalysis(null);
+                  setShowdownLearning(null);
+                  setShowdownPlan(null);
+                }}
+                disabled={busy}
+                className="btn-secondary disabled:opacity-50"
+              >
+                重置
+              </button>
+            </div>
+
             <div className="mt-3 rounded-md border border-border bg-black/20 px-3 py-2 text-xs text-gray-400">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-gray-500">Showdown format</span>
@@ -564,7 +751,17 @@ export default function PokemonBattlePage() {
                     </div>
                   )}
                   <div className="break-all font-mono text-gray-500">{showdownSession.session_id}</div>
-                  <div className="text-gray-500">Commands: {showdownSession.command_log?.length || 0}</div>
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <Metric label="Pending" value={showdownSession.pending_command_count ?? 0} compact />
+                    <Metric label="Sent" value={showdownSession.sent_count ?? 0} compact />
+                    <Metric label="Events" value={showdownSession.event_count ?? 0} compact />
+                    <Metric label="Decisions" value={showdownSession.decision_count ?? 0} compact />
+                  </div>
+                  {showdownSession.last_command && (
+                    <div className="break-all rounded bg-black/30 p-2 font-mono text-gray-500">
+                      {showdownSession.last_command}
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 gap-2 pt-1">
                     <Metric label="Reward" value={showdownAnalysis?.reward ?? 0} compact />
                     <Metric label="Result" value={showdownAnalysis?.status ?? 'in_progress'} compact />

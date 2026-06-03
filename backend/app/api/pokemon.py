@@ -583,6 +583,17 @@ async def start_showdown_ladder_search(session_id: str):
     return {"commands": commands, "session": session.to_dict() if session else None}
 
 
+@router.post("/showdown/sessions/{session_id}/cancel-search")
+async def cancel_showdown_ladder_search(session_id: str):
+    """Build and record a Showdown cancel-search command for an existing session."""
+    try:
+        commands = pokemon_showdown_session_service.cancel_ladder_search(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    session = pokemon_showdown_session_service.get_session(session_id)
+    return {"commands": commands, "session": session.to_dict() if session else None}
+
+
 @router.post("/showdown/sessions/{session_id}/connect")
 async def connect_showdown_session(session_id: str, send_pending: bool = True):
     """Connect a Showdown session websocket and optionally flush queued commands."""
