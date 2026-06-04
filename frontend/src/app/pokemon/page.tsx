@@ -109,6 +109,7 @@ export default function PokemonBattlePage() {
   const showdownChallengeUsers = Object.keys(showdownSession?.challenges?.challengesFrom || {});
   const showdownChallengeUser = showdownChallengeUsers[0];
   const showdownRooms = Object.values(showdownSession?.room_details || {}) as any[];
+  const activeShowdownLearning = showdownLearning || showdownSession?.learning_profile || null;
 
   useEffect(() => {
     refreshOverview();
@@ -282,7 +283,7 @@ export default function PokemonBattlePage() {
         mode: showdownMode,
         active_pokemon: selectedFormatInfo?.active_pokemon,
         knowledge_context: showdownSession?.knowledge_context || showdownTeamKnowledgeSummary || undefined,
-        learning_profile: showdownLearning || showdownSession?.learning_profile || undefined,
+        learning_profile: activeShowdownLearning || undefined,
       })).data;
       setShowdownPlan(result.plan);
       addMessage(`Showdown choice: ${result.plan?.command || result.plan?.decision_type || 'none'}`);
@@ -541,6 +542,7 @@ export default function PokemonBattlePage() {
     ['Phase 9', '一键自动驾驶：连接、搜索、收发消息和自动决策'],
     ['Phase 10', '学习档案反哺自动建队，低收益时自动保守化调整'],
     ['Phase 11', '学习档案反哺自动出招评分，弱势时偏向安全决策'],
+    ['Phase 12', '战后学习档案即时回写会话，下一步策略直接使用新样本'],
   ];
 
   return (
@@ -1099,18 +1101,20 @@ export default function PokemonBattlePage() {
                     <Metric label="Turns" value={showdownAnalysis?.turns ?? 0} compact />
                     <Metric label="Faints" value={showdownAnalysis?.faints ?? 0} compact />
                   </div>
-                  {showdownLearning && (
+                  {activeShowdownLearning && (
                     <div className="rounded-md border border-border bg-black/20 p-2">
                       <div className="grid grid-cols-2 gap-2">
-                        <Metric label="Win Rate" value={`${Math.round((showdownLearning.win_rate || 0) * 100)}%`} compact />
-                        <Metric label="Avg Reward" value={Number(showdownLearning.average_reward || 0).toFixed(1)} compact />
+                        <Metric label="Win Rate" value={`${Math.round((activeShowdownLearning.win_rate || 0) * 100)}%`} compact />
+                        <Metric label="Avg Reward" value={Number(activeShowdownLearning.average_reward || 0).toFixed(1)} compact />
+                        <Metric label="Samples" value={activeShowdownLearning.battles || 0} compact />
+                        <Metric label="Losses" value={activeShowdownLearning.losses || 0} compact />
                       </div>
                       <div className="mt-2 text-gray-500">
-                        Suggested mode: <span className="text-gray-200">{showdownLearning.recommendation?.mode || 'balanced'}</span>
+                        Suggested mode: <span className="text-gray-200">{activeShowdownLearning.recommendation?.mode || 'balanced'}</span>
                       </div>
-                      {showdownLearning.training_focus?.length ? (
+                      {activeShowdownLearning.training_focus?.length ? (
                         <div className="mt-3 space-y-2">
-                          {showdownLearning.training_focus.map((focus: any) => {
+                          {activeShowdownLearning.training_focus.map((focus: any) => {
                             const tone = focus.level === 'success'
                               ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100'
                               : focus.level === 'warning'

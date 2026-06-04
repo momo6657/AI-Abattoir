@@ -241,6 +241,8 @@ def test_process_payload_updates_showdown_analysis_signals():
     assert result["learning_profile"]["battles"] == 1
     assert result["learning_profile"]["wins"] == 1
     assert result["learning_profile"]["average_reward"] == 120.0
+    assert result["session"]["learning_profile"]["battles"] == 1
+    assert session.to_dict()["learning_profile"]["wins"] == 1
 
     refreshed = service.analyze_session(session.session_id)
     assert refreshed == analysis

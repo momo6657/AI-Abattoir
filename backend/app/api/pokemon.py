@@ -838,7 +838,7 @@ async def _persist_showdown_learning(db: AsyncSession, result: dict) -> dict:
     analysis = session.get("analysis") or {}
     if not session:
         return {}
-    return await pokemon_showdown_learning_store.record_session(
+    profile = await pokemon_showdown_learning_store.record_session(
         db,
         session_id=session.get("session_id", ""),
         username=session.get("username", ""),
@@ -848,6 +848,11 @@ async def _persist_showdown_learning(db: AsyncSession, result: dict) -> dict:
         analysis=analysis,
         decisions=session.get("decisions") or [],
     )
+    state = pokemon_showdown_session_service.get_session(session.get("session_id", ""))
+    if state is not None and profile:
+        state.learning_profile = profile
+        result["session"] = state.to_dict()
+    return profile
 
 
 async def _resolve_showdown_mode(

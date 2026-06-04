@@ -294,6 +294,16 @@ async def test_showdown_session_processes_payload_and_returns_commands(setup_db,
     assert data["session"]["status"] == "responded"
     assert data["session"]["analysis"]["decision_count"] == 1
 
+    finished = await client.post(
+        f"/api/pokemon/showdown/sessions/{session_id}/message",
+        json={"payload": ">battle-gen9vgc-99\n|win|Bot", "auto_respond": False},
+    )
+    assert finished.status_code == 200
+    finished_data = finished.json()
+    assert finished_data["learning_profile"]["battles"] == 1
+    assert finished_data["session"]["learning_profile"]["battles"] == 1
+    assert finished_data["session"]["learning_profile"]["wins"] == 1
+
     deleted = await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
     assert deleted.status_code == 200
 

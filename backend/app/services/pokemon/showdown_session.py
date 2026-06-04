@@ -717,7 +717,7 @@ class PokemonShowdownSessionService:
         )
 
     def _record_learning_if_finished(self, state: ShowdownSessionState) -> dict[str, Any]:
-        return self.learning_service.record_session(
+        profile = self.learning_service.record_session(
             session_id=state.session_id,
             username=state.username,
             battle_format=state.battle_format,
@@ -726,6 +726,9 @@ class PokemonShowdownSessionService:
             analysis=state.analysis,
             decisions=state.decisions,
         )
+        if state.analysis.get("status") in {"win", "loss", "tie", "finished"}:
+            state.learning_profile = profile
+        return profile
 
     def _serialize_event(self, event: ShowdownEvent) -> dict[str, Any]:
         return {
