@@ -937,7 +937,40 @@ export default function PokemonBattlePage() {
                     <Metric label="Knowledge" value={showdownSession.has_knowledge_context ? 'ready' : 'none'} compact />
                     <Metric label="Sources" value={showdownSession.knowledge_context?.sources?.length ?? 0} compact />
                   </div>
-                  {showdownSession.team_species?.length ? (
+                  {showdownSession.team_preview?.length ? (
+                    <div className="space-y-2">
+                      <div className="text-[10px] font-semibold uppercase text-gray-500">Team preview</div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {showdownSession.team_preview.map((member: any) => {
+                          const summary = [
+                            member.item,
+                            member.ability,
+                            member.tera_type ? `Tera ${member.tera_type}` : null,
+                          ].filter(Boolean).join(' · ');
+                          return (
+                            <div key={`${member.slot}-${member.species}`} className="min-w-0 rounded bg-black/30 p-2">
+                              <div className="flex min-w-0 items-start justify-between gap-2">
+                                <span className="min-w-0 break-words font-medium text-gray-100">{member.species}</span>
+                                <span className="shrink-0 text-gray-600">#{member.slot}</span>
+                              </div>
+                              {summary ? (
+                                <div className="mt-1 break-words text-[11px] text-gray-500">{summary}</div>
+                              ) : null}
+                              {member.moves?.length ? (
+                                <div className="mt-2 flex flex-wrap gap-1">
+                                  {member.moves.map((move: string) => (
+                                    <span key={`${member.slot}-${move}`} className="max-w-full rounded border border-border bg-black/20 px-1.5 py-0.5 text-[10px] text-gray-400">
+                                      {move}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : showdownSession.team_species?.length ? (
                     <div className="rounded bg-black/30 p-2 text-gray-500">
                       {showdownSession.team_species.join(' / ')}
                     </div>

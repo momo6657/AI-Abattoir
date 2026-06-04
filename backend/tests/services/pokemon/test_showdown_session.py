@@ -56,6 +56,37 @@ def test_create_session_can_prepare_ladder_search_commands():
     assert session.command_log[1] == "|/search gen9vgc2024regg"
 
 
+def test_create_session_exposes_provided_team_preview():
+    service = PokemonShowdownSessionService()
+
+    session = service.create_session(
+        username="Bot",
+        team=[
+            {
+                "species": "Incineroar",
+                "ability": "Intimidate",
+                "item": "Sitrus Berry",
+                "moves": [{"name": "Fake Out"}, "Parting Shot"],
+                "tera_type": "Grass",
+            }
+        ],
+        battle_format="vgc2024",
+    )
+    preview = session.to_dict()["team_preview"]
+
+    assert preview == [
+        {
+            "slot": 1,
+            "species": "Incineroar",
+            "name": None,
+            "item": "Sitrus Berry",
+            "ability": "Intimidate",
+            "tera_type": "Grass",
+            "moves": ["Fake Out", "Parting Shot"],
+        }
+    ]
+
+
 def test_create_session_records_auto_research_flag():
     service = PokemonShowdownSessionService()
 
@@ -270,6 +301,13 @@ def test_create_singles_session_auto_generates_showdown_team():
     assert session.showdown_format == "gen9ou"
     assert session.team_source == "showdown_factory"
     assert session.team_species == ["Great Tusk", "Kingambit", "Gholdengo", "Dragapult", "Iron Valiant", "Ting-Lu"]
+    preview = session.to_dict()["team_preview"]
+    assert len(preview) == 6
+    assert preview[0]["species"] == "Great Tusk"
+    assert preview[0]["item"] == "Booster Energy"
+    assert preview[0]["ability"] == "Protosynthesis"
+    assert preview[0]["tera_type"] == "Ground"
+    assert preview[0]["moves"] == ["Headlong Rush", "Close Combat", "Rapid Spin", "Knock Off"]
     assert session.command_log[0].startswith("|/utm Great Tusk||boosterenergy|protosynthesis|")
     assert "|50|" not in session.command_log[0]
     assert session.command_log[1] == "|/search gen9ou"

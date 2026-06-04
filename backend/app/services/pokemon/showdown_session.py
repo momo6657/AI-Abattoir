@@ -69,6 +69,26 @@ class ShowdownSessionState:
     def touch(self) -> None:
         self.updated_at = datetime.now(timezone.utc)
 
+    def _team_preview(self) -> list[dict[str, Any]]:
+        if not isinstance(self.team, list):
+            return []
+
+        preview: list[dict[str, Any]] = []
+        for index, member in enumerate(self.team):
+            moves = member.get("moves") or []
+            preview.append(
+                {
+                    "slot": index + 1,
+                    "species": str(member.get("species") or member.get("name") or f"Slot {index + 1}"),
+                    "name": member.get("name"),
+                    "item": member.get("item"),
+                    "ability": member.get("ability"),
+                    "tera_type": member.get("tera_type"),
+                    "moves": [str(move.get("name") if isinstance(move, dict) else move) for move in moves],
+                }
+            )
+        return preview
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "session_id": self.session_id,
@@ -96,6 +116,7 @@ class ShowdownSessionState:
             "team_source": self.team_source,
             "team_reason": self.team_reason,
             "team_species": self.team_species,
+            "team_preview": self._team_preview(),
             "has_team": self.team is not None,
             "auto_login": self.auto_login,
             "auto_accept_challenges": self.auto_accept_challenges,

@@ -139,6 +139,7 @@ Abattoir（竞技场）是一个让 AI 展现真实能力的地方。在这里�
 - Showdown 知识上下文：可将整队联网研究结果绑定到当前会话，供 UI、后续策略和学习流程复用
 - Showdown 自动知识研究：创建会话时可开启 `auto_research_team`，系统会在自动建队后立即检索整队用法知识并绑定到会话
 - Showdown 自动建队：创建或搜索需要队伍的格式时，缺省 `team` 会按格式自动选择本地模板队或生成 Showdown 可上传队伍
+- Showdown 队伍预览：会话快照返回 `team_preview`，前端可检查自动建队的宝可梦、道具、特性、太晶和招式
 - Showdown 实战控制台：前端可创建会话、搜索天梯、连接 PS websocket、单步/有界自动运行、取消搜索和关闭连接
 - Showdown 自动登录：收到 `challstr` 后可自动向 PS 请求 assertion 并发送 `/trn`，支持游客名或可选密码登录，密码不会回传到会话响应
 - Showdown 学习摘要：可从真实协议事件中汇总回合、出招、换人、受伤、击倒、胜负和奖励信号
@@ -751,6 +752,7 @@ alembic history
 - [x] 宝可梦本地训练台（自动建队、本地对战、日志分析、知识检索入口）
 - [x] 宝可梦多格式目录与 Showdown 格式选择（VGC、单打 OU、双打 OU、随机战）
 - [x] 宝可梦 Showdown 缺省自动建队和队伍上传命令生成
+- [x] 宝可梦 Showdown 自动建队可视化队伍预览
 - [x] 宝可梦 Showdown 前端实战控制台（创建、搜索、连接、单步/有界运行、取消、关闭）
 - [x] 宝可梦 Showdown challstr 自动 assertion 登录
 - [x] 宝可梦 Showdown 挑战接受/拒绝和待发命令发送
