@@ -293,7 +293,34 @@ async def test_showdown_session_auto_mode_uses_learning_recommendation(setup_db,
 
 
 @pytest.mark.asyncio
-async def test_showdown_session_create_accepts_auto_login_without_leaking_password(client):
+async def test_showdown_session_auto_team_uses_weak_learning_profile(setup_db, db, client):
+    await pokemon_showdown_learning_store.record_session(
+        db,
+        session_id="weak-team-seed-1",
+        username="Bot",
+        battle_format="vgc2024",
+        showdown_format="gen9vgc2024regg",
+        mode="balanced",
+        analysis={"status": "loss", "reward": 10.0, "turns": 4, "faints_for": 1, "faints_against": 4},
+        decisions=[{"decision_type": "move"}],
+    )
+
+    created = await client.post(
+        "/api/pokemon/showdown/sessions",
+        json={"username": "Bot", "team": None, "battle_format": "vgc2024", "mode": "balanced"},
+    )
+
+    assert created.status_code == 200
+    data = created.json()
+    assert data["team_source"] == "learned_template"
+    assert data["team_adjustments"]
+    assert any(adjustment["title"] == "Added Protect safety" for adjustment in data["team_adjustments"])
+
+    await client.delete(f"/api/pokemon/showdown/sessions/{data['session_id']}")
+
+
+@pytest.mark.asyncio
+async def test_showdown_session_create_accepts_auto_login_without_leaking_password(setup_db, client):
     created = await client.post(
         "/api/pokemon/showdown/sessions",
         json={
@@ -346,7 +373,7 @@ async def test_showdown_session_create_can_auto_research_team(setup_db, monkeypa
 
 
 @pytest.mark.asyncio
-async def test_showdown_session_search_endpoint_records_commands(client):
+async def test_showdown_session_search_endpoint_records_commands(setup_db, client):
     created = await client.post(
         "/api/pokemon/showdown/sessions",
         json={"username": "Bot", "team": [{"species": "Incineroar", "ability": "Intimidate", "moves": ["Fake Out"]}]},
@@ -394,7 +421,7 @@ async def test_showdown_session_knowledge_endpoint_attaches_context(setup_db, mo
 
 
 @pytest.mark.asyncio
-async def test_showdown_session_cancel_search_endpoint_records_command(client):
+async def test_showdown_session_cancel_search_endpoint_records_command(setup_db, client):
     created = await client.post(
         "/api/pokemon/showdown/sessions",
         json={"username": "Bot", "team": None, "auto_search": True},
@@ -472,7 +499,7 @@ async def test_showdown_session_auto_accepts_matching_challenge(setup_db, client
 
 
 @pytest.mark.asyncio
-async def test_showdown_session_accept_challenge_requires_challenger(client):
+async def test_showdown_session_accept_challenge_requires_challenger(setup_db, client):
     created = await client.post("/api/pokemon/showdown/sessions", json={"username": "Bot", "team": None})
     session_id = created.json()["session_id"]
 
@@ -485,7 +512,7 @@ async def test_showdown_session_accept_challenge_requires_challenger(client):
 
 
 @pytest.mark.asyncio
-async def test_showdown_session_flush_requires_connected_socket(client):
+async def test_showdown_session_flush_requires_connected_socket(setup_db, client):
     created = await client.post("/api/pokemon/showdown/sessions", json={"username": "Bot", "team": None, "auto_search": True})
     session_id = created.json()["session_id"]
 

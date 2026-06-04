@@ -538,6 +538,7 @@ export default function PokemonBattlePage() {
     ['Phase 7', '学习档案输出训练重点，将真实结果反哺下一局策略'],
     ['Phase 8', '同步真实房间元数据，跟踪对手、规则、分级和结果'],
     ['Phase 9', '一键自动驾驶：连接、搜索、收发消息和自动决策'],
+    ['Phase 10', '学习档案反哺自动建队，低收益时自动保守化调整'],
   ];
 
   return (
@@ -1013,6 +1014,17 @@ export default function PokemonBattlePage() {
                       {showdownSession.team_reason}
                     </div>
                   )}
+                  {showdownSession.team_adjustments?.length ? (
+                    <div className="space-y-2">
+                      <div className="text-[10px] font-semibold uppercase text-gray-500">Team adaptation</div>
+                      {showdownSession.team_adjustments.map((adjustment: any) => (
+                        <div key={`${adjustment.type}-${adjustment.title}`} className="rounded border border-emerald-500/30 bg-emerald-500/10 p-2">
+                          <div className="break-words text-[11px] font-medium text-emerald-100">{adjustment.title}</div>
+                          <div className="mt-1 break-words text-[10px] leading-4 text-gray-400">{adjustment.detail}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                   {showdownSession.mode_recommendation?.reason && (
                     <div className="rounded bg-black/30 p-2 text-gray-500">
                       {showdownSession.mode_recommendation.reason}

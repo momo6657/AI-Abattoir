@@ -53,6 +53,7 @@ class ShowdownSessionState:
     team_source: str = "none"
     team_reason: str = ""
     team_species: list[str] = field(default_factory=list)
+    team_adjustments: list[dict[str, str]] = field(default_factory=list)
     command_log: list[str] = field(default_factory=list)
     sent_log: list[str] = field(default_factory=list)
     event_log: list[dict[str, Any]] = field(default_factory=list)
@@ -67,6 +68,7 @@ class ShowdownSessionState:
     auto_accept_challenges: bool = False
     auto_research_team: bool = False
     accepted_challenges: list[str] = field(default_factory=list)
+    learning_profile: dict[str, Any] = field(default_factory=dict)
 
     def touch(self) -> None:
         self.updated_at = datetime.now(timezone.utc)
@@ -119,6 +121,7 @@ class ShowdownSessionState:
             "team_source": self.team_source,
             "team_reason": self.team_reason,
             "team_species": self.team_species,
+            "team_adjustments": self.team_adjustments,
             "team_preview": self._team_preview(),
             "has_team": self.team is not None,
             "auto_login": self.auto_login,
@@ -171,6 +174,7 @@ class PokemonShowdownSessionService:
         auto_accept_challenges: bool = False,
         auto_research_team: bool = False,
         auto_search: bool = False,
+        learning_profile: dict[str, Any] | None = None,
         connector: PokemonShowdownConnector | None = None,
     ) -> ShowdownSessionState:
         session_id = uuid4().hex
@@ -201,6 +205,7 @@ class PokemonShowdownSessionService:
             auto_login=auto_login,
             auto_accept_challenges=auto_accept_challenges,
             auto_research_team=auto_research_team,
+            learning_profile=learning_profile or {},
         )
         self._ensure_team(state)
         if auto_search:
@@ -541,13 +546,18 @@ class PokemonShowdownSessionService:
     def _ensure_team(self, state: ShowdownSessionState) -> None:
         if state.team is not None or not state.requires_team:
             return
-        generated = pokemon_showdown_team_factory.generate(state.battle_format, mode=state.mode)
+        generated = pokemon_showdown_team_factory.generate(
+            state.battle_format,
+            mode=state.mode,
+            learning_profile=state.learning_profile,
+        )
         if not generated:
             return
         state.team = generated.team
         state.team_source = generated.source
         state.team_reason = generated.reason
         state.team_species = generated.species()
+        state.team_adjustments = generated.adjustments
 
     def _prepare_team(
         self,

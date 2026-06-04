@@ -526,7 +526,7 @@ async def plan_showdown_decision(payload: ShowdownDecisionRequest):
 async def create_showdown_session(payload: ShowdownSessionCreateRequest, db: AsyncSession = Depends(get_db)):
     """Create an autonomous Pokemon Showdown session state machine."""
     try:
-        resolved_mode, mode_source, mode_recommendation = await _resolve_showdown_mode(
+        resolved_mode, mode_source, mode_recommendation, learning_profile = await _resolve_showdown_mode(
             db,
             username=payload.username,
             battle_format=payload.battle_format,
@@ -548,6 +548,7 @@ async def create_showdown_session(payload: ShowdownSessionCreateRequest, db: Asy
         auto_accept_challenges=payload.auto_accept_challenges,
         auto_research_team=payload.auto_research_team,
         auto_search=payload.auto_search,
+        learning_profile=learning_profile,
     )
     if payload.auto_research_team and session.team_species:
         context = await pokemon_knowledge_service.search_team(
@@ -853,15 +854,15 @@ async def _resolve_showdown_mode(
     username: str,
     battle_format: str,
     requested_mode: str,
-) -> tuple[str, str, dict]:
+) -> tuple[str, str, dict, dict]:
     allowed_modes = {"balanced", "aggressive", "defensive"}
+    format_info = pokemon_format_catalog.get(battle_format)
+    profile = await pokemon_showdown_learning_store.profile(db, username=username, battle_format=format_info.id)
     if requested_mode in allowed_modes:
-        return requested_mode, "manual", {}
+        return requested_mode, "manual", {}, profile
     if requested_mode != "auto":
         raise ValueError(f"Unsupported Showdown mode: {requested_mode}")
 
-    format_info = pokemon_format_catalog.get(battle_format)
-    profile = await pokemon_showdown_learning_store.profile(db, username=username, battle_format=format_info.id)
     recommendation = profile.get("recommendation") or {}
     recommended_mode = recommendation.get("mode")
     if recommended_mode not in allowed_modes:
@@ -870,7 +871,7 @@ async def _resolve_showdown_mode(
             "mode": recommended_mode,
             "reason": "No reliable learned mode was available, so balanced was selected.",
         }
-    return recommended_mode, "learning_profile", recommendation
+    return recommended_mode, "learning_profile", recommendation, profile
 
 
 # Data loading endpoint

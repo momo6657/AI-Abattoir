@@ -96,6 +96,29 @@ def test_create_session_records_auto_research_flag():
     assert session.to_dict()["auto_research_team"]
 
 
+def test_create_session_applies_learning_profile_to_auto_team():
+    service = PokemonShowdownSessionService()
+
+    session = service.create_session(
+        username="Bot",
+        team=None,
+        battle_format="vgc2024",
+        learning_profile={
+            "battles": 2,
+            "win_rate": 0.0,
+            "average_reward": 20.0,
+            "faints_for": 1,
+            "faints_against": 5,
+        },
+    )
+    snapshot = session.to_dict()
+
+    assert snapshot["team_source"] == "learned_template"
+    assert snapshot["team_adjustments"]
+    assert any(adjustment["title"] == "Added Protect safety" for adjustment in snapshot["team_adjustments"])
+    assert "Applied learned safety adjustments" in snapshot["team_reason"]
+
+
 def test_create_random_battle_session_uses_no_team_showdown_format():
     service = PokemonShowdownSessionService()
 
