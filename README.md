@@ -135,6 +135,7 @@ Abattoir（竞技场）是一个让 AI 展现真实能力的地方。在这里�
 - Showdown 战略首发：队伍预览阶段会按队伍招式、特性、模式、知识上下文和学习档案给首发排序
 - Showdown 智能换人：强制换人会按 HP、队伍角色、学习档案和对手预览评分后排换入位
 - Showdown 异常兜底：活动回合无可用招式且未被 trapped 时，会优先评分后排并换人，无法换人才使用 default
+- Showdown 请求去重：会话按 battle room 与 `rqid` 记录已响应请求，避免 websocket 重复推送造成重复 `/choose`
 - Showdown 多格式目标策略：单打/随机战会省略普通招式 target 位，双打/VGC 会保留精确目标位，降低跨格式指令不合法风险
 - Showdown 战术评分：对合法招式按伤害、功能招、铺场、模式偏好和自爆风险打分，并在前端显示选择依据
 - Showdown 自动会话：可创建会话、连接 websocket、记录搜索/房间/胜负状态，并对 PS payload 自动产生命令流
@@ -783,6 +784,7 @@ alembic history
 - [x] 宝可梦 Showdown poke 队伍侦察与对手预览首发评分
 - [x] 宝可梦 Showdown 强制换人后排评分
 - [x] 宝可梦 Showdown 无可用招式 fallback 换人
+- [x] 宝可梦 Showdown request/rqid 去重防重复出招
 - [ ] Pokemon Showdown 真实登录和天梯实战
 - [ ] 宝可梦完整多格式战斗策略（单打、随机战、不同世代规则）
 - [ ] 宝可梦强化学习闭环与长期策略评估

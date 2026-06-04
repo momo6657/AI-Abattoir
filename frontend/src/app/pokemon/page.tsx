@@ -549,6 +549,7 @@ export default function PokemonBattlePage() {
     ['Phase 15', '同步双方 poke 预览，对手阵容反哺首发评分'],
     ['Phase 16', '强制换人按 HP、角色和对手预览评分后排'],
     ['Phase 17', '无可用招式且未被 trapped 时自动评分换人'],
+    ['Phase 18', '按 room/rqid 去重，避免重复 websocket 请求重复出招'],
   ];
 
   return (
@@ -1047,6 +1048,8 @@ export default function PokemonBattlePage() {
                     <Metric label="Events" value={showdownSession.event_count ?? 0} compact />
                     <Metric label="Challenges" value={showdownSession.challenge_count ?? 0} compact />
                     <Metric label="Rooms" value={showdownSession.room_count ?? 0} compact />
+                    <Metric label="Handled" value={showdownSession.handled_request_count ?? 0} compact />
+                    <Metric label="Duplicates" value={showdownSession.duplicate_request_count ?? 0} compact />
                   </div>
                   {showdownChallengeUsers.length ? (
                     <div className="rounded bg-black/30 p-2 text-gray-500">

@@ -58,6 +58,8 @@ class ShowdownSessionState:
     sent_log: list[str] = field(default_factory=list)
     event_log: list[dict[str, Any]] = field(default_factory=list)
     decisions: list[dict[str, Any]] = field(default_factory=list)
+    handled_requests: dict[str, str | None] = field(default_factory=dict)
+    duplicate_request_count: int = 0
     analysis: dict[str, Any] = field(default_factory=dict)
     result: dict[str, Any] | None = None
     last_error: str | None = None
@@ -136,6 +138,8 @@ class ShowdownSessionState:
             "sent_count": len(self.sent_log),
             "event_count": len(self.event_log),
             "decision_count": len(self.decisions),
+            "handled_request_count": len(self.handled_requests),
+            "duplicate_request_count": self.duplicate_request_count,
             "room_count": len(self.rooms),
             "last_command": self.command_log[-1] if self.command_log else None,
             "last_sent": self.sent_log[-1] if self.sent_log else None,
@@ -256,21 +260,37 @@ class PokemonShowdownSessionService:
 
         battle_request = connector.parse_battle_request(events)
         if auto_respond and battle_request and battle_request.needs_choice:
-            plan = agent.plan(
-                battle_request,
-                mode=state.mode,
-                team_size=team_size or state.team_size,
-                active_pokemon=state.active_pokemon,
-                allow_tera=allow_tera,
-                knowledge_context=state.knowledge_context or None,
-                learning_profile=state.learning_profile or None,
-                team_context=state.team if isinstance(state.team, list) else None,
-                battlefield_context=self._battlefield_context(state, battle_request.room_id),
-            )
-            if plan.command:
-                commands.append(plan.command)
+            request_key = self._request_key(battle_request.room_id, battle_request.request_id)
+            if request_key and request_key in state.handled_requests:
+                state.duplicate_request_count += 1
+                plan = ShowdownChoicePlan(
+                    room_id=battle_request.room_id,
+                    command=None,
+                    choices=[],
+                    request_id=battle_request.request_id,
+                    decision_type="duplicate_request",
+                    reason=f"Request {request_key} was already answered; no duplicate command was queued.",
+                    needs_choice=False,
+                )
                 state.status = "responded"
-            state.decisions.append(plan.to_dict())
+            else:
+                plan = agent.plan(
+                    battle_request,
+                    mode=state.mode,
+                    team_size=team_size or state.team_size,
+                    active_pokemon=state.active_pokemon,
+                    allow_tera=allow_tera,
+                    knowledge_context=state.knowledge_context or None,
+                    learning_profile=state.learning_profile or None,
+                    team_context=state.team if isinstance(state.team, list) else None,
+                    battlefield_context=self._battlefield_context(state, battle_request.room_id),
+                )
+                if plan.command:
+                    commands.append(plan.command)
+                    state.status = "responded"
+                if request_key and plan.command:
+                    state.handled_requests[request_key] = plan.command
+                state.decisions.append(plan.to_dict())
 
         search = connector.parse_search_update(events)
         if search is not None:
@@ -610,6 +630,11 @@ class PokemonShowdownSessionService:
         if state is None:
             raise KeyError(f"Pokemon Showdown session not found: {session_id}")
         return state
+
+    def _request_key(self, room_id: str, request_id: int | None) -> str | None:
+        if not room_id or request_id is None:
+            return None
+        return f"{room_id}:{request_id}"
 
     def _apply_event_state(self, state: ShowdownSessionState, event: ShowdownEvent) -> None:
         room = self._sync_room_event(state, event)

@@ -157,6 +157,34 @@ def test_process_payload_logs_in_and_auto_responds_to_battle_request():
     assert result["decision"]["decision_type"] == "move"
 
 
+def test_process_payload_deduplicates_repeated_showdown_request_id():
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None)
+    request = {
+        "rqid": 51,
+        "active": [
+            {
+                "moves": [
+                    {"id": "protect", "target": "self", "pp": 16},
+                    {"id": "moonblast", "target": "normal", "basePower": 95, "pp": 15},
+                ]
+            }
+        ],
+    }
+    payload = f">battle-gen9vgc-51\n|request|{json.dumps(request)}"
+
+    first = service.process_payload(session.session_id, payload)
+    repeated = service.process_payload(session.session_id, payload)
+
+    assert first["commands"] == ["battle-gen9vgc-51|/choose move 2 -1|51"]
+    assert repeated["commands"] == []
+    assert repeated["decision"]["decision_type"] == "duplicate_request"
+    assert repeated["session"]["handled_request_count"] == 1
+    assert repeated["session"]["duplicate_request_count"] == 1
+    assert repeated["session"]["command_log"] == ["battle-gen9vgc-51|/choose move 2 -1|51"]
+    assert repeated["session"]["decision_count"] == 1
+
+
 def test_process_payload_scores_team_preview_from_session_team():
     service = PokemonShowdownSessionService()
     session = service.create_session(
