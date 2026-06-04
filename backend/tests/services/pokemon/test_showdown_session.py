@@ -205,6 +205,47 @@ def test_process_payload_scores_team_preview_from_session_team():
     assert any(detail["learning_used"] for detail in result["decision"]["choice_details"])
 
 
+def test_process_payload_syncs_poke_preview_and_uses_it_for_leads():
+    service = PokemonShowdownSessionService()
+    session = service.create_session(
+        username="Bot",
+        battle_format="vgc2024",
+        team=[
+            {"species": "Tornadus", "moves": ["Tailwind", "Taunt"]},
+            {"species": "Flutter Mane", "moves": ["Moonblast"]},
+        ],
+    )
+    request = {
+        "rqid": 26,
+        "teamPreview": True,
+        "maxTeamSize": 1,
+        "side": {
+            "pokemon": [
+                {"ident": "p1: Tornadus", "condition": "100/100"},
+                {"ident": "p1: Flutter Mane", "condition": "100/100"},
+            ]
+        },
+    }
+
+    result = service.process_payload(
+        session.session_id,
+        ">battle-gen9vgc-15\n"
+        "|player|p1|Bot\n"
+        "|player|p2|Rival\n"
+        "|poke|p2|Miraidon, L50|\n"
+        "|poke|p2|Urshifu, L50|\n"
+        f"|request|{json.dumps(request)}",
+        team_size=1,
+    )
+    room = result["session"]["room_details"]["battle-gen9vgc-15"]
+
+    assert result["commands"] == ["battle-gen9vgc-15|/choose team 1|26"]
+    assert room["preview"]["p2"][0]["species"] == "Miraidon"
+    assert room["preview"]["p2"][1]["details"] == "Urshifu, L50"
+    assert result["decision"]["choice_details"][0]["pokemon"] == "Tornadus"
+    assert result["decision"]["choice_details"][0]["opponent_preview_used"]
+
+
 def test_process_payload_targets_weakened_opponent_from_room_state():
     service = PokemonShowdownSessionService()
     session = service.create_session(username="Bot", team=None)

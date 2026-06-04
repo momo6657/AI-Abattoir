@@ -672,6 +672,8 @@ class PokemonShowdownSessionService:
             rule = event.args[0]
             if rule not in room["rules"]:
                 room["rules"].append(rule)
+        elif event.event_type == "poke":
+            self._sync_room_preview(room, event.args)
         elif event.event_type == "player":
             self._sync_room_player(state, room, event.args)
         elif event.event_type == "request" and event.args:
@@ -754,12 +756,15 @@ class PokemonShowdownSessionService:
             opponent_side = "p2" if agent_side == "p1" else "p1"
         opponents = self._battlefield_side_slots(sides.get(opponent_side or "") or {})
         allies = self._battlefield_side_slots(sides.get(agent_side or "") or {})
+        preview = room.get("preview") or {}
         return {
             "room_id": room_id,
             "agent_side": agent_side,
             "opponent_side": opponent_side,
             "allies": allies,
             "opponents": opponents,
+            "ally_preview": list(preview.get(agent_side or "") or []),
+            "opponent_preview": list(preview.get(opponent_side or "") or []),
         }
 
     def _battlefield_side_slots(self, side: dict[str, Any]) -> list[dict[str, Any]]:
@@ -800,6 +805,24 @@ class PokemonShowdownSessionService:
     def _condition_is_fainted(self, condition: str) -> bool:
         condition = str(condition or "").lower()
         return " fnt" in condition or condition == "0 fnt" or condition.endswith("/0")
+
+    def _sync_room_preview(self, room: dict[str, Any], args: list[str]) -> None:
+        side = str(args[0]) if len(args) > 0 else ""
+        details = str(args[1]) if len(args) > 1 else ""
+        if not side or not details:
+            return
+        species = details.split(",", 1)[0].strip() or details
+        item_hint = str(args[2]) if len(args) > 2 and args[2] else None
+        entry = {
+            "side": side,
+            "species": species,
+            "details": details,
+            "item_hint": item_hint,
+        }
+        preview = room.setdefault("preview", {}).setdefault(side, [])
+        if any(existing.get("details") == details for existing in preview if isinstance(existing, dict)):
+            return
+        preview.append(entry)
 
     def _sync_room_player(self, state: ShowdownSessionState, room: dict[str, Any], args: list[str]) -> None:
         side = str(args[0]) if len(args) > 0 else ""

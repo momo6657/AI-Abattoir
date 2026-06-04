@@ -77,6 +77,41 @@ def test_plan_team_preview_scores_leads_from_team_context_and_learning():
     assert any(detail["learning_used"] for detail in plan.choice_details)
 
 
+def test_plan_team_preview_uses_opponent_preview_context():
+    agent = PokemonShowdownBattleAgent()
+    payload = {
+        "rqid": 25,
+        "teamPreview": True,
+        "maxTeamSize": 1,
+        "side": {
+            "pokemon": [
+                {"ident": "p1: Tornadus", "condition": "100/100"},
+                {"ident": "p1: Flutter Mane", "condition": "100/100"},
+            ]
+        },
+    }
+
+    plan = agent.plan_from_raw_request(
+        payload,
+        "battle-gen9vgc-14",
+        team_context=[
+            {"species": "Tornadus", "moves": ["Tailwind", "Taunt"]},
+            {"species": "Flutter Mane", "moves": ["Moonblast"]},
+        ],
+        battlefield_context={
+            "opponent_preview": [
+                {"species": "Miraidon", "details": "Miraidon, L50"},
+                {"species": "Urshifu", "details": "Urshifu, L50"},
+            ]
+        },
+    )
+
+    assert plan.command == "battle-gen9vgc-14|/choose team 1|25"
+    assert plan.choice_details[0]["pokemon"] == "Tornadus"
+    assert plan.choice_details[0]["opponent_preview_used"]
+    assert "opponent preview" in plan.choice_details[0]["reason"]
+
+
 def test_plan_force_switch_chooses_healthy_bench_and_passes_unforced_slot():
     agent = PokemonShowdownBattleAgent()
     payload = {

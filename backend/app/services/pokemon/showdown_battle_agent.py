@@ -150,6 +150,7 @@ class PokemonShowdownBattleAgent:
                 knowledge_context=knowledge_context,
                 learning_profile=learning_profile,
                 team_context=team_context,
+                battlefield_context=battlefield_context,
             )
         if request.force_switch:
             return self._plan_force_switch(request)
@@ -183,6 +184,7 @@ class PokemonShowdownBattleAgent:
         knowledge_context: dict[str, Any] | None,
         learning_profile: dict[str, Any] | None,
         team_context: list[dict[str, Any]] | None,
+        battlefield_context: dict[str, Any] | None,
     ) -> ShowdownChoicePlan:
         pokemon = request.side.get("pokemon") or []
         requested_size = team_size or request.max_team_size or min(4, len(pokemon)) or 1
@@ -194,6 +196,7 @@ class PokemonShowdownBattleAgent:
                 knowledge_context=knowledge_context,
                 learning_profile=learning_profile,
                 team_context=team_context,
+                battlefield_context=battlefield_context,
             )
             for index, member in enumerate(pokemon)
             if not self._is_fainted(member)
@@ -215,7 +218,9 @@ class PokemonShowdownBattleAgent:
             for slot in slots
         ]
         reason = f"Selected {len(slots)} healthy team slots for preview."
-        if any(detail.get("strategy_used") for detail in details):
+        if any(detail.get("opponent_preview_used") for detail in details):
+            reason = f"{reason} Lead order was scored from team roles, mode, opponent preview, knowledge, and learning profile."
+        elif any(detail.get("strategy_used") for detail in details):
             reason = f"{reason} Lead order was scored from team roles, mode, knowledge, and learning profile."
         return ShowdownChoicePlan(
             room_id=request.room_id,
@@ -237,6 +242,7 @@ class PokemonShowdownBattleAgent:
         knowledge_context: dict[str, Any] | None,
         learning_profile: dict[str, Any] | None,
         team_context: list[dict[str, Any]] | None,
+        battlefield_context: dict[str, Any] | None,
     ) -> dict[str, Any]:
         pokemon_name = self._display_pokemon(member)
         team_member = self._team_member_for_slot(slot, pokemon_name, team_context)
@@ -246,6 +252,7 @@ class PokemonShowdownBattleAgent:
             mode=mode,
             knowledge_context=knowledge_context,
             learning_profile=learning_profile,
+            battlefield_context=battlefield_context,
         )
         return {
             "slot": slot,
@@ -256,6 +263,7 @@ class PokemonShowdownBattleAgent:
             "strategy_used": bool(reasons),
             "knowledge_used": any("knowledge context" in reason for reason in reasons),
             "learning_used": any("learning profile" in reason for reason in reasons),
+            "opponent_preview_used": any("opponent preview" in reason for reason in reasons),
         }
 
     def _score_preview_candidate(
@@ -266,6 +274,7 @@ class PokemonShowdownBattleAgent:
         mode: str,
         knowledge_context: dict[str, Any] | None,
         learning_profile: dict[str, Any] | None,
+        battlefield_context: dict[str, Any] | None,
     ) -> tuple[float, list[str]]:
         score = 50.0
         reasons: list[str] = []
@@ -301,6 +310,10 @@ class PokemonShowdownBattleAgent:
             if ability == "intimidate" or item in {"sitrusberry", "focussash"}:
                 score += 6
                 reasons.append("learning profile favors stable lead resources")
+        opponent_bonus, opponent_reason = self._opponent_preview_bonus(moves, ability, battlefield_context)
+        if opponent_bonus:
+            score += opponent_bonus
+            reasons.append(opponent_reason)
         knowledge_bonus, knowledge_reason = self._knowledge_preview_bonus(pokemon_name, knowledge_context)
         if knowledge_bonus:
             score += knowledge_bonus
@@ -336,6 +349,50 @@ class PokemonShowdownBattleAgent:
         if not knowledge_context or self._knowledge_member_for_pokemon(pokemon_name, knowledge_context) is None:
             return 0.0, ""
         return 8.0, "knowledge context is available for this lead"
+
+    def _opponent_preview_bonus(
+        self,
+        moves: set[str],
+        ability: str,
+        battlefield_context: dict[str, Any] | None,
+    ) -> tuple[float, str]:
+        opponent_ids = self._opponent_preview_ids(battlefield_context)
+        if not opponent_ids:
+            return 0.0, ""
+        high_pressure = bool(opponent_ids & {
+            "calyrexshadow",
+            "calyrexice",
+            "miraidon",
+            "koraidon",
+            "fluttermane",
+            "urshifu",
+            "chienpao",
+            "ogerponwellspring",
+        })
+        physical_pressure = bool(opponent_ids & {
+            "koraidon",
+            "urshifu",
+            "chienpao",
+            "rillaboom",
+            "incineroar",
+            "landorustherian",
+        })
+        if moves & {"fakeout", "taunt", "spore", "sleeppowder"}:
+            return 14.0 if high_pressure else 8.0, "opponent preview favors immediate disruption"
+        if moves & {"tailwind", "trickroom"}:
+            return 10.0 if high_pressure else 6.0, "opponent preview raises speed-control value"
+        if ability == "intimidate" and physical_pressure:
+            return 8.0, "opponent preview shows physical pressure for Intimidate"
+        return 0.0, ""
+
+    def _opponent_preview_ids(self, battlefield_context: dict[str, Any] | None) -> set[str]:
+        if not battlefield_context:
+            return set()
+        return {
+            self.connector.to_id(entry.get("species") or entry.get("details"))
+            for entry in battlefield_context.get("opponent_preview") or []
+            if isinstance(entry, dict) and (entry.get("species") or entry.get("details"))
+        }
 
     def _plan_force_switch(self, request: ShowdownBattleRequest) -> ShowdownChoicePlan:
         pokemon = request.side.get("pokemon") or []

@@ -546,6 +546,7 @@ export default function PokemonBattlePage() {
     ['Phase 12', '战后学习档案即时回写会话，下一步策略直接使用新样本'],
     ['Phase 13', '队伍预览战略首发评分，按角色、知识和学习档案排序'],
     ['Phase 14', '同步战场在场与 HP，双打目标优先锁定低血量对手'],
+    ['Phase 15', '同步双方 poke 预览，对手阵容反哺首发评分'],
   ];
 
   return (
@@ -1081,6 +1082,14 @@ export default function PokemonBattlePage() {
                                     .map((slot: any) => `${slot.pokemon || 'unknown'}${slot.condition ? ` ${slot.condition}` : ''}`)
                                     .join(' / ');
                                   return active ? `${side}: ${active}` : null;
+                                }).filter(Boolean).join(' · ')}
+                              </div>
+                            ) : null}
+                            {room.preview ? (
+                              <div className="mt-1 break-words text-[11px] text-gray-500">
+                                Preview: {Object.entries(room.preview).map(([side, entries]: any) => {
+                                  const species = (entries || []).map((entry: any) => entry.species).filter(Boolean).slice(0, 6).join(' / ');
+                                  return species ? `${side}: ${species}` : null;
                                 }).filter(Boolean).join(' · ')}
                               </div>
                             ) : null}
