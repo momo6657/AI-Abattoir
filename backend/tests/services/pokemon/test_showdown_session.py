@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from app.services.pokemon.showdown_connector import PokemonShowdownConnector
+from app.services.pokemon.showdown_connector import PokemonShowdownConnector, ShowdownConnectionError
 from app.services.pokemon.showdown_session import PokemonShowdownSessionService
 
 
@@ -806,6 +806,35 @@ async def test_run_until_stops_on_finished_and_close_marks_closed():
     assert result["session"]["result"] == {"type": "win", "winner": "Bot"}
     assert connector.closed
     assert closed["status"] == "finished"
+
+
+@pytest.mark.asyncio
+async def test_run_until_records_receive_error_step_by_default():
+    connector = FakeShowdownConnector([])
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None, connector=connector)
+
+    result = await service.run_until(session.session_id, max_messages=3)
+
+    assert len(result["steps"]) == 1
+    assert result["steps"][0]["commands"] == []
+    assert result["steps"][0]["sent"] == []
+    assert "Pokemon Showdown receive failed" in result["steps"][0]["error"]
+    assert result["session"]["status"] == "error"
+    assert "No fake Showdown payload" in result["session"]["last_error"]
+
+
+@pytest.mark.asyncio
+async def test_run_until_can_raise_receive_error_when_configured():
+    connector = FakeShowdownConnector([])
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None, connector=connector)
+
+    with pytest.raises(ShowdownConnectionError):
+        await service.run_until(session.session_id, max_messages=3, stop_on_error=False)
+
+    assert session.status == "error"
+    assert "Pokemon Showdown receive failed" in (session.last_error or "")
 
 
 @pytest.mark.asyncio

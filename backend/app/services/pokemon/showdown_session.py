@@ -349,7 +349,13 @@ class PokemonShowdownSessionService:
     ) -> dict[str, Any]:
         state = self._require_session(session_id)
         connector = self.connectors[session_id]
-        payload = await connector.receive()
+        try:
+            payload = await connector.receive()
+        except Exception as exc:
+            state.last_error = f"Pokemon Showdown receive failed: {exc}"
+            state.status = "error"
+            state.touch()
+            raise ShowdownConnectionError(state.last_error) from exc
         await self._prepare_login_assertion_from_payload(state, connector, payload)
         result = self.process_payload(
             session_id,
@@ -373,16 +379,32 @@ class PokemonShowdownSessionService:
         send_commands: bool = True,
         team_size: int | None = None,
         allow_tera: bool = True,
+        stop_on_error: bool = True,
     ) -> dict[str, Any]:
         results = []
         for _ in range(max_messages):
-            result = await self.run_once(
-                session_id,
-                auto_respond=auto_respond,
-                send_commands=send_commands,
-                team_size=team_size,
-                allow_tera=allow_tera,
-            )
+            try:
+                result = await self.run_once(
+                    session_id,
+                    auto_respond=auto_respond,
+                    send_commands=send_commands,
+                    team_size=team_size,
+                    allow_tera=allow_tera,
+                )
+            except ShowdownConnectionError as exc:
+                state = self._require_session(session_id)
+                state.last_error = str(exc)
+                state.status = "error"
+                state.touch()
+                if not stop_on_error:
+                    raise
+                results.append({
+                    "session": state.to_dict(),
+                    "commands": [],
+                    "sent": [],
+                    "error": str(exc),
+                })
+                break
             results.append(result)
             state = self._require_session(session_id)
             if stop_on_finished and state.status == "finished":
@@ -401,6 +423,7 @@ class PokemonShowdownSessionService:
         allow_tera: bool = True,
         auto_search: bool = True,
         close_on_finish: bool = False,
+        stop_on_error: bool = True,
     ) -> dict[str, Any]:
         state = self._require_session(session_id)
         connector = self.connectors[session_id]
@@ -431,6 +454,7 @@ class PokemonShowdownSessionService:
             send_commands=send_commands,
             team_size=team_size,
             allow_tera=allow_tera,
+            stop_on_error=stop_on_error,
         )
         if close_on_finish and self._require_session(session_id).status == "finished":
             await self.close_session(session_id)

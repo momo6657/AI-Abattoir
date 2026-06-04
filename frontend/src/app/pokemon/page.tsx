@@ -550,6 +550,7 @@ export default function PokemonBattlePage() {
     ['Phase 16', '强制换人按 HP、角色和对手预览评分后排'],
     ['Phase 17', '无可用招式且未被 trapped 时自动评分换人'],
     ['Phase 18', '按 room/rqid 去重，避免重复 websocket 请求重复出招'],
+    ['Phase 19', '自动驾驶接收失败时记录错误并返回可见步骤'],
   ];
 
   return (
@@ -1041,6 +1042,11 @@ export default function PokemonBattlePage() {
                       {showdownSession.mode_recommendation.reason}
                     </div>
                   )}
+                  {showdownSession.last_error ? (
+                    <div className="break-words rounded border border-red-500/30 bg-red-500/10 p-2 text-red-100">
+                      {showdownSession.last_error}
+                    </div>
+                  ) : null}
                   <div className="break-all font-mono text-gray-500">{showdownSession.session_id}</div>
                   <div className="grid grid-cols-2 gap-2 pt-1">
                     <Metric label="Pending" value={showdownSession.pending_command_count ?? 0} compact />

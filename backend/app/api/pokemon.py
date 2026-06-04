@@ -771,6 +771,9 @@ async def run_showdown_session_until(
             stop_on_finished=payload.stop_on_finished,
             auto_respond=payload.auto_respond,
             send_commands=payload.send_commands,
+            team_size=payload.team_size,
+            allow_tera=payload.allow_tera,
+            stop_on_error=payload.stop_on_error,
         )
         result["learning_profile"] = await _persist_showdown_learning(db, result)
         return result
@@ -798,6 +801,7 @@ async def autopilot_showdown_session(
             allow_tera=payload.allow_tera,
             auto_search=payload.auto_search,
             close_on_finish=payload.close_on_finish,
+            stop_on_error=payload.stop_on_error,
         )
         result["learning_profile"] = await _persist_showdown_learning(db, result)
         return result

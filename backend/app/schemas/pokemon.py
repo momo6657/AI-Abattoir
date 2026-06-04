@@ -192,6 +192,7 @@ class ShowdownSessionRunRequest(BaseModel):
     allow_tera: bool = True
     max_messages: int = 50
     stop_on_finished: bool = True
+    stop_on_error: bool = True
 
 
 class ShowdownSessionAutopilotRequest(ShowdownSessionRunRequest):
