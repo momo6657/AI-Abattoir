@@ -508,6 +508,7 @@ export default function PokemonBattlePage() {
     ['Phase 4', '多格式目录、Showdown 队伍上传、会话运行器和自动选择命令'],
     ['Phase 5', '按格式选择目标策略，单打省略 target，双打保留精确目标'],
     ['Phase 6', '自动接受同格式挑战，并在建队后自动研究整队知识'],
+    ['Phase 7', '学习档案输出训练重点，将真实结果反哺下一局策略'],
   ];
 
   return (
@@ -1017,6 +1018,23 @@ export default function PokemonBattlePage() {
                       <div className="mt-2 text-gray-500">
                         Suggested mode: <span className="text-gray-200">{showdownLearning.recommendation?.mode || 'balanced'}</span>
                       </div>
+                      {showdownLearning.training_focus?.length ? (
+                        <div className="mt-3 space-y-2">
+                          {showdownLearning.training_focus.map((focus: any) => {
+                            const tone = focus.level === 'success'
+                              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100'
+                              : focus.level === 'warning'
+                                ? 'border-amber-500/30 bg-amber-500/10 text-amber-100'
+                                : 'border-sky-500/30 bg-sky-500/10 text-sky-100';
+                            return (
+                              <div key={`${focus.level}-${focus.title}`} className={`rounded border px-2 py-1.5 ${tone}`}>
+                                <div className="break-words text-[11px] font-medium">{focus.title}</div>
+                                <div className="mt-1 break-words text-[10px] leading-4 text-gray-400">{focus.detail}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : null}
                     </div>
                   )}
                 </div>

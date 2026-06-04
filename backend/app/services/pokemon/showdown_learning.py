@@ -110,6 +110,7 @@ class ShowdownLearningProfile:
             "modes": mode_summaries,
             "decision_types": decision_summaries,
             "recommendation": self._recommendation(mode_summaries),
+            "training_focus": self._training_focus(mode_summaries, decision_summaries),
             "recent_sessions": self.recent_sessions,
         }
 
@@ -127,6 +128,97 @@ class ShowdownLearningProfile:
                 f"({stats['average_reward']:.1f}) across {stats['battles']} battle(s)."
             ),
         }
+
+    def _training_focus(
+        self,
+        mode_summaries: dict[str, dict[str, Any]],
+        decision_summaries: dict[str, dict[str, Any]],
+    ) -> list[dict[str, str]]:
+        if not self.battles:
+            return [
+                {
+                    "level": "info",
+                    "title": "Collect Showdown battle data",
+                    "detail": "Run completed Showdown battles so the agent can compare modes, rewards, and decision outcomes.",
+                }
+            ]
+
+        focus: list[dict[str, str]] = []
+        win_rate = self.wins / max(self.battles, 1)
+        average_reward = self.total_reward / max(self.battles, 1)
+
+        if win_rate < 0.5:
+            focus.append(
+                {
+                    "level": "warning",
+                    "title": "Stabilize match outcomes",
+                    "detail": "Win rate is below 50%; prefer safer positioning, protect turns, and knowledge-backed move choices.",
+                }
+            )
+        if self.total_faints_against > self.total_faints_for:
+            focus.append(
+                {
+                    "level": "warning",
+                    "title": "Reduce knockout deficit",
+                    "detail": "The agent is losing more Pokemon than it removes; review switch and defensive choices before laddering further.",
+                }
+            )
+        if average_reward < 50:
+            focus.append(
+                {
+                    "level": "warning",
+                    "title": "Improve reward baseline",
+                    "detail": "Average reward is low; run team research and compare battle modes before committing to long auto-runs.",
+                }
+            )
+
+        weakest_mode = self._weakest_mode(mode_summaries)
+        if weakest_mode:
+            focus.append(
+                {
+                    "level": "info",
+                    "title": f"Re-test {weakest_mode} mode",
+                    "detail": "This mode has the weakest observed reward; collect more samples or avoid it until team matchups improve.",
+                }
+            )
+
+        weakest_decision = self._weakest_decision(decision_summaries)
+        if weakest_decision:
+            focus.append(
+                {
+                    "level": "info",
+                    "title": f"Audit {weakest_decision} decisions",
+                    "detail": "This decision type has the lowest average reward contribution across recorded battles.",
+                }
+            )
+
+        if not focus:
+            focus.append(
+                {
+                    "level": "success",
+                    "title": "Maintain current training loop",
+                    "detail": "Current Showdown results are stable; continue bounded auto-runs and expand samples across formats.",
+                }
+            )
+        return focus[:5]
+
+    def _weakest_mode(self, mode_summaries: dict[str, dict[str, Any]]) -> str | None:
+        if len(mode_summaries) < 2:
+            return None
+        mode, stats = min(
+            mode_summaries.items(),
+            key=lambda item: (item[1]["average_reward"], item[1]["win_rate"], -item[1]["battles"]),
+        )
+        return mode if stats["average_reward"] < 50 else None
+
+    def _weakest_decision(self, decision_summaries: dict[str, dict[str, Any]]) -> str | None:
+        if not decision_summaries:
+            return None
+        decision_type, stats = min(
+            decision_summaries.items(),
+            key=lambda item: (item[1]["average_reward"], -item[1]["count"]),
+        )
+        return decision_type if stats["count"] >= 2 and stats["average_reward"] < 50 else None
 
 
 class PokemonShowdownLearningService:

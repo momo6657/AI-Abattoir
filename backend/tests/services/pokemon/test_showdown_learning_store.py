@@ -22,6 +22,7 @@ async def test_showdown_learning_store_persists_and_aggregates(setup_db, db):
     assert profile["wins"] == 1
     assert profile["average_reward"] == 130.0
     assert profile["recommendation"]["mode"] == "aggressive"
+    assert profile["training_focus"][0]["level"] == "success"
 
     duplicate = await pokemon_showdown_learning_store.record_session(
         db,
@@ -40,3 +41,33 @@ async def test_showdown_learning_store_persists_and_aggregates(setup_db, db):
     profiles = await pokemon_showdown_learning_store.list_profiles(db)
     assert len(profiles) == 1
     assert profiles[0]["username"] == "Bot"
+
+
+@pytest.mark.asyncio
+async def test_showdown_learning_store_returns_training_focus_for_weak_results(setup_db, db):
+    for index in range(2):
+        profile = await pokemon_showdown_learning_store.record_session(
+            db,
+            session_id=f"weak-session-{index}",
+            username="Bot",
+            battle_format="gen9ou",
+            showdown_format="gen9ou",
+            mode="aggressive" if index == 0 else "defensive",
+            analysis={
+                "status": "loss",
+                "reward": 20.0,
+                "turns": 4,
+                "faints_for": 1,
+                "faints_against": 3,
+            },
+            decisions=[{"decision_type": "move"}],
+        )
+
+    focus_titles = [item["title"] for item in profile["training_focus"]]
+
+    assert profile["losses"] == 2
+    assert profile["win_rate"] == 0.0
+    assert "Stabilize match outcomes" in focus_titles
+    assert "Reduce knockout deficit" in focus_titles
+    assert "Improve reward baseline" in focus_titles
+    assert "Audit move decisions" in focus_titles
