@@ -21,6 +21,7 @@ from app.schemas.pokemon import (
     PokemonTeamKnowledgeRequest,
     ShowdownCommandRequest,
     ShowdownDecisionRequest,
+    ShowdownSessionAutopilotRequest,
     ShowdownSessionCreateRequest,
     ShowdownSessionMessageRequest,
     ShowdownSessionRunRequest,
@@ -763,6 +764,33 @@ async def run_showdown_session_until(
             stop_on_finished=payload.stop_on_finished,
             auto_respond=payload.auto_respond,
             send_commands=payload.send_commands,
+        )
+        result["learning_profile"] = await _persist_showdown_learning(db, result)
+        return result
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ShowdownConnectionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/showdown/sessions/{session_id}/autopilot")
+async def autopilot_showdown_session(
+    session_id: str,
+    payload: ShowdownSessionAutopilotRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Connect, optionally search, and run a bounded autonomous Showdown loop."""
+    try:
+        result = await pokemon_showdown_session_service.autopilot(
+            session_id,
+            max_messages=payload.max_messages,
+            stop_on_finished=payload.stop_on_finished,
+            auto_respond=payload.auto_respond,
+            send_commands=payload.send_commands,
+            team_size=payload.team_size,
+            allow_tera=payload.allow_tera,
+            auto_search=payload.auto_search,
+            close_on_finish=payload.close_on_finish,
         )
         result["learning_profile"] = await _persist_showdown_learning(db, result)
         return result

@@ -487,6 +487,32 @@ export default function PokemonBattlePage() {
     }
   }
 
+  async function runShowdownAutopilot() {
+    setBusy(true);
+    setError(null);
+    try {
+      const session = await ensureShowdownSession(false);
+      const result = (await pokemonApi.autopilotShowdownSession(session.session_id, {
+        auto_respond: true,
+        send_commands: true,
+        auto_search: true,
+        max_messages: showdownRunLimit,
+        stop_on_finished: true,
+      })).data;
+      setShowdownSession(result.session);
+      setShowdownAnalysis(result.session?.analysis || showdownAnalysis);
+      setShowdownLearning(result.learning_profile || showdownLearning);
+      const steps = result.steps || [];
+      const lastDecision = [...steps].reverse().find((step: any) => step.decision)?.decision;
+      setShowdownPlan(lastDecision || showdownPlan);
+      addMessage(`Autopilot ${result.session?.status || 'ready'}: ${(result.actions || []).join(' / ') || 'running'} · ${steps.length} message(s).`);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || 'Showdown 自动驾驶失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function closeShowdownSession() {
     if (!showdownSession?.session_id) return;
     setBusy(true);
@@ -511,6 +537,7 @@ export default function PokemonBattlePage() {
     ['Phase 6', '自动接受同格式挑战，并在建队后自动研究整队知识'],
     ['Phase 7', '学习档案输出训练重点，将真实结果反哺下一局策略'],
     ['Phase 8', '同步真实房间元数据，跟踪对手、规则、分级和结果'],
+    ['Phase 9', '一键自动驾驶：连接、搜索、收发消息和自动决策'],
   ];
 
   return (
@@ -807,6 +834,9 @@ export default function PokemonBattlePage() {
               </button>
               <button onClick={runLiveShowdownUntil} disabled={busy || !showdownSession?.session_id} className="btn-primary disabled:opacity-50">
                 自动运行
+              </button>
+              <button onClick={runShowdownAutopilot} disabled={busy} className="btn-primary disabled:opacity-50">
+                一键自动
               </button>
               <button onClick={researchShowdownTeam} disabled={busy} className="btn-secondary disabled:opacity-50">
                 研究队伍

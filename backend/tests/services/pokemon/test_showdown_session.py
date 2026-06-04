@@ -554,3 +554,35 @@ async def test_run_until_stops_on_finished_and_close_marks_closed():
     assert result["session"]["result"] == {"type": "win", "winner": "Bot"}
     assert connector.closed
     assert closed["status"] == "finished"
+
+
+@pytest.mark.asyncio
+async def test_autopilot_connects_searches_responds_and_stops_on_result():
+    request = {
+        "rqid": 41,
+        "active": [
+            {
+                "moves": [
+                    {"id": "protect", "target": "self", "pp": 16},
+                    {"id": "moonblast", "target": "normal", "basePower": 95, "pp": 15},
+                ]
+            }
+        ],
+    }
+    connector = FakeShowdownConnector([
+        f">battle-gen9vgc-11\n|request|{json.dumps(request)}",
+        ">battle-gen9vgc-11\n|win|Bot",
+    ])
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None, connector=connector, auto_login=False)
+
+    result = await service.autopilot(session.session_id, max_messages=5, auto_search=True)
+
+    assert result["actions"] == ["connected", "search_queued"]
+    assert result["sent"][0].startswith("|/utm ")
+    assert result["sent"][1] == "|/search gen9vgc2024regg"
+    assert connector.sent[2] == "battle-gen9vgc-11|/choose move 2 -1|41"
+    assert len(result["steps"]) == 2
+    assert result["session"]["status"] == "finished"
+    assert result["session"]["result"] == {"type": "win", "winner": "Bot"}
+    assert result["session"]["pending_command_count"] == 0

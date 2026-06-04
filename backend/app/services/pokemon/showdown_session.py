@@ -342,15 +342,77 @@ class PokemonShowdownSessionService:
         stop_on_finished: bool = True,
         auto_respond: bool = True,
         send_commands: bool = True,
+        team_size: int | None = None,
+        allow_tera: bool = True,
     ) -> dict[str, Any]:
         results = []
         for _ in range(max_messages):
-            result = await self.run_once(session_id, auto_respond=auto_respond, send_commands=send_commands)
+            result = await self.run_once(
+                session_id,
+                auto_respond=auto_respond,
+                send_commands=send_commands,
+                team_size=team_size,
+                allow_tera=allow_tera,
+            )
             results.append(result)
             state = self._require_session(session_id)
             if stop_on_finished and state.status == "finished":
                 break
         return {"session": self._require_session(session_id).to_dict(), "steps": results}
+
+    async def autopilot(
+        self,
+        session_id: str,
+        *,
+        max_messages: int = 50,
+        stop_on_finished: bool = True,
+        auto_respond: bool = True,
+        send_commands: bool = True,
+        team_size: int | None = None,
+        allow_tera: bool = True,
+        auto_search: bool = True,
+        close_on_finish: bool = False,
+    ) -> dict[str, Any]:
+        state = self._require_session(session_id)
+        connector = self.connectors[session_id]
+        actions: list[str] = []
+        initial_sent: list[str] = []
+
+        if not connector.websocket:
+            await connector.connect()
+            state.status = "connected"
+            actions.append("connected")
+
+        if auto_search and self._should_queue_ladder_search(state):
+            self.start_ladder_search(session_id)
+            actions.append("search_queued")
+            if send_commands:
+                initial_sent.extend(await self.flush_pending_commands(session_id))
+        elif send_commands:
+            pending = await self.flush_pending_commands(session_id)
+            if pending:
+                actions.append("pending_flushed")
+                initial_sent.extend(pending)
+
+        run_result = await self.run_until(
+            session_id,
+            max_messages=max_messages,
+            stop_on_finished=stop_on_finished,
+            auto_respond=auto_respond,
+            send_commands=send_commands,
+            team_size=team_size,
+            allow_tera=allow_tera,
+        )
+        if close_on_finish and self._require_session(session_id).status == "finished":
+            await self.close_session(session_id)
+            actions.append("closed")
+        session = self._require_session(session_id).to_dict()
+        return {
+            "session": session,
+            "steps": run_result["steps"],
+            "sent": initial_sent,
+            "actions": actions,
+        }
 
     async def close_session(self, session_id: str) -> dict[str, Any]:
         state = self._require_session(session_id)
@@ -370,6 +432,14 @@ class PokemonShowdownSessionService:
         state.status = "searching"
         state.touch()
         return commands
+
+    def _should_queue_ladder_search(self, state: ShowdownSessionState) -> bool:
+        if state.status in {"searching", "battling", "choosing", "responded", "finished"}:
+            return False
+        if (state.search or {}).get("searching"):
+            return False
+        search_command = f"|/search {state.showdown_format}"
+        return search_command not in state.command_log
 
     def cancel_ladder_search(self, session_id: str) -> list[str]:
         state = self._require_session(session_id)

@@ -142,6 +142,7 @@ Abattoir（竞技场）是一个让 AI 展现真实能力的地方。在这里�
 - Showdown 自动建队：创建或搜索需要队伍的格式时，缺省 `team` 会按格式自动选择本地模板队或生成 Showdown 可上传队伍
 - Showdown 队伍预览：会话快照返回 `team_preview`，前端可检查自动建队的宝可梦、道具、特性、太晶和招式
 - Showdown 实战控制台：前端可创建会话、搜索天梯、连接 PS websocket、单步/有界自动运行、取消搜索和关闭连接
+- Showdown 自动驾驶：可一键连接 websocket、排队天梯搜索、发送待发命令，并进入有界自动收发/决策循环
 - Showdown 自动登录：收到 `challstr` 后可自动向 PS 请求 assertion 并发送 `/trn`，支持游客名或可选密码登录，密码不会回传到会话响应
 - Showdown 学习摘要：可从真实协议事件中汇总回合、出招、换人、受伤、击倒、胜负和奖励信号
 - Showdown 学习档案：将已完成实战摘要持久化到数据库，按用户和格式聚合胜率、平均奖励、决策类型收益，并给出下一局模式建议
@@ -560,6 +561,7 @@ AI-Abattoir/
 | GET | `/api/pokemon/showdown/sessions/{id}/analysis` | 汇总 Showdown 会话的胜负、击倒、奖励和决策学习信号 |
 | POST | `/api/pokemon/showdown/sessions/{id}/run-once` | 从 websocket 读取一条消息、自动决策并发送命令 |
 | POST | `/api/pokemon/showdown/sessions/{id}/run-until` | 有界运行 Showdown 自动会话循环 |
+| POST | `/api/pokemon/showdown/sessions/{id}/autopilot` | 一键连接、搜索并运行有界 Showdown 自动驾驶循环 |
 | POST | `/api/pokemon/showdown/sessions/{id}/close` | 关闭 Showdown websocket 会话 |
 | DELETE | `/api/pokemon/showdown/sessions/{id}` | 删除 Showdown 自动会话 |
 
@@ -764,6 +766,7 @@ alembic history
 - [x] 宝可梦 Showdown 会话事件分析与奖励信号
 - [x] 宝可梦 Showdown 学习档案训练重点和前端复盘展示
 - [x] 宝可梦 Showdown battle room 元数据同步和前端展示
+- [x] 宝可梦 Showdown 一键自动驾驶（连接、搜索、收发、自动决策）
 - [ ] Pokemon Showdown 真实登录和天梯实战
 - [ ] 宝可梦完整多格式战斗策略（单打、随机战、不同世代规则）
 - [ ] 宝可梦强化学习闭环与长期策略评估
