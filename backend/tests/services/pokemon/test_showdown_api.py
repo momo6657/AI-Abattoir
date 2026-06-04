@@ -146,6 +146,43 @@ async def test_showdown_decision_accepts_learning_profile(client):
 
 
 @pytest.mark.asyncio
+async def test_showdown_decision_accepts_team_context_for_preview(client):
+    payload = {
+        "rqid": 23,
+        "teamPreview": True,
+        "maxTeamSize": 4,
+        "side": {
+            "pokemon": [
+                {"ident": "p1: Flutter Mane", "condition": "100/100"},
+                {"ident": "p1: Amoonguss", "condition": "100/100"},
+                {"ident": "p1: Incineroar", "condition": "100/100"},
+                {"ident": "p1: Tornadus", "condition": "100/100"},
+            ]
+        },
+    }
+
+    response = await client.post(
+        "/api/pokemon/showdown/decision",
+        json={
+            "request": payload,
+            "room_id": "battle-gen9vgc-46",
+            "team_context": [
+                {"species": "Flutter Mane", "moves": ["Moonblast"]},
+                {"species": "Amoonguss", "moves": ["Spore", "Protect"]},
+                {"species": "Incineroar", "ability": "Intimidate", "moves": ["Fake Out"]},
+                {"species": "Tornadus", "moves": ["Tailwind"]},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["plan"]["command"] == "battle-gen9vgc-46|/choose team 3421|23"
+    assert data["plan"]["choice_details"][0]["pokemon"] == "Incineroar"
+    assert data["plan"]["choice_details"][0]["strategy_used"]
+
+
+@pytest.mark.asyncio
 async def test_showdown_decision_accepts_knowledge_context(client):
     payload = {
         "rqid": 18,

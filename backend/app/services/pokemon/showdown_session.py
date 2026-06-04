@@ -264,6 +264,7 @@ class PokemonShowdownSessionService:
                 allow_tera=allow_tera,
                 knowledge_context=state.knowledge_context or None,
                 learning_profile=state.learning_profile or None,
+                team_context=state.team if isinstance(state.team, list) else None,
             )
             if plan.command:
                 commands.append(plan.command)

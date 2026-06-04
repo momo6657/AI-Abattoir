@@ -284,6 +284,7 @@ export default function PokemonBattlePage() {
         active_pokemon: selectedFormatInfo?.active_pokemon,
         knowledge_context: showdownSession?.knowledge_context || showdownTeamKnowledgeSummary || undefined,
         learning_profile: activeShowdownLearning || undefined,
+        team_context: showdownSession?.team_preview || undefined,
       })).data;
       setShowdownPlan(result.plan);
       addMessage(`Showdown choice: ${result.plan?.command || result.plan?.decision_type || 'none'}`);
@@ -543,6 +544,7 @@ export default function PokemonBattlePage() {
     ['Phase 10', '学习档案反哺自动建队，低收益时自动保守化调整'],
     ['Phase 11', '学习档案反哺自动出招评分，弱势时偏向安全决策'],
     ['Phase 12', '战后学习档案即时回写会话，下一步策略直接使用新样本'],
+    ['Phase 13', '队伍预览战略首发评分，按角色、知识和学习档案排序'],
   ];
 
   return (
@@ -935,7 +937,7 @@ export default function PokemonBattlePage() {
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-mono text-gray-200">{detail.choice || detail.move || 'choice'}</span>
                             <span className="text-gray-500">
-                              {detail.learning_used ? 'learning · ' : ''}{detail.knowledge_used ? 'knowledge · ' : ''}{detail.score !== undefined ? `score ${detail.score}` : ''}
+                              {detail.strategy_used ? 'strategy · ' : ''}{detail.learning_used ? 'learning · ' : ''}{detail.knowledge_used ? 'knowledge · ' : ''}{detail.score !== undefined ? `score ${detail.score}` : ''}
                             </span>
                           </div>
                           <div className="mt-1 text-gray-500">{detail.reason}</div>

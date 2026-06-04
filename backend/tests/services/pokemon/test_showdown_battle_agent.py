@@ -31,6 +31,52 @@ def test_plan_team_preview_uses_max_team_size_and_rqid():
     assert plan.choice_details[0]["pokemon"] == "Incineroar"
 
 
+def test_plan_team_preview_scores_leads_from_team_context_and_learning():
+    agent = PokemonShowdownBattleAgent()
+    payload = {
+        "rqid": 22,
+        "teamPreview": True,
+        "maxTeamSize": 4,
+        "side": {
+            "pokemon": [
+                {"ident": "p1: Flutter Mane", "condition": "100/100"},
+                {"ident": "p1: Amoonguss", "condition": "100/100"},
+                {"ident": "p1: Incineroar", "condition": "100/100"},
+                {"ident": "p1: Tornadus", "condition": "100/100"},
+                {"ident": "p1: Urshifu", "condition": "100/100"},
+                {"ident": "p1: Rillaboom", "condition": "100/100"},
+            ]
+        },
+    }
+    team_context = [
+        {"species": "Flutter Mane", "moves": ["Moonblast", "Dazzling Gleam"]},
+        {"species": "Amoonguss", "moves": ["Spore", "Rage Powder", "Protect"]},
+        {"species": "Incineroar", "ability": "Intimidate", "item": "Sitrus Berry", "moves": ["Fake Out", "Parting Shot"]},
+        {"species": "Tornadus", "moves": ["Tailwind", "Taunt"]},
+        {"species": "Urshifu", "moves": ["Surging Strikes", "Close Combat"]},
+        {"species": "Rillaboom", "moves": ["Fake Out", "Wood Hammer"]},
+    ]
+
+    plan = agent.plan_from_raw_request(
+        payload,
+        "battle-gen9vgc-12",
+        team_context=team_context,
+        learning_profile={
+            "battles": 3,
+            "win_rate": 0.0,
+            "average_reward": 10.0,
+            "faints_for": 1,
+            "faints_against": 5,
+        },
+    )
+
+    assert plan.command == "battle-gen9vgc-12|/choose team 3246|22"
+    assert "Lead order was scored" in plan.reason
+    assert [detail["pokemon"] for detail in plan.choice_details] == ["Incineroar", "Amoonguss", "Tornadus", "Rillaboom"]
+    assert plan.choice_details[0]["strategy_used"]
+    assert any(detail["learning_used"] for detail in plan.choice_details)
+
+
 def test_plan_force_switch_chooses_healthy_bench_and_passes_unforced_slot():
     agent = PokemonShowdownBattleAgent()
     payload = {

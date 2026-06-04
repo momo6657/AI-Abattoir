@@ -152,6 +152,7 @@ class ShowdownDecisionRequest(BaseModel):
     allow_tera: bool = True
     knowledge_context: Optional[Dict[str, Any]] = None
     learning_profile: Optional[Dict[str, Any]] = None
+    team_context: Optional[List[Dict[str, Any]]] = None
 
 
 class PokemonTeamKnowledgeRequest(BaseModel):
