@@ -183,6 +183,40 @@ async def test_showdown_decision_accepts_team_context_for_preview(client):
 
 
 @pytest.mark.asyncio
+async def test_showdown_decision_accepts_battlefield_context_for_targeting(client):
+    payload = {
+        "rqid": 24,
+        "active": [
+            {
+                "moves": [
+                    {"id": "moonblast", "target": "normal", "basePower": 95, "pp": 15},
+                ]
+            }
+        ],
+    }
+
+    response = await client.post(
+        "/api/pokemon/showdown/decision",
+        json={
+            "request": payload,
+            "room_id": "battle-gen9vgc-47",
+            "active_pokemon": 2,
+            "battlefield_context": {
+                "opponents": [
+                    {"position": "a", "active": True, "fainted": False, "hp_fraction": 0.8},
+                    {"position": "b", "active": True, "fainted": False, "hp_fraction": 0.2},
+                ]
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["plan"]["command"] == "battle-gen9vgc-47|/choose move 1 -2|24"
+    assert data["plan"]["choice_details"][0]["target"] == -2
+
+
+@pytest.mark.asyncio
 async def test_showdown_decision_accepts_knowledge_context(client):
     payload = {
         "rqid": 18,

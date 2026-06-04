@@ -133,6 +133,35 @@ def test_plan_moves_skips_disabled_moves_targets_foe_and_can_tera():
     assert plan.choice_details[0]["legal_candidates"][0]["move"] == "flareblitz"
 
 
+def test_plan_moves_targets_weakened_opponent_from_battlefield_context():
+    agent = PokemonShowdownBattleAgent()
+    payload = {
+        "rqid": 24,
+        "active": [
+            {
+                "moves": [
+                    {"id": "moonblast", "target": "normal", "basePower": 95, "pp": 15},
+                ],
+            }
+        ],
+    }
+
+    plan = agent.plan_from_raw_request(
+        payload,
+        "battle-gen9vgc-13",
+        active_pokemon=2,
+        battlefield_context={
+            "opponents": [
+                {"position": "a", "active": True, "fainted": False, "hp_fraction": 0.8, "pokemon": "Urshifu"},
+                {"position": "b", "active": True, "fainted": False, "hp_fraction": 0.25, "pokemon": "Flutter Mane"},
+            ]
+        },
+    )
+
+    assert plan.command == "battle-gen9vgc-13|/choose move 1 -2|24"
+    assert plan.choice_details[0]["target"] == -2
+
+
 def test_plan_moves_prioritizes_tactical_utility_and_avoids_self_ko():
     agent = PokemonShowdownBattleAgent()
     payload = {

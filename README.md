@@ -137,6 +137,7 @@ Abattoir（竞技场）是一个让 AI 展现真实能力的地方。在这里�
 - Showdown 战术评分：对合法招式按伤害、功能招、铺场、模式偏好和自爆风险打分，并在前端显示选择依据
 - Showdown 自动会话：可创建会话、连接 websocket、记录搜索/房间/胜负状态，并对 PS payload 自动产生命令流
 - Showdown 房间同步：会话会记录 battle room 的玩家、对手、分级、规则、rated 状态、请求号和最终结果
+- Showdown 场面记忆：会话从 `switch`、`drag`、`-damage`、`-heal`、`faint` 和 `request` 事件同步双方在场与 HP
 - Showdown 挑战对战：会话可解析 `updatechallenges`，接受或拒绝指定挑战者；开启 `auto_accept_challenges` 后会自动接受同格式挑战，并将挑战命令发送到已连接 websocket
 - Showdown 知识上下文：可将整队联网研究结果绑定到当前会话，供 UI、后续策略和学习流程复用
 - Showdown 自动知识研究：创建会话时可开启 `auto_research_team`，系统会在自动建队后立即检索整队用法知识并绑定到会话
@@ -775,6 +776,7 @@ alembic history
 - [x] 宝可梦 Showdown 学习档案反哺自动出招评分
 - [x] 宝可梦 Showdown 战后学习档案即时回写当前会话
 - [x] 宝可梦 Showdown 队伍预览战略首发评分
+- [x] 宝可梦 Showdown 房间场面记忆与低血量目标选择
 - [ ] Pokemon Showdown 真实登录和天梯实战
 - [ ] 宝可梦完整多格式战斗策略（单打、随机战、不同世代规则）
 - [ ] 宝可梦强化学习闭环与长期策略评估

@@ -62,6 +62,7 @@ class PokemonShowdownBattleAgent:
         knowledge_context: dict[str, Any] | None = None,
         learning_profile: dict[str, Any] | None = None,
         team_context: list[dict[str, Any]] | None = None,
+        battlefield_context: dict[str, Any] | None = None,
     ) -> tuple[list[ShowdownEvent], ShowdownBattleRequest | None, ShowdownChoicePlan]:
         events = self.connector.parse_message(payload)
         request = self.connector.parse_battle_request(events)
@@ -74,6 +75,7 @@ class PokemonShowdownBattleAgent:
             knowledge_context=knowledge_context,
             learning_profile=learning_profile,
             team_context=team_context,
+            battlefield_context=battlefield_context,
         )
 
     def plan_from_raw_request(
@@ -88,6 +90,7 @@ class PokemonShowdownBattleAgent:
         knowledge_context: dict[str, Any] | None = None,
         learning_profile: dict[str, Any] | None = None,
         team_context: list[dict[str, Any]] | None = None,
+        battlefield_context: dict[str, Any] | None = None,
     ) -> ShowdownChoicePlan:
         request = ShowdownBattleRequest(
             room_id=room_id,
@@ -107,6 +110,7 @@ class PokemonShowdownBattleAgent:
             knowledge_context=knowledge_context,
             learning_profile=learning_profile,
             team_context=team_context,
+            battlefield_context=battlefield_context,
         )
 
     def plan(
@@ -120,6 +124,7 @@ class PokemonShowdownBattleAgent:
         knowledge_context: dict[str, Any] | None = None,
         learning_profile: dict[str, Any] | None = None,
         team_context: list[dict[str, Any]] | None = None,
+        battlefield_context: dict[str, Any] | None = None,
     ) -> ShowdownChoicePlan:
         if request is None:
             return ShowdownChoicePlan(
@@ -156,6 +161,7 @@ class PokemonShowdownBattleAgent:
                 allow_tera=allow_tera,
                 knowledge_context=knowledge_context,
                 learning_profile=learning_profile,
+                battlefield_context=battlefield_context,
             )
         command = self.connector.build_choose_default(request.room_id, request.request_id)
         return ShowdownChoicePlan(
@@ -387,6 +393,7 @@ class PokemonShowdownBattleAgent:
         allow_tera: bool,
         knowledge_context: dict[str, Any] | None,
         learning_profile: dict[str, Any] | None,
+        battlefield_context: dict[str, Any] | None,
     ) -> ShowdownChoicePlan:
         active_species = self._active_species(request)
         planned = [
@@ -399,6 +406,7 @@ class PokemonShowdownBattleAgent:
                 pokemon_name=active_species[index] if index < len(active_species) else "",
                 knowledge_context=knowledge_context,
                 learning_profile=learning_profile,
+                battlefield_context=battlefield_context,
             )
             for index, active_request in enumerate(request.active)
         ]
@@ -430,6 +438,7 @@ class PokemonShowdownBattleAgent:
         pokemon_name: str,
         knowledge_context: dict[str, Any] | None,
         learning_profile: dict[str, Any] | None,
+        battlefield_context: dict[str, Any] | None,
     ) -> tuple[str, dict[str, Any]]:
         moves = active_request.get("moves") or []
         legal_moves = [
@@ -448,7 +457,7 @@ class PokemonShowdownBattleAgent:
             for slot, move in legal_moves
         ]
         move_slot, move, score, reason = max(scored_moves, key=lambda item: item[2])
-        target = self._target_for_move(move, active_pokemon)
+        target = self._target_for_move(move, active_pokemon, battlefield_context)
         modifier = "terastallize" if allow_tera and self._should_terastallize(active_request, move, mode) else None
         target_part = f" {target}" if target is not None else ""
         modifier_part = f" {modifier}" if modifier else ""
@@ -651,17 +660,48 @@ class PokemonShowdownBattleAgent:
                 return member
         return None
 
-    def _target_for_move(self, move: dict[str, Any], active_pokemon: int | None = None) -> int | None:
+    def _target_for_move(
+        self,
+        move: dict[str, Any],
+        active_pokemon: int | None = None,
+        battlefield_context: dict[str, Any] | None = None,
+    ) -> int | None:
         target_type = move.get("target")
         if target_type in {"normal", "any", "adjacentFoe"}:
             if active_pokemon == 1:
                 return None
+            tactical_target = self._target_from_battlefield(battlefield_context)
+            if tactical_target is not None:
+                return tactical_target
             return -1
         if target_type in {"adjacentAlly", "allyTeam"}:
             if active_pokemon == 1:
                 return None
             return 1
         return None
+
+    def _target_from_battlefield(self, battlefield_context: dict[str, Any] | None) -> int | None:
+        if not battlefield_context:
+            return None
+        opponents = [
+            opponent
+            for opponent in battlefield_context.get("opponents") or []
+            if isinstance(opponent, dict) and opponent.get("active") and not opponent.get("fainted")
+        ]
+        if not opponents:
+            return None
+        ordered = sorted(opponents, key=lambda item: str(item.get("position") or ""))
+        if len(ordered) == 1:
+            return -1 if str(ordered[0].get("position") or "a") <= "a" else -2
+        target = min(
+            ordered,
+            key=lambda item: (
+                float(item.get("hp_fraction") if item.get("hp_fraction") is not None else 1.0),
+                str(item.get("position") or ""),
+            ),
+        )
+        position = str(target.get("position") or "a")
+        return -2 if position.endswith("b") else -1
 
     def _should_terastallize(self, active_request: dict[str, Any], move: dict[str, Any], mode: str) -> bool:
         if mode == "defensive":

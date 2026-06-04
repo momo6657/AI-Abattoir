@@ -498,6 +498,7 @@ async def plan_showdown_decision(payload: ShowdownDecisionRequest):
                 knowledge_context=payload.knowledge_context,
                 learning_profile=payload.learning_profile,
                 team_context=payload.team_context,
+                battlefield_context=payload.battlefield_context,
             )
             return {
                 "events": [
@@ -519,6 +520,7 @@ async def plan_showdown_decision(payload: ShowdownDecisionRequest):
                 knowledge_context=payload.knowledge_context,
                 learning_profile=payload.learning_profile,
                 team_context=payload.team_context,
+                battlefield_context=payload.battlefield_context,
             )
             return {"events": [], "request": payload.request, "plan": plan.to_dict()}
     except (ShowdownConnectionError, ValueError) as exc:

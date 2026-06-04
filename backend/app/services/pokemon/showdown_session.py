@@ -265,6 +265,7 @@ class PokemonShowdownSessionService:
                 knowledge_context=state.knowledge_context or None,
                 learning_profile=state.learning_profile or None,
                 team_context=state.team if isinstance(state.team, list) else None,
+                battlefield_context=self._battlefield_context(state, battle_request.room_id),
             )
             if plan.command:
                 commands.append(plan.command)
@@ -636,6 +637,8 @@ class PokemonShowdownSessionService:
             state.last_error = "|".join(event.args)
             if room is not None:
                 room["last_error"] = state.last_error
+        if room is not None:
+            self._sync_battlefield_event(room, event)
 
     def _sync_room_event(self, state: ShowdownSessionState, event: ShowdownEvent) -> dict[str, Any] | None:
         if not event.room_id:
@@ -679,7 +682,124 @@ class PokemonShowdownSessionService:
             room["request_id"] = payload.get("rqid")
             room["waiting"] = bool(payload.get("wait"))
             room["team_preview"] = bool(payload.get("teamPreview"))
+            self._sync_battlefield_request(room, payload)
         return room
+
+    def _sync_battlefield_event(self, room: dict[str, Any], event: ShowdownEvent) -> None:
+        if event.event_type in {"switch", "drag", "replace"} and event.args:
+            ident = self._parse_ident(event.args[0])
+            if not ident:
+                return
+            condition = event.args[2] if len(event.args) > 2 else ""
+            self._update_battlefield_slot(room, ident, condition=condition, active=True, fainted=False)
+        elif event.event_type in {"-damage", "-heal"} and len(event.args) >= 2:
+            ident = self._parse_ident(event.args[0])
+            if not ident:
+                return
+            condition = event.args[1]
+            self._update_battlefield_slot(room, ident, condition=condition)
+        elif event.event_type == "faint" and event.args:
+            ident = self._parse_ident(event.args[0])
+            if not ident:
+                return
+            self._update_battlefield_slot(room, ident, condition="0 fnt", active=False, fainted=True)
+
+    def _sync_battlefield_request(self, room: dict[str, Any], payload: dict[str, Any]) -> None:
+        for member in (payload.get("side") or {}).get("pokemon") or []:
+            ident = self._parse_ident(member.get("ident") or "")
+            if not ident:
+                continue
+            self._update_battlefield_slot(
+                room,
+                ident,
+                condition=str(member.get("condition") or ""),
+                active=bool(member.get("active")),
+                fainted=self._condition_is_fainted(str(member.get("condition") or "")),
+            )
+
+    def _update_battlefield_slot(
+        self,
+        room: dict[str, Any],
+        ident: dict[str, str],
+        *,
+        condition: str = "",
+        active: bool | None = None,
+        fainted: bool | None = None,
+    ) -> None:
+        battlefield = room.setdefault("battlefield", {"sides": {}})
+        side = battlefield.setdefault("sides", {}).setdefault(ident["side"], {"active": {}})
+        slot = side.setdefault("active", {}).setdefault(ident["position"], {})
+        slot.update({
+            "side": ident["side"],
+            "position": ident["position"],
+            "ident": ident["raw"],
+            "pokemon": ident["pokemon"],
+        })
+        if condition:
+            slot["condition"] = condition
+            slot["hp_fraction"] = self._hp_fraction(condition)
+            slot["fainted"] = self._condition_is_fainted(condition)
+        if active is not None:
+            slot["active"] = active
+        if fainted is not None:
+            slot["fainted"] = fainted
+
+    def _battlefield_context(self, state: ShowdownSessionState, room_id: str) -> dict[str, Any]:
+        room = state.room_details.get(room_id) or {}
+        battlefield = room.get("battlefield") or {}
+        sides = battlefield.get("sides") or {}
+        agent_side = room.get("agent_side")
+        opponent_side = room.get("opponent_side")
+        if not opponent_side and agent_side:
+            opponent_side = "p2" if agent_side == "p1" else "p1"
+        opponents = self._battlefield_side_slots(sides.get(opponent_side or "") or {})
+        allies = self._battlefield_side_slots(sides.get(agent_side or "") or {})
+        return {
+            "room_id": room_id,
+            "agent_side": agent_side,
+            "opponent_side": opponent_side,
+            "allies": allies,
+            "opponents": opponents,
+        }
+
+    def _battlefield_side_slots(self, side: dict[str, Any]) -> list[dict[str, Any]]:
+        slots = side.get("active") or {}
+        return [
+            slots[position]
+            for position in sorted(slots.keys())
+            if isinstance(slots.get(position), dict)
+        ]
+
+    def _parse_ident(self, value: Any) -> dict[str, str] | None:
+        text = str(value or "")
+        if not text:
+            return None
+        side_position, _, pokemon = text.partition(": ")
+        if len(side_position) < 3:
+            return None
+        return {
+            "raw": text,
+            "side": side_position[:2],
+            "position": side_position[2:],
+            "pokemon": pokemon or text,
+        }
+
+    def _hp_fraction(self, condition: str) -> float | None:
+        condition = str(condition or "").split(" ", 1)[0]
+        if "/" not in condition:
+            return 0.0 if condition == "0" else None
+        current, _, maximum = condition.partition("/")
+        try:
+            max_value = float(maximum)
+            if max_value <= 0:
+                return None
+            return max(0.0, min(1.0, float(current) / max_value))
+        except ValueError:
+            return None
+
+    def _condition_is_fainted(self, condition: str) -> bool:
+        condition = str(condition or "").lower()
+        return " fnt" in condition or condition == "0 fnt" or condition.endswith("/0")
 
     def _sync_room_player(self, state: ShowdownSessionState, room: dict[str, Any], args: list[str]) -> None:
         side = str(args[0]) if len(args) > 0 else ""

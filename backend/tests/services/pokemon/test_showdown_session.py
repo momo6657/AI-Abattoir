@@ -205,6 +205,40 @@ def test_process_payload_scores_team_preview_from_session_team():
     assert any(detail["learning_used"] for detail in result["decision"]["choice_details"])
 
 
+def test_process_payload_targets_weakened_opponent_from_room_state():
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None)
+    service.process_payload(
+        session.session_id,
+        ">battle-gen9vgc-13\n"
+        "|player|p1|Bot\n"
+        "|player|p2|Rival\n"
+        "|switch|p2a: Urshifu|Urshifu, L50|80/100\n"
+        "|switch|p2b: Flutter Mane|Flutter Mane, L50|25/100",
+        auto_respond=False,
+    )
+    request = {
+        "rqid": 8,
+        "active": [
+            {
+                "moves": [
+                    {"id": "moonblast", "target": "normal", "basePower": 95, "pp": 15},
+                ]
+            }
+        ],
+    }
+
+    result = service.process_payload(
+        session.session_id,
+        f">battle-gen9vgc-13\n|request|{json.dumps(request)}",
+    )
+    room = result["session"]["room_details"]["battle-gen9vgc-13"]
+
+    assert result["commands"] == ["battle-gen9vgc-13|/choose move 1 -2|8"]
+    assert result["decision"]["choice_details"][0]["target"] == -2
+    assert room["battlefield"]["sides"]["p2"]["active"]["b"]["hp_fraction"] == 0.25
+
+
 def test_process_payload_uses_learning_profile_for_move_choice():
     service = PokemonShowdownSessionService()
     session = service.create_session(

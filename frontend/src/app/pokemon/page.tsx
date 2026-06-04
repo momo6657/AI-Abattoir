@@ -545,6 +545,7 @@ export default function PokemonBattlePage() {
     ['Phase 11', '学习档案反哺自动出招评分，弱势时偏向安全决策'],
     ['Phase 12', '战后学习档案即时回写会话，下一步策略直接使用新样本'],
     ['Phase 13', '队伍预览战略首发评分，按角色、知识和学习档案排序'],
+    ['Phase 14', '同步战场在场与 HP，双打目标优先锁定低血量对手'],
   ];
 
   return (
@@ -1071,6 +1072,16 @@ export default function PokemonBattlePage() {
                             {room.opponent_username ? (
                               <div className="mt-1 text-[11px] text-gray-500">
                                 Opponent: <span className="text-gray-300">{room.opponent_username}</span>
+                              </div>
+                            ) : null}
+                            {room.battlefield?.sides ? (
+                              <div className="mt-1 break-words text-[11px] text-gray-500">
+                                Field: {Object.entries(room.battlefield.sides).map(([side, sideState]: any) => {
+                                  const active = Object.values(sideState.active || {})
+                                    .map((slot: any) => `${slot.pokemon || 'unknown'}${slot.condition ? ` ${slot.condition}` : ''}`)
+                                    .join(' / ');
+                                  return active ? `${side}: ${active}` : null;
+                                }).filter(Boolean).join(' · ')}
                               </div>
                             ) : null}
                             {room.result ? (
