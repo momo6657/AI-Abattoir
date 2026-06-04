@@ -168,6 +168,7 @@ class PokemonShowdownBattleAgent:
                 allow_tera=allow_tera,
                 knowledge_context=knowledge_context,
                 learning_profile=learning_profile,
+                team_context=team_context,
                 battlefield_context=battlefield_context,
             )
         command = self.connector.build_choose_default(request.room_id, request.request_id)
@@ -469,11 +470,14 @@ class PokemonShowdownBattleAgent:
         allow_tera: bool,
         knowledge_context: dict[str, Any] | None,
         learning_profile: dict[str, Any] | None,
+        team_context: list[dict[str, Any]] | None,
         battlefield_context: dict[str, Any] | None,
     ) -> ShowdownChoicePlan:
         active_species = self._active_species(request)
-        planned = [
-            self._move_choice(
+        used_switch_slots: set[int] = set()
+        planned = []
+        for index, active_request in enumerate(request.active):
+            choice, detail = self._move_choice(
                 active_request,
                 mode=mode,
                 allow_tera=allow_tera and index == 0,
@@ -482,10 +486,14 @@ class PokemonShowdownBattleAgent:
                 pokemon_name=active_species[index] if index < len(active_species) else "",
                 knowledge_context=knowledge_context,
                 learning_profile=learning_profile,
+                team_context=team_context,
                 battlefield_context=battlefield_context,
+                side_pokemon=request.side.get("pokemon") or [],
+                used_switch_slots=used_switch_slots,
             )
-            for index, active_request in enumerate(request.active)
-        ]
+            if choice.startswith("switch "):
+                used_switch_slots.add(int(choice.split(" ", 1)[1]))
+            planned.append((choice, detail))
         choices = [choice for choice, _detail in planned]
         details = [detail for _choice, detail in planned]
         command = self.connector.build_choose_multi(request.room_id, choices, request.request_id)
@@ -514,7 +522,10 @@ class PokemonShowdownBattleAgent:
         pokemon_name: str,
         knowledge_context: dict[str, Any] | None,
         learning_profile: dict[str, Any] | None,
+        team_context: list[dict[str, Any]] | None,
         battlefield_context: dict[str, Any] | None,
+        side_pokemon: list[dict[str, Any]],
+        used_switch_slots: set[int],
     ) -> tuple[str, dict[str, Any]]:
         moves = active_request.get("moves") or []
         legal_moves = [
@@ -523,6 +534,24 @@ class PokemonShowdownBattleAgent:
             if not move.get("disabled") and int(move.get("pp", 1) or 0) > 0
         ]
         if not legal_moves:
+            if not active_request.get("trapped"):
+                slot, switch_detail = self._best_switch_slot(
+                    side_pokemon,
+                    used_switch_slots,
+                    mode=mode,
+                    learning_profile=learning_profile,
+                    team_context=team_context,
+                    battlefield_context=battlefield_context,
+                )
+                if slot is not None:
+                    choice = f"switch {slot}"
+                    return choice, {
+                        "active_index": active_index,
+                        "choice": choice,
+                        **switch_detail,
+                        "fallback_switch": True,
+                        "reason": f"no legal moves with PP were available; {switch_detail.get('reason')}",
+                    }
             return "default", {
                 "active_index": active_index,
                 "choice": "default",

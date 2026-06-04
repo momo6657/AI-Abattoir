@@ -206,6 +206,68 @@ def test_plan_moves_skips_disabled_moves_targets_foe_and_can_tera():
     assert plan.choice_details[0]["legal_candidates"][0]["move"] == "flareblitz"
 
 
+def test_plan_moves_fallback_switches_when_no_legal_moves_and_not_trapped():
+    agent = PokemonShowdownBattleAgent()
+    payload = {
+        "rqid": 29,
+        "active": [
+            {
+                "trapped": False,
+                "moves": [
+                    {"id": "moonblast", "target": "normal", "pp": 0},
+                    {"id": "protect", "target": "self", "disabled": True, "pp": 16},
+                ],
+            }
+        ],
+        "side": {
+            "pokemon": [
+                {"ident": "p1: Flutter Mane", "condition": "40/100", "active": True},
+                {"ident": "p1: Incineroar", "condition": "100/100"},
+            ]
+        },
+    }
+
+    plan = agent.plan_from_raw_request(
+        payload,
+        "battle-gen9vgc-17",
+        team_context=[
+            {"species": "Flutter Mane", "moves": ["Moonblast"]},
+            {"species": "Incineroar", "ability": "Intimidate", "moves": ["Fake Out", "Parting Shot"]},
+        ],
+    )
+
+    assert plan.command == "battle-gen9vgc-17|/choose switch 2|29"
+    assert plan.choice_details[0]["fallback_switch"]
+    assert plan.choice_details[0]["pokemon"] == "Incineroar"
+
+
+def test_plan_moves_defaults_when_no_legal_moves_and_trapped():
+    agent = PokemonShowdownBattleAgent()
+    payload = {
+        "rqid": 30,
+        "active": [
+            {
+                "trapped": True,
+                "moves": [
+                    {"id": "moonblast", "target": "normal", "pp": 0},
+                ],
+            }
+        ],
+        "side": {
+            "pokemon": [
+                {"ident": "p1: Flutter Mane", "condition": "40/100", "active": True},
+                {"ident": "p1: Incineroar", "condition": "100/100"},
+            ]
+        },
+    }
+
+    plan = agent.plan_from_raw_request(payload, "battle-gen9vgc-18")
+
+    assert plan.command == "battle-gen9vgc-18|/choose default|30"
+    assert plan.choice_details[0]["choice"] == "default"
+    assert "no legal moves" in plan.choice_details[0]["reason"]
+
+
 def test_plan_moves_targets_weakened_opponent_from_battlefield_context():
     agent = PokemonShowdownBattleAgent()
     payload = {
