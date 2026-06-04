@@ -108,6 +108,7 @@ export default function PokemonBattlePage() {
   const showdownTargetPolicy = selectedFormatInfo?.active_pokemon === 1 ? 'no target' : 'targeted';
   const showdownChallengeUsers = Object.keys(showdownSession?.challenges?.challengesFrom || {});
   const showdownChallengeUser = showdownChallengeUsers[0];
+  const showdownRooms = Object.values(showdownSession?.room_details || {}) as any[];
 
   useEffect(() => {
     refreshOverview();
@@ -509,6 +510,7 @@ export default function PokemonBattlePage() {
     ['Phase 5', '按格式选择目标策略，单打省略 target，双打保留精确目标'],
     ['Phase 6', '自动接受同格式挑战，并在建队后自动研究整队知识'],
     ['Phase 7', '学习档案输出训练重点，将真实结果反哺下一局策略'],
+    ['Phase 8', '同步真实房间元数据，跟踪对手、规则、分级和结果'],
   ];
 
   return (
@@ -992,10 +994,54 @@ export default function PokemonBattlePage() {
                     <Metric label="Sent" value={showdownSession.sent_count ?? 0} compact />
                     <Metric label="Events" value={showdownSession.event_count ?? 0} compact />
                     <Metric label="Challenges" value={showdownSession.challenge_count ?? 0} compact />
+                    <Metric label="Rooms" value={showdownSession.room_count ?? 0} compact />
                   </div>
                   {showdownChallengeUsers.length ? (
                     <div className="rounded bg-black/30 p-2 text-gray-500">
                       Challenges: {showdownChallengeUsers.join(' / ')}
+                    </div>
+                  ) : null}
+                  {showdownRooms.length ? (
+                    <div className="space-y-2">
+                      <div className="text-[10px] font-semibold uppercase text-gray-500">Room sync</div>
+                      {showdownRooms.slice(0, 3).map((room) => {
+                        const playerNames = Object.values(room.players || {})
+                          .map((player: any) => player.username)
+                          .filter(Boolean)
+                          .join(' vs ');
+                        return (
+                          <div key={room.room_id} className="min-w-0 rounded bg-black/30 p-2">
+                            <div className="flex min-w-0 items-start justify-between gap-2">
+                              <span className="min-w-0 break-words font-medium text-gray-100">
+                                {room.title || playerNames || room.room_id}
+                              </span>
+                              <span className="shrink-0 text-gray-600">{room.status || 'active'}</span>
+                            </div>
+                            <div className="mt-1 break-words text-[11px] text-gray-500">
+                              {[room.tier, room.game_type, room.rated ? 'rated' : null].filter(Boolean).join(' · ') || room.room_id}
+                            </div>
+                            {room.opponent_username ? (
+                              <div className="mt-1 text-[11px] text-gray-500">
+                                Opponent: <span className="text-gray-300">{room.opponent_username}</span>
+                              </div>
+                            ) : null}
+                            {room.result ? (
+                              <div className="mt-1 text-[11px] text-gray-500">
+                                Result: <span className="text-gray-300">{room.result.winner || room.result.type}</span>
+                              </div>
+                            ) : null}
+                            {room.rules?.length ? (
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                {room.rules.slice(0, 3).map((rule: string) => (
+                                  <span key={`${room.room_id}-${rule}`} className="max-w-full rounded border border-border bg-black/20 px-1.5 py-0.5 text-[10px] text-gray-400">
+                                    {rule}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
                     </div>
                   ) : null}
                   {showdownSession.last_command && (

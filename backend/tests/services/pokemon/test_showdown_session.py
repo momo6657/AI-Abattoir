@@ -190,6 +190,44 @@ def test_process_payload_updates_showdown_analysis_signals():
     assert profile["recommendation"]["mode"] == "balanced"
 
 
+def test_process_payload_syncs_showdown_room_metadata():
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None)
+
+    result = service.process_payload(
+        session.session_id,
+        ">battle-gen9vgc-42\n"
+        "|init|battle\n"
+        "|title|Bot vs. Rival\n"
+        "|gametype|doubles\n"
+        "|gen|9\n"
+        "|tier|VGC 2024 Reg G\n"
+        "|rated|Rated battle\n"
+        "|rule|Species Clause: Limit one of each Pokemon\n"
+        "|player|p1|Bot|101|1500\n"
+        "|player|p2|Rival|202|1525\n"
+        '|request|{"rqid":12,"wait":true}\n'
+        "|win|Rival",
+        auto_respond=False,
+    )
+    room = result["session"]["room_details"]["battle-gen9vgc-42"]
+
+    assert result["session"]["rooms"] == ["battle-gen9vgc-42"]
+    assert room["title"] == "Bot vs. Rival"
+    assert room["game_type"] == "doubles"
+    assert room["generation"] == 9
+    assert room["tier"] == "VGC 2024 Reg G"
+    assert room["rated"]
+    assert room["rules"] == ["Species Clause: Limit one of each Pokemon"]
+    assert room["agent_side"] == "p1"
+    assert room["opponent_username"] == "Rival"
+    assert room["players"]["p2"]["rating"] == "1525"
+    assert room["request_id"] == 12
+    assert room["waiting"]
+    assert room["status"] == "finished"
+    assert room["result"] == {"type": "win", "winner": "Rival"}
+
+
 def test_start_search_and_delete_session():
     service = PokemonShowdownSessionService()
     session = service.create_session(username="Bot", team=None)

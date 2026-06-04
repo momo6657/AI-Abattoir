@@ -7,6 +7,7 @@ sent through a connected Showdown socket.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -45,6 +46,7 @@ class ShowdownSessionState:
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     rooms: list[str] = field(default_factory=list)
+    room_details: dict[str, dict[str, Any]] = field(default_factory=dict)
     search: dict[str, Any] | None = None
     challenges: dict[str, Any] | None = None
     knowledge_context: dict[str, Any] = field(default_factory=dict)
@@ -107,6 +109,7 @@ class ShowdownSessionState:
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
             "rooms": self.rooms,
+            "room_details": self.room_details,
             "search": self.search,
             "challenges": self.challenges,
             "challenge_count": len((self.challenges or {}).get("challengesFrom") or {}),
@@ -525,20 +528,104 @@ class PokemonShowdownSessionService:
         return state
 
     def _apply_event_state(self, state: ShowdownSessionState, event: ShowdownEvent) -> None:
-        if event.room_id and event.room_id not in state.rooms:
-            state.rooms.append(event.room_id)
+        room = self._sync_room_event(state, event)
         if event.event_type == "init" and event.args and event.args[0] == "battle":
             state.status = "battling"
+            if room is not None:
+                room["status"] = "battling"
         elif event.event_type == "request":
             state.status = "choosing"
+            if room is not None:
+                room["status"] = "choosing"
         elif event.event_type == "win":
             state.status = "finished"
             state.result = {"type": "win", "winner": event.args[0] if event.args else None}
+            if room is not None:
+                room["status"] = "finished"
+                room["result"] = state.result
         elif event.event_type == "tie":
             state.status = "finished"
             state.result = {"type": "tie"}
+            if room is not None:
+                room["status"] = "finished"
+                room["result"] = state.result
         elif event.event_type == "error":
             state.last_error = "|".join(event.args)
+            if room is not None:
+                room["last_error"] = state.last_error
+
+    def _sync_room_event(self, state: ShowdownSessionState, event: ShowdownEvent) -> dict[str, Any] | None:
+        if not event.room_id:
+            return None
+        if event.room_id not in state.rooms:
+            state.rooms.append(event.room_id)
+
+        room = state.room_details.setdefault(
+            event.room_id,
+            {
+                "room_id": event.room_id,
+                "status": "active",
+                "players": {},
+                "rules": [],
+            },
+        )
+        room["last_event_type"] = event.event_type
+
+        if event.event_type == "title" and event.args:
+            room["title"] = event.args[0]
+        elif event.event_type == "gametype" and event.args:
+            room["game_type"] = event.args[0]
+        elif event.event_type == "gen" and event.args:
+            room["generation"] = self._to_int(event.args[0])
+        elif event.event_type == "tier" and event.args:
+            room["tier"] = event.args[0]
+        elif event.event_type == "rated":
+            room["rated"] = True
+            room["rated_message"] = "|".join(event.args) if event.args else ""
+        elif event.event_type == "rule" and event.args:
+            rule = event.args[0]
+            if rule not in room["rules"]:
+                room["rules"].append(rule)
+        elif event.event_type == "player":
+            self._sync_room_player(state, room, event.args)
+        elif event.event_type == "request" and event.args:
+            try:
+                payload = json.loads(event.args[0])
+            except json.JSONDecodeError:
+                payload = {}
+            room["request_id"] = payload.get("rqid")
+            room["waiting"] = bool(payload.get("wait"))
+            room["team_preview"] = bool(payload.get("teamPreview"))
+        return room
+
+    def _sync_room_player(self, state: ShowdownSessionState, room: dict[str, Any], args: list[str]) -> None:
+        side = str(args[0]) if len(args) > 0 else ""
+        username = str(args[1]) if len(args) > 1 else ""
+        if not side or not username:
+            return
+
+        player = {
+            "side": side,
+            "username": username,
+            "avatar": str(args[2]) if len(args) > 2 and args[2] else None,
+            "rating": str(args[3]) if len(args) > 3 and args[3] else None,
+        }
+        room.setdefault("players", {})[side] = player
+        if self._normalize_username(username) == self._normalize_username(state.username):
+            room["agent_side"] = side
+            room["agent_username"] = username
+        else:
+            room["opponent_side"] = side
+            room["opponent_username"] = username
+
+    def _normalize_username(self, username: str | None) -> str:
+        return "".join(ch for ch in str(username or "").lower() if ch.isalnum())
+
+    def _to_int(self, value: Any) -> int | None:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
 
     def _update_analysis(self, state: ShowdownSessionState) -> None:
         state.analysis = pokemon_showdown_analysis_service.summarize(
