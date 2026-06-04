@@ -246,6 +246,46 @@ def test_process_payload_syncs_poke_preview_and_uses_it_for_leads():
     assert result["decision"]["choice_details"][0]["opponent_preview_used"]
 
 
+def test_process_payload_uses_room_preview_for_forced_switch():
+    service = PokemonShowdownSessionService()
+    session = service.create_session(
+        username="Bot",
+        battle_format="vgc2024",
+        team=[
+            {"species": "Flutter Mane", "moves": ["Moonblast"]},
+            {"species": "Tornadus", "moves": ["Tailwind"]},
+            {"species": "Incineroar", "ability": "Intimidate", "moves": ["Fake Out", "Parting Shot"]},
+            {"species": "Amoonguss", "moves": ["Spore", "Rage Powder", "Protect"]},
+        ],
+    )
+    request = {
+        "rqid": 28,
+        "forceSwitch": [True],
+        "side": {
+            "pokemon": [
+                {"ident": "p1: Flutter Mane", "condition": "0 fnt", "active": True},
+                {"ident": "p1: Tornadus", "condition": "70/100", "active": True},
+                {"ident": "p1: Incineroar", "condition": "60/100"},
+                {"ident": "p1: Amoonguss", "condition": "100/100"},
+            ]
+        },
+    }
+
+    result = service.process_payload(
+        session.session_id,
+        ">battle-gen9vgc-16\n"
+        "|player|p1|Bot\n"
+        "|player|p2|Rival\n"
+        "|poke|p2|Koraidon, L50|\n"
+        "|poke|p2|Urshifu, L50|\n"
+        f"|request|{json.dumps(request)}",
+    )
+
+    assert result["commands"] == ["battle-gen9vgc-16|/choose switch 3|28"]
+    assert result["decision"]["choice_details"][0]["pokemon"] == "Incineroar"
+    assert result["decision"]["choice_details"][0]["opponent_preview_used"]
+
+
 def test_process_payload_targets_weakened_opponent_from_room_state():
     service = PokemonShowdownSessionService()
     session = service.create_session(username="Bot", team=None)

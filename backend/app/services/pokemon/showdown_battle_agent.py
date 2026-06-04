@@ -153,7 +153,13 @@ class PokemonShowdownBattleAgent:
                 battlefield_context=battlefield_context,
             )
         if request.force_switch:
-            return self._plan_force_switch(request)
+            return self._plan_force_switch(
+                request,
+                mode=mode,
+                learning_profile=learning_profile,
+                team_context=team_context,
+                battlefield_context=battlefield_context,
+            )
         if request.active:
             return self._plan_moves(
                 request,
@@ -394,7 +400,15 @@ class PokemonShowdownBattleAgent:
             if isinstance(entry, dict) and (entry.get("species") or entry.get("details"))
         }
 
-    def _plan_force_switch(self, request: ShowdownBattleRequest) -> ShowdownChoicePlan:
+    def _plan_force_switch(
+        self,
+        request: ShowdownBattleRequest,
+        *,
+        mode: str,
+        learning_profile: dict[str, Any] | None,
+        team_context: list[dict[str, Any]] | None,
+        battlefield_context: dict[str, Any] | None,
+    ) -> ShowdownChoicePlan:
         pokemon = request.side.get("pokemon") or []
         used_slots = set()
         choices: list[str] = []
@@ -409,7 +423,14 @@ class PokemonShowdownBattleAgent:
                     "reason": "slot was not forced to switch",
                 })
                 continue
-            slot = self._next_switch_slot(pokemon, used_slots)
+            slot, switch_detail = self._best_switch_slot(
+                pokemon,
+                used_slots,
+                mode=mode,
+                learning_profile=learning_profile,
+                team_context=team_context,
+                battlefield_context=battlefield_context,
+            )
             if slot is None:
                 choices.append("pass")
                 details.append({
@@ -424,9 +445,7 @@ class PokemonShowdownBattleAgent:
             details.append({
                 "active_index": active_index,
                 "choice": f"switch {slot}",
-                "slot": slot,
-                "pokemon": self._display_pokemon(pokemon[slot - 1]) if slot - 1 < len(pokemon) else f"slot {slot}",
-                "reason": "healthy non-active bench Pokemon",
+                **switch_detail,
             })
         command = self.connector.build_choose_multi(request.room_id, choices, request.request_id)
         return ShowdownChoicePlan(
@@ -436,7 +455,7 @@ class PokemonShowdownBattleAgent:
             choice_details=details,
             request_id=request.request_id,
             decision_type="force_switch",
-            reason="Selected healthy non-active bench slots for forced switching.",
+            reason="Selected the highest-scored healthy non-active bench slots for forced switching.",
             needs_choice=True,
             warnings=warnings,
         )
@@ -768,6 +787,104 @@ class PokemonShowdownBattleAgent:
         move_id = self.connector.to_id(move.get("id") or move.get("move"))
         return move_id not in {"protect", "detect", "spikyshield", "kingsshield"}
 
+    def _best_switch_slot(
+        self,
+        pokemon: list[dict[str, Any]],
+        used_slots: set[int],
+        *,
+        mode: str,
+        learning_profile: dict[str, Any] | None,
+        team_context: list[dict[str, Any]] | None,
+        battlefield_context: dict[str, Any] | None,
+    ) -> tuple[int | None, dict[str, Any]]:
+        candidates = []
+        for index, member in enumerate(pokemon):
+            slot = index + 1
+            if slot in used_slots or member.get("active") or self._is_fainted(member):
+                continue
+            score, reasons = self._score_switch_candidate(
+                slot,
+                member,
+                mode=mode,
+                learning_profile=learning_profile,
+                team_context=team_context,
+                battlefield_context=battlefield_context,
+            )
+            pokemon_name = self._display_pokemon(member)
+            candidates.append((
+                score,
+                slot,
+                {
+                    "slot": slot,
+                    "pokemon": pokemon_name,
+                    "score": round(score, 2),
+                    "reason": "; ".join(reasons) if reasons else "healthy non-active bench Pokemon",
+                    "strategy_used": bool(reasons),
+                    "learning_used": any("learning profile" in reason for reason in reasons),
+                    "opponent_preview_used": any("opponent preview" in reason for reason in reasons),
+                },
+            ))
+        if not candidates:
+            return None, {}
+        _, slot, detail = max(candidates, key=lambda item: (item[0], -item[1]))
+        return slot, detail
+
+    def _score_switch_candidate(
+        self,
+        slot: int,
+        member: dict[str, Any],
+        *,
+        mode: str,
+        learning_profile: dict[str, Any] | None,
+        team_context: list[dict[str, Any]] | None,
+        battlefield_context: dict[str, Any] | None,
+    ) -> tuple[float, list[str]]:
+        pokemon_name = self._display_pokemon(member)
+        team_member = self._team_member_for_slot(slot, pokemon_name, team_context)
+        moves = {self.connector.to_id(move) for move in self._member_moves(team_member)}
+        ability = self.connector.to_id((team_member or {}).get("ability"))
+        item = self.connector.to_id((team_member or {}).get("item"))
+        hp_fraction = self._condition_hp_fraction(str(member.get("condition") or ""))
+        score = 50.0 + (hp_fraction if hp_fraction is not None else 1.0) * 20.0
+        reasons: list[str] = []
+
+        if hp_fraction is not None and hp_fraction < 0.35:
+            score -= 16
+            reasons.append("low HP lowers forced switch priority")
+        if "fakeout" in moves:
+            score += 22
+            reasons.append("Fake Out can stabilize the forced switch turn")
+        if ability == "intimidate":
+            score += 18
+            reasons.append("Intimidate softens the incoming board")
+        if moves & {"followme", "ragepowder"}:
+            score += 14
+            reasons.append("redirection can protect the partner after switching")
+        if moves & {"tailwind", "trickroom"}:
+            score += 12
+            reasons.append("speed control is valuable after a forced switch")
+        if moves & {"partingshot", "uturn", "voltswitch"}:
+            score += 8
+            reasons.append("pivot move keeps positioning flexible")
+        if mode == "aggressive" and moves & {"fakeout", "taunt", "spore", "sleeppowder"}:
+            score += 8
+            reasons.append("aggressive mode favors disruptive switch-ins")
+        if mode == "defensive" and (ability == "intimidate" or moves & {"protect", "snarl", "partingshot"}):
+            score += 8
+            reasons.append("defensive mode favors stable switch-ins")
+        if self._needs_safer_play(learning_profile):
+            if "protect" in moves or item in {"sitrusberry", "focussash"}:
+                score += 10
+                reasons.append("learning profile favors safer switch resources")
+            if ability == "intimidate":
+                score += 6
+                reasons.append("learning profile favors Intimidate positioning")
+        opponent_bonus, opponent_reason = self._opponent_preview_bonus(moves, ability, battlefield_context)
+        if opponent_bonus:
+            score += opponent_bonus
+            reasons.append(opponent_reason)
+        return score, reasons
+
     def _next_switch_slot(self, pokemon: list[dict[str, Any]], used_slots: set[int]) -> int | None:
         for index, member in enumerate(pokemon):
             slot = index + 1
@@ -779,6 +896,19 @@ class PokemonShowdownBattleAgent:
                 continue
             return slot
         return None
+
+    def _condition_hp_fraction(self, condition: str) -> float | None:
+        condition = str(condition or "").split(" ", 1)[0]
+        if "/" not in condition:
+            return 0.0 if condition == "0" else None
+        current, _, maximum = condition.partition("/")
+        try:
+            max_value = float(maximum)
+            if max_value <= 0:
+                return None
+            return max(0.0, min(1.0, float(current) / max_value))
+        except ValueError:
+            return None
 
     def _is_fainted(self, member: dict[str, Any]) -> bool:
         condition = str(member.get("condition", "")).lower()

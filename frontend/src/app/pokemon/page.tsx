@@ -547,6 +547,7 @@ export default function PokemonBattlePage() {
     ['Phase 13', '队伍预览战略首发评分，按角色、知识和学习档案排序'],
     ['Phase 14', '同步战场在场与 HP，双打目标优先锁定低血量对手'],
     ['Phase 15', '同步双方 poke 预览，对手阵容反哺首发评分'],
+    ['Phase 16', '强制换人按 HP、角色和对手预览评分后排'],
   ];
 
   return (

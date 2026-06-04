@@ -136,6 +136,44 @@ def test_plan_force_switch_chooses_healthy_bench_and_passes_unforced_slot():
     assert plan.choice_details[1]["reason"] == "slot was not forced to switch"
 
 
+def test_plan_force_switch_scores_bench_roles_and_opponent_preview():
+    agent = PokemonShowdownBattleAgent()
+    payload = {
+        "rqid": 27,
+        "forceSwitch": [True],
+        "side": {
+            "pokemon": [
+                {"ident": "p1: Flutter Mane", "condition": "0 fnt", "active": True},
+                {"ident": "p1: Tornadus", "condition": "70/100", "active": True},
+                {"ident": "p1: Incineroar", "condition": "60/100"},
+                {"ident": "p1: Amoonguss", "condition": "100/100"},
+            ]
+        },
+    }
+
+    plan = agent.plan_from_raw_request(
+        payload,
+        "battle-gen9vgc-16",
+        team_context=[
+            {"species": "Flutter Mane", "moves": ["Moonblast"]},
+            {"species": "Tornadus", "moves": ["Tailwind"]},
+            {"species": "Incineroar", "ability": "Intimidate", "moves": ["Fake Out", "Parting Shot"]},
+            {"species": "Amoonguss", "moves": ["Spore", "Rage Powder", "Protect"]},
+        ],
+        battlefield_context={
+            "opponent_preview": [
+                {"species": "Koraidon", "details": "Koraidon, L50"},
+                {"species": "Urshifu", "details": "Urshifu, L50"},
+            ]
+        },
+    )
+
+    assert plan.command == "battle-gen9vgc-16|/choose switch 3|27"
+    assert plan.choice_details[0]["pokemon"] == "Incineroar"
+    assert plan.choice_details[0]["strategy_used"]
+    assert plan.choice_details[0]["opponent_preview_used"]
+
+
 def test_plan_moves_skips_disabled_moves_targets_foe_and_can_tera():
     agent = PokemonShowdownBattleAgent()
     payload = {
