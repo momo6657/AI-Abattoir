@@ -110,6 +110,42 @@ async def test_showdown_decision_plans_next_choice_from_payload(client):
 
 
 @pytest.mark.asyncio
+async def test_showdown_decision_accepts_learning_profile(client):
+    payload = {
+        "rqid": 20,
+        "active": [
+            {
+                "moves": [
+                    {"id": "protect", "target": "self", "pp": 16},
+                    {"id": "moonblast", "target": "normal", "basePower": 95, "pp": 15},
+                ]
+            }
+        ],
+    }
+
+    response = await client.post(
+        "/api/pokemon/showdown/decision",
+        json={
+            "request": payload,
+            "room_id": "battle-gen9vgc-45",
+            "learning_profile": {
+                "battles": 3,
+                "win_rate": 0.0,
+                "average_reward": 10.0,
+                "faints_for": 1,
+                "faints_against": 5,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["plan"]["command"] == "battle-gen9vgc-45|/choose move 1|20"
+    assert data["plan"]["choice_details"][0]["move"] == "protect"
+    assert data["plan"]["choice_details"][0]["learning_used"]
+
+
+@pytest.mark.asyncio
 async def test_showdown_decision_accepts_knowledge_context(client):
     payload = {
         "rqid": 18,

@@ -157,6 +157,42 @@ def test_process_payload_logs_in_and_auto_responds_to_battle_request():
     assert result["decision"]["decision_type"] == "move"
 
 
+def test_process_payload_uses_learning_profile_for_move_choice():
+    service = PokemonShowdownSessionService()
+    session = service.create_session(
+        username="Bot",
+        team=None,
+        learning_profile={
+            "battles": 3,
+            "win_rate": 0.0,
+            "average_reward": 10.0,
+            "faints_for": 1,
+            "faints_against": 5,
+        },
+    )
+    request = {
+        "rqid": 6,
+        "active": [
+            {
+                "moves": [
+                    {"id": "protect", "target": "self", "pp": 16},
+                    {"id": "moonblast", "target": "normal", "basePower": 95, "pp": 15},
+                ]
+            }
+        ],
+    }
+
+    result = service.process_payload(
+        session.session_id,
+        f">battle-gen9vgc-11\n|request|{json.dumps(request)}",
+    )
+
+    assert result["commands"] == ["battle-gen9vgc-11|/choose move 1|6"]
+    assert result["decision"]["choice_details"][0]["move"] == "protect"
+    assert result["decision"]["choice_details"][0]["learning_used"]
+    assert result["session"]["decisions"][0]["choice_details"][0]["learning_used"]
+
+
 def test_process_payload_updates_search_challenges_and_result():
     service = PokemonShowdownSessionService()
     session = service.create_session(username="Bot", team=None)

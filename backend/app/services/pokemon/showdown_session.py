@@ -128,6 +128,7 @@ class ShowdownSessionState:
             "auto_accept_challenges": self.auto_accept_challenges,
             "auto_research_team": self.auto_research_team,
             "accepted_challenges": self.accepted_challenges,
+            "learning_profile": self.learning_profile,
             "has_login_assertion": self.login_assertion is not None,
             "has_login_password": self.login_password is not None,
             "pending_command_count": max(0, len(self.command_log) - len(self.sent_log)),
@@ -262,6 +263,7 @@ class PokemonShowdownSessionService:
                 active_pokemon=state.active_pokemon,
                 allow_tera=allow_tera,
                 knowledge_context=state.knowledge_context or None,
+                learning_profile=state.learning_profile or None,
             )
             if plan.command:
                 commands.append(plan.command)

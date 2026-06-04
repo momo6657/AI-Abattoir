@@ -157,6 +157,40 @@ def test_plan_moves_uses_knowledge_context_as_lightweight_bonus():
     assert plan.choice_details[0]["legal_candidates"][0]["knowledge_used"]
 
 
+def test_plan_moves_uses_weak_learning_profile_for_safer_play():
+    agent = PokemonShowdownBattleAgent()
+    payload = {
+        "rqid": 20,
+        "active": [
+            {
+                "moves": [
+                    {"id": "protect", "target": "self", "pp": 16},
+                    {"id": "moonblast", "target": "normal", "basePower": 95, "pp": 15},
+                ],
+            }
+        ],
+    }
+
+    plan = agent.plan_from_raw_request(
+        payload,
+        "battle-gen9vgc-8",
+        learning_profile={
+            "battles": 3,
+            "win_rate": 0.0,
+            "average_reward": 10.0,
+            "faints_for": 1,
+            "faints_against": 5,
+        },
+    )
+
+    assert plan.command == "battle-gen9vgc-8|/choose move 1|20"
+    assert "Learning profile nudged" in plan.reason
+    assert plan.choice_details[0]["move"] == "protect"
+    assert plan.choice_details[0]["learning_used"]
+    assert "learning profile favors safer play" in plan.choice_details[0]["reason"]
+    assert plan.choice_details[0]["legal_candidates"][0]["learning_used"]
+
+
 def test_plan_moves_omits_target_for_singles_format():
     agent = PokemonShowdownBattleAgent()
     payload = {

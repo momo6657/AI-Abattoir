@@ -60,6 +60,7 @@ class PokemonShowdownBattleAgent:
         active_pokemon: int | None = None,
         allow_tera: bool = True,
         knowledge_context: dict[str, Any] | None = None,
+        learning_profile: dict[str, Any] | None = None,
     ) -> tuple[list[ShowdownEvent], ShowdownBattleRequest | None, ShowdownChoicePlan]:
         events = self.connector.parse_message(payload)
         request = self.connector.parse_battle_request(events)
@@ -70,6 +71,7 @@ class PokemonShowdownBattleAgent:
             active_pokemon=active_pokemon,
             allow_tera=allow_tera,
             knowledge_context=knowledge_context,
+            learning_profile=learning_profile,
         )
 
     def plan_from_raw_request(
@@ -82,6 +84,7 @@ class PokemonShowdownBattleAgent:
         active_pokemon: int | None = None,
         allow_tera: bool = True,
         knowledge_context: dict[str, Any] | None = None,
+        learning_profile: dict[str, Any] | None = None,
     ) -> ShowdownChoicePlan:
         request = ShowdownBattleRequest(
             room_id=room_id,
@@ -99,6 +102,7 @@ class PokemonShowdownBattleAgent:
             active_pokemon=active_pokemon,
             allow_tera=allow_tera,
             knowledge_context=knowledge_context,
+            learning_profile=learning_profile,
         )
 
     def plan(
@@ -110,6 +114,7 @@ class PokemonShowdownBattleAgent:
         active_pokemon: int | None = None,
         allow_tera: bool = True,
         knowledge_context: dict[str, Any] | None = None,
+        learning_profile: dict[str, Any] | None = None,
     ) -> ShowdownChoicePlan:
         if request is None:
             return ShowdownChoicePlan(
@@ -138,6 +143,7 @@ class PokemonShowdownBattleAgent:
                 active_pokemon=active_pokemon,
                 allow_tera=allow_tera,
                 knowledge_context=knowledge_context,
+                learning_profile=learning_profile,
             )
         command = self.connector.build_choose_default(request.room_id, request.request_id)
         return ShowdownChoicePlan(
@@ -236,6 +242,7 @@ class PokemonShowdownBattleAgent:
         active_pokemon: int | None,
         allow_tera: bool,
         knowledge_context: dict[str, Any] | None,
+        learning_profile: dict[str, Any] | None,
     ) -> ShowdownChoicePlan:
         active_species = self._active_species(request)
         planned = [
@@ -247,12 +254,16 @@ class PokemonShowdownBattleAgent:
                 active_pokemon=active_pokemon,
                 pokemon_name=active_species[index] if index < len(active_species) else "",
                 knowledge_context=knowledge_context,
+                learning_profile=learning_profile,
             )
             for index, active_request in enumerate(request.active)
         ]
         choices = [choice for choice, _detail in planned]
         details = [detail for _choice, detail in planned]
         command = self.connector.build_choose_multi(request.room_id, choices, request.request_id)
+        reason = "Scored legal moves by damage, utility, spread pressure, mode, and obvious risk."
+        if any(detail.get("learning_used") for detail in details):
+            reason = f"{reason} Learning profile nudged the plan toward safer play."
         return ShowdownChoicePlan(
             room_id=request.room_id,
             command=command,
@@ -260,7 +271,7 @@ class PokemonShowdownBattleAgent:
             choice_details=details,
             request_id=request.request_id,
             decision_type="move",
-            reason="Scored legal moves by damage, utility, spread pressure, mode, and obvious risk.",
+            reason=reason,
             needs_choice=True,
         )
 
@@ -274,6 +285,7 @@ class PokemonShowdownBattleAgent:
         active_pokemon: int | None,
         pokemon_name: str,
         knowledge_context: dict[str, Any] | None,
+        learning_profile: dict[str, Any] | None,
     ) -> tuple[str, dict[str, Any]]:
         moves = active_request.get("moves") or []
         legal_moves = [
@@ -288,7 +300,7 @@ class PokemonShowdownBattleAgent:
                 "reason": "no legal moves with PP were available",
             }
         scored_moves = [
-            (slot, move, *self._score_move(move, mode, pokemon_name, knowledge_context))
+            (slot, move, *self._score_move(move, mode, pokemon_name, knowledge_context, learning_profile))
             for slot, move in legal_moves
         ]
         move_slot, move, score, reason = max(scored_moves, key=lambda item: item[2])
@@ -308,12 +320,14 @@ class PokemonShowdownBattleAgent:
             "score": round(score, 2),
             "reason": reason,
             "knowledge_used": "knowledge context" in reason,
+            "learning_used": "learning profile" in reason,
             "legal_candidates": [
                 {
                     "slot": slot,
                     "move": candidate.get("id") or candidate.get("move") or f"move {slot}",
                     "score": round(candidate_score, 2),
                     "knowledge_used": "knowledge context" in candidate_reason,
+                    "learning_used": "learning profile" in candidate_reason,
                 }
                 for slot, candidate, candidate_score, candidate_reason in sorted(
                     scored_moves,
@@ -329,12 +343,21 @@ class PokemonShowdownBattleAgent:
         mode: str,
         pokemon_name: str = "",
         knowledge_context: dict[str, Any] | None = None,
+        learning_profile: dict[str, Any] | None = None,
     ) -> tuple[float, str]:
         move_id = self.connector.to_id(move.get("id") or move.get("move"))
         knowledge_bonus, knowledge_reason = self._knowledge_move_bonus(move_id, pokemon_name, knowledge_context)
+        learning_bonus, learning_reason = self._learning_move_bonus(move_id, learning_profile)
         if move_id in {"protect", "detect", "spikyshield", "kingsshield"}:
             score = 35.0 if mode == "defensive" else 15.0
-            return self._with_knowledge_bonus(score, f"protective move scored for {mode} mode", knowledge_bonus, knowledge_reason)
+            return self._with_policy_bonuses(
+                score,
+                f"protective move scored for {mode} mode",
+                knowledge_bonus,
+                knowledge_reason,
+                learning_bonus,
+                learning_reason,
+            )
         utility_scores = {
             "fakeout": 90.0,
             "tailwind": 82.0,
@@ -347,6 +370,10 @@ class PokemonShowdownBattleAgent:
             "willowisp": 64.0,
             "thunderwave": 62.0,
             "encore": 62.0,
+            "partingshot": 66.0,
+            "snarl": 58.0,
+            "reflect": 56.0,
+            "lightscreen": 56.0,
         }
         if move_id in utility_scores:
             score = utility_scores[move_id]
@@ -354,7 +381,14 @@ class PokemonShowdownBattleAgent:
                 score += 6
             if mode == "aggressive" and move_id not in {"fakeout", "spore"}:
                 score -= 6
-            return self._with_knowledge_bonus(score, f"utility move {move_id} matched tactical priority", knowledge_bonus, knowledge_reason)
+            return self._with_policy_bonuses(
+                score,
+                f"utility move {move_id} matched tactical priority",
+                knowledge_bonus,
+                knowledge_reason,
+                learning_bonus,
+                learning_reason,
+            )
         score = float(move.get("basePower") or move.get("power") or 60)
         if move.get("target") in {"allAdjacentFoes", "allAdjacent", "foeSide"}:
             score += 15
@@ -364,7 +398,26 @@ class PokemonShowdownBattleAgent:
             score += min(float(move.get("pp") or 0), 8.0) * 0.25
         if mode == "aggressive":
             score += 10
-        return self._with_knowledge_bonus(score, f"damage move scored from base power in {mode} mode", knowledge_bonus, knowledge_reason)
+        return self._with_policy_bonuses(
+            score,
+            f"damage move scored from base power in {mode} mode",
+            knowledge_bonus,
+            knowledge_reason,
+            learning_bonus,
+            learning_reason,
+        )
+
+    def _with_policy_bonuses(
+        self,
+        score: float,
+        reason: str,
+        knowledge_bonus: float,
+        knowledge_reason: str,
+        learning_bonus: float,
+        learning_reason: str,
+    ) -> tuple[float, str]:
+        score, reason = self._with_knowledge_bonus(score, reason, knowledge_bonus, knowledge_reason)
+        return self._with_learning_bonus(score, reason, learning_bonus, learning_reason)
 
     def _with_knowledge_bonus(
         self,
@@ -376,6 +429,39 @@ class PokemonShowdownBattleAgent:
         if not knowledge_bonus:
             return score, reason
         return score + knowledge_bonus, f"{reason}; {knowledge_reason}"
+
+    def _with_learning_bonus(
+        self,
+        score: float,
+        reason: str,
+        learning_bonus: float,
+        learning_reason: str,
+    ) -> tuple[float, str]:
+        if not learning_bonus:
+            return score, reason
+        return score + learning_bonus, f"{reason}; {learning_reason}"
+
+    def _learning_move_bonus(
+        self,
+        move_id: str,
+        learning_profile: dict[str, Any] | None,
+    ) -> tuple[float, str]:
+        if not move_id or not self._needs_safer_play(learning_profile):
+            return 0.0, ""
+        if move_id in {"protect", "detect", "spikyshield", "kingsshield"}:
+            return 90.0, "learning profile favors safer play after weak results"
+        if move_id in {"partingshot", "snarl", "willowisp", "thunderwave", "reflect", "lightscreen"}:
+            return 18.0, "learning profile favors defensive utility after weak results"
+        return 0.0, ""
+
+    def _needs_safer_play(self, learning_profile: dict[str, Any] | None) -> bool:
+        if not learning_profile or int(learning_profile.get("battles") or 0) <= 0:
+            return False
+        win_rate = float(learning_profile.get("win_rate") or 0.0)
+        average_reward = float(learning_profile.get("average_reward") or 0.0)
+        faints_for = int(learning_profile.get("faints_for") or 0)
+        faints_against = int(learning_profile.get("faints_against") or 0)
+        return win_rate < 0.5 or average_reward < 50 or faints_against > faints_for
 
     def _knowledge_move_bonus(
         self,
