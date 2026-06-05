@@ -112,6 +112,18 @@ def test_create_session_records_auto_research_flag():
     assert session.to_dict()["auto_research_team"]
 
 
+def test_create_session_exposes_next_actions_for_autonomous_start():
+    service = PokemonShowdownSessionService()
+
+    session = service.create_session(username="Bot", team=None)
+    actions = session.to_dict()["next_actions"]
+    action_names = [action["action"] for action in actions]
+
+    assert action_names[:3] == ["research_team", "connect", "start_search"]
+    assert actions[0]["label"] == "Research team"
+    assert actions[1]["priority"] == "normal"
+
+
 def test_create_session_applies_learning_profile_to_auto_team():
     service = PokemonShowdownSessionService()
 
@@ -734,6 +746,8 @@ async def test_connect_failure_records_diagnostics():
     assert snapshot["status"] == "error"
     assert snapshot["connection_diagnostics"]["stage"] == "connect_error"
     assert "Fake connect failed" in snapshot["connection_diagnostics"]["last_error"]
+    assert snapshot["next_actions"][0]["action"] == "connect"
+    assert snapshot["next_actions"][0]["priority"] == "high"
 
 
 @pytest.mark.asyncio
@@ -750,6 +764,8 @@ async def test_flush_send_failure_records_diagnostics():
     assert snapshot["status"] == "error"
     assert snapshot["connection_diagnostics"]["stage"] == "send_error"
     assert "Fake send failed" in snapshot["connection_diagnostics"]["last_error"]
+    assert snapshot["next_actions"][0]["action"] == "flush_pending"
+    assert snapshot["next_actions"][0]["priority"] == "high"
 
 
 @pytest.mark.asyncio
@@ -841,6 +857,8 @@ async def test_run_once_assertion_failure_records_diagnostics():
     assert snapshot["connection_diagnostics"]["stage"] == "assertion_error"
     assert "Fake assertion failed" in snapshot["connection_diagnostics"]["last_error"]
     assert "SECRET" not in json.dumps(snapshot)
+    assert snapshot["next_actions"][0]["action"] == "run_once"
+    assert snapshot["next_actions"][0]["priority"] == "high"
 
 
 @pytest.mark.asyncio
@@ -902,6 +920,8 @@ async def test_run_until_records_receive_error_step_by_default():
     assert result["session"]["status"] == "error"
     assert "No fake Showdown payload" in result["session"]["last_error"]
     assert result["session"]["connection_diagnostics"]["stage"] == "receive_error"
+    assert result["session"]["next_actions"][0]["action"] == "autopilot"
+    assert result["session"]["next_actions"][0]["priority"] == "high"
     assert result["run_summary"]["status"] == "error"
     assert result["run_summary"]["stopped_reason"] == "error"
     assert result["run_summary"]["step_count"] == 1
@@ -962,6 +982,8 @@ async def test_autopilot_connects_searches_responds_and_stops_on_result():
     assert result["run_summary"]["last_decision_type"] == "move"
     assert result["session"]["last_run_summary"]["actions"] == ["connected", "search_queued"]
     assert result["session"]["run_history_count"] == 1
+    finished_actions = [action["action"] for action in result["session"]["next_actions"]]
+    assert finished_actions[:2] == ["analyze", "new_session"]
 
 
 @pytest.mark.asyncio

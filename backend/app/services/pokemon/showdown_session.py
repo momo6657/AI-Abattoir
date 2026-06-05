@@ -97,6 +97,54 @@ class ShowdownSessionState:
             )
         return preview
 
+    def _pending_command_count(self) -> int:
+        return max(0, len(self.command_log) - len(self.sent_log))
+
+    def _next_actions(self) -> list[dict[str, str]]:
+        actions: list[dict[str, str]] = []
+        connected = bool(self.connection_diagnostics.get("connected"))
+        stage = str(self.connection_diagnostics.get("stage") or "")
+        pending_count = self._pending_command_count()
+        challenge_count = len((self.challenges or {}).get("challengesFrom") or {})
+
+        def add(action: str, label: str, detail: str, priority: str = "normal") -> None:
+            if any(existing["action"] == action for existing in actions):
+                return
+            actions.append({
+                "action": action,
+                "label": label,
+                "detail": detail,
+                "priority": priority,
+            })
+
+        if stage == "connect_error":
+            add("connect", "Reconnect", "Open a fresh Pokemon Showdown websocket before continuing.", "high")
+        elif stage == "send_error":
+            add("flush_pending", "Retry send", "Reconnect if needed, then send the queued Showdown commands.", "high")
+        elif stage == "receive_error":
+            add("autopilot", "Resume loop", "Continue the bounded automation loop after checking the live connection.", "high")
+        elif stage == "assertion_error":
+            add("run_once", "Retry login", "Request a new assertion from the next challstr payload.", "high")
+
+        if pending_count:
+            add("flush_pending", "Flush commands", f"Send {pending_count} queued Showdown command(s).", "high")
+        if challenge_count:
+            add("accept_challenge", "Answer challenge", f"Accept or reject {challenge_count} incoming challenge(s).", "high")
+        if self.status == "finished":
+            add("analyze", "Analyze result", "Persist learning and review the finished battle summary.", "normal")
+            add("new_session", "Start next battle", "Create another session using the updated learning profile.", "normal")
+        if self.status == "closed":
+            add("new_session", "Start next battle", "Create a fresh live session for the next Showdown run.", "normal")
+        if self.team_species and not self.knowledge_context and self.status not in {"finished", "closed"}:
+            add("research_team", "Research team", "Attach matchup and usage knowledge for the current team.", "normal")
+        if not connected and self.status not in {"finished", "closed"}:
+            add("connect", "Connect", "Open the Pokemon Showdown websocket for this session.", "normal")
+        if self.status in {"ready", "connected", "authenticated", "error"} and not (self.search or {}).get("searching"):
+            add("start_search", "Queue search", f"Queue a ladder search for {self.showdown_format}.", "normal")
+        if connected and self.status in {"searching", "battling", "choosing", "responded", "connected", "authenticated"}:
+            add("autopilot", "Run autopilot", "Receive messages, make choices, and send commands until a stop condition.", "normal")
+        return actions[:6]
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "session_id": self.session_id,
@@ -136,7 +184,7 @@ class ShowdownSessionState:
             "learning_profile": self.learning_profile,
             "has_login_assertion": self.login_assertion is not None,
             "has_login_password": self.login_password is not None,
-            "pending_command_count": max(0, len(self.command_log) - len(self.sent_log)),
+            "pending_command_count": self._pending_command_count(),
             "command_count": len(self.command_log),
             "sent_count": len(self.sent_log),
             "event_count": len(self.event_log),
@@ -157,6 +205,7 @@ class ShowdownSessionState:
             "run_history": [dict(item) for item in self.run_history],
             "run_history_count": len(self.run_history),
             "last_error": self.last_error,
+            "next_actions": self._next_actions(),
         }
 
 

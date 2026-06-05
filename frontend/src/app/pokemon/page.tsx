@@ -561,6 +561,7 @@ export default function PokemonBattlePage() {
     ['Phase 20', '连续运行返回结构化摘要，前端展示停止原因、发送量和最后决策'],
     ['Phase 21', '会话快照保存最近运行历史，刷新后仍能复盘自动驾驶结果'],
     ['Phase 22', '真实 Showdown 连接、发送、接收和登录 assertion 阶段诊断'],
+    ['Phase 23', '会话快照给出自动驾驶恢复计划和下一步动作建议'],
   ];
 
   return (
@@ -1050,6 +1051,27 @@ export default function PokemonBattlePage() {
                   ) : showdownSession.connection_diagnostics?.updated_at ? (
                     <div className="break-words rounded bg-black/30 p-2 text-gray-500">
                       Diagnostics: {showdownSession.connection_diagnostics.stage} · {showdownSession.connection_diagnostics.updated_at}
+                    </div>
+                  ) : null}
+                  {showdownSession.next_actions?.length ? (
+                    <div className="space-y-2">
+                      <div className="text-[10px] font-semibold uppercase text-gray-500">Next actions</div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {showdownSession.next_actions.map((action: any) => {
+                          const tone = action.priority === 'high'
+                            ? 'border-amber-500/30 bg-amber-500/10 text-amber-100'
+                            : 'border-border bg-black/30 text-gray-200';
+                          return (
+                            <div key={`${action.action}-${action.label}`} className={`min-w-0 rounded border p-2 ${tone}`}>
+                              <div className="flex min-w-0 items-center justify-between gap-2">
+                                <span className="min-w-0 break-words text-[11px] font-medium">{action.label}</span>
+                                <span className="shrink-0 text-[10px] uppercase text-gray-500">{action.priority || 'normal'}</span>
+                              </div>
+                              <div className="mt-1 break-words text-[10px] leading-4 text-gray-400">{action.detail}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   ) : null}
                   {showdownSession.team_preview?.length ? (
