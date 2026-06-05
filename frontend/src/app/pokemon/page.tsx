@@ -126,6 +126,16 @@ export default function PokemonBattlePage() {
     setShowdownRunSummary(runSummary || session.last_run_summary || null);
   }
 
+  function resetShowdownState() {
+    setShowdownSession(null);
+    setShowdownAnalysis(null);
+    setShowdownLearning(null);
+    setShowdownPlan(null);
+    setShowdownRunSummary(null);
+    setShowdownTeamKnowledge([]);
+    setShowdownTeamKnowledgeSummary(null);
+  }
+
   async function refreshOverview() {
     try {
       const [speciesRes, movesRes, historyRes, formatsRes] = await Promise.all([
@@ -338,6 +348,35 @@ export default function PokemonBattlePage() {
     }
   }
 
+  async function createFreshShowdownSession(autoSearch = false) {
+    setBusy(true);
+    setError(null);
+    try {
+      resetShowdownState();
+      const session = (await pokemonApi.createShowdownSession({
+        username: showdownUsername || 'PokemonBot',
+        battle_format: selectedFormatInfo?.id || selectedFormat,
+        mode: showdownMode,
+        auto_login: showdownAutoLogin,
+        auto_accept_challenges: showdownAutoAccept,
+        auto_research_team: showdownAutoResearch,
+        login_password: showdownPassword || undefined,
+        auto_search: autoSearch,
+      })).data;
+      applyShowdownSession(session);
+      setShowdownAnalysis(session.analysis || null);
+      if (session.knowledge_context?.members?.length) {
+        setShowdownTeamKnowledge(session.knowledge_context.members);
+        setShowdownTeamKnowledgeSummary(session.knowledge_context);
+      }
+      addMessage(autoSearch ? 'Fresh Showdown session created with search queued.' : 'Fresh Showdown session created.');
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '创建新 Showdown 会话失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function runShowdownSessionStep() {
     if (!showdownPayload.trim()) return;
     setBusy(true);
@@ -523,6 +562,21 @@ export default function PokemonBattlePage() {
     }
   }
 
+  async function analyzeShowdownSessionSummary() {
+    if (!showdownSession?.session_id) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const analysisResult = (await pokemonApi.analyzeShowdownSession(showdownSession.session_id)).data;
+      setShowdownAnalysis(analysisResult);
+      addMessage(`Showdown analysis: ${analysisResult.status || 'in_progress'} · reward ${analysisResult.reward ?? 0}`);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '分析 Showdown 会话失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function closeShowdownSession() {
     if (!showdownSession?.session_id) return;
     setBusy(true);
@@ -536,6 +590,19 @@ export default function PokemonBattlePage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function executeShowdownNextAction(actionName: string) {
+    if (actionName === 'connect') return connectShowdownSession();
+    if (actionName === 'flush_pending') return flushShowdownPending();
+    if (actionName === 'run_once') return runLiveShowdownOnce();
+    if (actionName === 'autopilot') return runShowdownAutopilot();
+    if (actionName === 'start_search') return startShowdownSearch();
+    if (actionName === 'accept_challenge') return acceptShowdownChallenge();
+    if (actionName === 'research_team') return researchShowdownTeam();
+    if (actionName === 'analyze') return analyzeShowdownSessionSummary();
+    if (actionName === 'new_session') return createFreshShowdownSession(false);
+    setError(`暂不支持的 Showdown 建议动作：${actionName}`);
   }
 
   const phaseItems = [
@@ -562,6 +629,7 @@ export default function PokemonBattlePage() {
     ['Phase 21', '会话快照保存最近运行历史，刷新后仍能复盘自动驾驶结果'],
     ['Phase 22', '真实 Showdown 连接、发送、接收和登录 assertion 阶段诊断'],
     ['Phase 23', '会话快照给出自动驾驶恢复计划和下一步动作建议'],
+    ['Phase 24', '前端可一键执行恢复计划，建议动作直接驱动 Showdown 控制台'],
   ];
 
   return (
@@ -582,13 +650,7 @@ export default function PokemonBattlePage() {
                 value={selectedFormat}
                 onChange={(event) => {
                   setSelectedFormat(event.target.value);
-                  setShowdownSession(null);
-                  setShowdownAnalysis(null);
-                  setShowdownLearning(null);
-                  setShowdownPlan(null);
-                  setShowdownRunSummary(null);
-                  setShowdownTeamKnowledge([]);
-                  setShowdownTeamKnowledgeSummary(null);
+                  resetShowdownState();
                 }}
                 className="mt-1 w-full rounded-md border border-border bg-black/30 px-3 py-2 text-sm normal-case text-gray-100 outline-none focus:border-accent"
               >
@@ -883,15 +945,7 @@ export default function PokemonBattlePage() {
                 关闭连接
               </button>
               <button
-                onClick={() => {
-                  setShowdownSession(null);
-                  setShowdownAnalysis(null);
-                  setShowdownLearning(null);
-                  setShowdownPlan(null);
-                  setShowdownRunSummary(null);
-                  setShowdownTeamKnowledge([]);
-                  setShowdownTeamKnowledgeSummary(null);
-                }}
+                onClick={resetShowdownState}
                 disabled={busy}
                 className="btn-secondary disabled:opacity-50"
               >
@@ -1062,13 +1116,19 @@ export default function PokemonBattlePage() {
                             ? 'border-amber-500/30 bg-amber-500/10 text-amber-100'
                             : 'border-border bg-black/30 text-gray-200';
                           return (
-                            <div key={`${action.action}-${action.label}`} className={`min-w-0 rounded border p-2 ${tone}`}>
+                            <button
+                              key={`${action.action}-${action.label}`}
+                              type="button"
+                              onClick={() => executeShowdownNextAction(action.action)}
+                              disabled={busy}
+                              className={`min-w-0 rounded border p-2 text-left transition hover:border-accent disabled:cursor-not-allowed disabled:opacity-50 ${tone}`}
+                            >
                               <div className="flex min-w-0 items-center justify-between gap-2">
                                 <span className="min-w-0 break-words text-[11px] font-medium">{action.label}</span>
                                 <span className="shrink-0 text-[10px] uppercase text-gray-500">{action.priority || 'normal'}</span>
                               </div>
                               <div className="mt-1 break-words text-[10px] leading-4 text-gray-400">{action.detail}</div>
-                            </div>
+                            </button>
                           );
                         })}
                       </div>
