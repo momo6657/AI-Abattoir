@@ -808,6 +808,8 @@ async def test_run_until_stops_on_finished_and_close_marks_closed():
     assert result["run_summary"]["stopped_reason"] == "finished"
     assert result["run_summary"]["step_count"] == 2
     assert result["run_summary"]["sent_count"] == 0
+    assert result["session"]["last_run_summary"]["stopped_reason"] == "finished"
+    assert result["session"]["run_history_count"] == 1
     assert connector.closed
     assert closed["status"] == "finished"
 
@@ -830,6 +832,8 @@ async def test_run_until_records_receive_error_step_by_default():
     assert result["run_summary"]["stopped_reason"] == "error"
     assert result["run_summary"]["step_count"] == 1
     assert "Pokemon Showdown receive failed" in result["run_summary"]["error"]
+    assert result["session"]["last_run_summary"]["stopped_reason"] == "error"
+    assert result["session"]["run_history_count"] == 1
 
 
 @pytest.mark.asyncio
@@ -882,3 +886,19 @@ async def test_autopilot_connects_searches_responds_and_stops_on_result():
     assert result["run_summary"]["command_count"] == 1
     assert result["run_summary"]["sent_count"] == 1
     assert result["run_summary"]["last_decision_type"] == "move"
+    assert result["session"]["last_run_summary"]["actions"] == ["connected", "search_queued"]
+    assert result["session"]["run_history_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_run_history_keeps_recent_summaries_only():
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None, connector=FakeShowdownConnector([]))
+
+    for _ in range(12):
+        await service.run_until(session.session_id, max_messages=0)
+
+    snapshot = session.to_dict()
+    assert snapshot["run_history_count"] == 10
+    assert snapshot["last_run_summary"]["run_number"] == 12
+    assert [item["run_number"] for item in snapshot["run_history"]] == list(range(3, 13))

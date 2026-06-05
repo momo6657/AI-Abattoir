@@ -138,6 +138,7 @@ Abattoir（竞技场）是一个让 AI 展现真实能力的地方。在这里�
 - Showdown 请求去重：会话按 battle room 与 `rqid` 记录已响应请求，避免 websocket 重复推送造成重复 `/choose`
 - Showdown 自动驾驶韧性：websocket 接收失败会写入会话错误并返回可见 error step，避免长循环静默崩溃
 - Showdown 运行摘要：有界自动运行和一键自动驾驶会返回 `run_summary`，汇总停止原因、步数、发送量、最后决策和错误
+- Showdown 运行历史：会话快照保存最近 10 次自动运行摘要，前端可展示 Run 编号和最近停止原因
 - Showdown 多格式目标策略：单打/随机战会省略普通招式 target 位，双打/VGC 会保留精确目标位，降低跨格式指令不合法风险
 - Showdown 战术评分：对合法招式按伤害、功能招、铺场、模式偏好和自爆风险打分，并在前端显示选择依据
 - Showdown 自动会话：可创建会话、连接 websocket、记录搜索/房间/胜负状态，并对 PS payload 自动产生命令流
@@ -789,6 +790,7 @@ alembic history
 - [x] 宝可梦 Showdown request/rqid 去重防重复出招
 - [x] 宝可梦 Showdown 自动驾驶接收错误可见化
 - [x] 宝可梦 Showdown 连续运行结构化摘要和前端展示
+- [x] 宝可梦 Showdown 会话级最近运行历史
 - [ ] Pokemon Showdown 真实登录和天梯实战
 - [ ] 宝可梦完整多格式战斗策略（单打、随机战、不同世代规则）
 - [ ] 宝可梦强化学习闭环与长期策略评估

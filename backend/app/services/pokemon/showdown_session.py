@@ -62,6 +62,7 @@ class ShowdownSessionState:
     duplicate_request_count: int = 0
     analysis: dict[str, Any] = field(default_factory=dict)
     result: dict[str, Any] | None = None
+    run_history: list[dict[str, Any]] = field(default_factory=list)
     last_error: str | None = None
     team: list[dict[str, Any]] | str | None = None
     login_assertion: str | None = None
@@ -150,6 +151,9 @@ class ShowdownSessionState:
             "decisions": self.decisions,
             "analysis": self.analysis,
             "result": self.result,
+            "last_run_summary": dict(self.run_history[-1]) if self.run_history else None,
+            "run_history": [dict(item) for item in self.run_history],
+            "run_history_count": len(self.run_history),
             "last_error": self.last_error,
         }
 
@@ -410,10 +414,14 @@ class PokemonShowdownSessionService:
             if stop_on_finished and state.status == "finished":
                 break
         state = self._require_session(session_id)
+        run_summary = self._store_run_summary(
+            state,
+            self._build_run_summary(state, results, max_messages=max_messages),
+        )
         return {
             "session": state.to_dict(),
             "steps": results,
-            "run_summary": self._build_run_summary(state, results, max_messages=max_messages),
+            "run_summary": run_summary,
         }
 
     async def autopilot(
@@ -464,11 +472,13 @@ class PokemonShowdownSessionService:
         if close_on_finish and self._require_session(session_id).status == "finished":
             await self.close_session(session_id)
             actions.append("closed")
-        session = self._require_session(session_id).to_dict()
         run_summary = dict(run_result.get("run_summary") or {})
         run_summary["actions"] = actions
         run_summary["initial_sent_count"] = len(initial_sent)
         run_summary["total_sent_count"] = int(run_summary.get("sent_count") or 0) + len(initial_sent)
+        state = self._require_session(session_id)
+        run_summary = self._store_run_summary(state, run_summary, replace_last=True)
+        session = state.to_dict()
         return {
             "session": session,
             "steps": run_result["steps"],
@@ -538,6 +548,26 @@ class PokemonShowdownSessionService:
             "error": error_step.get("error") if isinstance(error_step, dict) else state.last_error,
             "result": state.result,
         }
+
+    def _store_run_summary(
+        self,
+        state: ShowdownSessionState,
+        summary: dict[str, Any],
+        *,
+        replace_last: bool = False,
+    ) -> dict[str, Any]:
+        stored = dict(summary)
+        if replace_last and state.run_history:
+            stored["run_number"] = state.run_history[-1].get("run_number") or len(state.run_history)
+            state.run_history[-1] = stored
+        else:
+            previous_number = int(state.run_history[-1].get("run_number") or len(state.run_history)) if state.run_history else 0
+            stored["run_number"] = previous_number + 1
+            state.run_history.append(stored)
+            if len(state.run_history) > 10:
+                state.run_history = state.run_history[-10:]
+        state.touch()
+        return stored
 
     def cancel_ladder_search(self, session_id: str) -> list[str]:
         state = self._require_session(session_id)

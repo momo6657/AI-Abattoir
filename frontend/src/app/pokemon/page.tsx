@@ -120,6 +120,12 @@ export default function PokemonBattlePage() {
     setMessages((prev) => [message, ...prev].slice(0, 14));
   }
 
+  function applyShowdownSession(session: any, runSummary?: any) {
+    if (!session) return;
+    setShowdownSession(session);
+    setShowdownRunSummary(runSummary || session.last_run_summary || null);
+  }
+
   async function refreshOverview() {
     try {
       const [speciesRes, movesRes, historyRes, formatsRes] = await Promise.all([
@@ -263,7 +269,7 @@ export default function PokemonBattlePage() {
       }
       const result = (await pokemonApi.researchShowdownSessionTeam(session.session_id, 3)).data;
       const context = result.knowledge_context || {};
-      setShowdownSession(result.session || session);
+      applyShowdownSession(result.session || session);
       setShowdownTeamKnowledge(context.members || []);
       setShowdownTeamKnowledgeSummary(context);
       addMessage(`整队知识检索完成：${context.member_count || 0} members / ${context.result_count || 0} refs`);
@@ -308,7 +314,7 @@ export default function PokemonBattlePage() {
       login_password: showdownPassword || undefined,
       auto_search: autoSearch,
     })).data;
-    setShowdownSession(session);
+    applyShowdownSession(session);
     setShowdownAnalysis(session.analysis || null);
     if (session.knowledge_context?.members?.length) {
       setShowdownTeamKnowledge(session.knowledge_context.members);
@@ -323,7 +329,7 @@ export default function PokemonBattlePage() {
     setError(null);
     try {
       const session = await ensureShowdownSession(autoSearch);
-      setShowdownSession(session);
+      applyShowdownSession(session);
       addMessage(autoSearch ? 'Showdown session created with ladder search queued.' : 'Showdown session created.');
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '创建 Showdown 会话失败');
@@ -343,7 +349,7 @@ export default function PokemonBattlePage() {
         auto_respond: true,
       })).data;
       const nextAnalysis = result.session?.analysis || (await pokemonApi.analyzeShowdownSession(session.session_id)).data;
-      setShowdownSession(result.session);
+      applyShowdownSession(result.session);
       setShowdownAnalysis(nextAnalysis);
       setShowdownLearning(result.learning_profile || showdownLearning);
       setShowdownPlan(result.decision || showdownPlan);
@@ -361,7 +367,7 @@ export default function PokemonBattlePage() {
     try {
       const session = await ensureShowdownSession(false);
       const result = (await pokemonApi.startShowdownSearch(session.session_id)).data;
-      setShowdownSession(result.session);
+      applyShowdownSession(result.session);
       addMessage(`Search queued: ${(result.commands || []).join(' / ')}`);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '生成搜索命令失败');
@@ -376,7 +382,7 @@ export default function PokemonBattlePage() {
     setError(null);
     try {
       const result = (await pokemonApi.cancelShowdownSearch(showdownSession.session_id)).data;
-      setShowdownSession(result.session);
+      applyShowdownSession(result.session);
       addMessage(`Cancel search queued: ${(result.commands || []).join(' / ')}`);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '取消搜索失败');
@@ -391,7 +397,7 @@ export default function PokemonBattlePage() {
     setError(null);
     try {
       const result = (await pokemonApi.acceptShowdownChallenge(showdownSession.session_id, showdownChallengeUser)).data;
-      setShowdownSession(result.session);
+      applyShowdownSession(result.session);
       addMessage(`Challenge accepted: ${(result.commands || []).join(' / ')}`);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '接受挑战失败');
@@ -406,7 +412,7 @@ export default function PokemonBattlePage() {
     setError(null);
     try {
       const result = (await pokemonApi.rejectShowdownChallenge(showdownSession.session_id, showdownChallengeUser)).data;
-      setShowdownSession(result.session);
+      applyShowdownSession(result.session);
       addMessage(`Challenge rejected: ${(result.commands || []).join(' / ')}`);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '拒绝挑战失败');
@@ -421,7 +427,7 @@ export default function PokemonBattlePage() {
     try {
       const session = await ensureShowdownSession(false);
       const result = (await pokemonApi.connectShowdownSession(session.session_id, true)).data;
-      setShowdownSession(result.session);
+      applyShowdownSession(result.session);
       addMessage(`Connected to Showdown, sent ${result.sent?.length || 0} pending command(s).`);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '连接 Showdown websocket 失败');
@@ -436,7 +442,7 @@ export default function PokemonBattlePage() {
     setError(null);
     try {
       const result = (await pokemonApi.flushShowdownSession(showdownSession.session_id)).data;
-      setShowdownSession(result.session);
+      applyShowdownSession(result.session);
       addMessage(`Sent pending: ${result.sent?.length || 0} command(s).`);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '发送待发命令失败');
@@ -454,7 +460,7 @@ export default function PokemonBattlePage() {
         auto_respond: true,
         send_commands: true,
       })).data;
-      setShowdownSession(result.session);
+      applyShowdownSession(result.session);
       setShowdownAnalysis(result.session?.analysis || showdownAnalysis);
       setShowdownLearning(result.learning_profile || showdownLearning);
       setShowdownPlan(result.decision || showdownPlan);
@@ -477,13 +483,12 @@ export default function PokemonBattlePage() {
         max_messages: showdownRunLimit,
         stop_on_finished: true,
       })).data;
-      setShowdownSession(result.session);
+      applyShowdownSession(result.session, result.run_summary);
       setShowdownAnalysis(result.session?.analysis || showdownAnalysis);
       setShowdownLearning(result.learning_profile || showdownLearning);
       const steps = result.steps || [];
       const lastDecision = [...steps].reverse().find((step: any) => step.decision)?.decision;
       setShowdownPlan(lastDecision || showdownPlan);
-      setShowdownRunSummary(result.run_summary || null);
       addMessage(`Auto run stopped at ${result.run_summary?.stopped_reason || result.session?.status || 'ready'} after ${steps.length} message(s).`);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '自动运行 Showdown 会话失败');
@@ -504,13 +509,12 @@ export default function PokemonBattlePage() {
         max_messages: showdownRunLimit,
         stop_on_finished: true,
       })).data;
-      setShowdownSession(result.session);
+      applyShowdownSession(result.session, result.run_summary);
       setShowdownAnalysis(result.session?.analysis || showdownAnalysis);
       setShowdownLearning(result.learning_profile || showdownLearning);
       const steps = result.steps || [];
       const lastDecision = [...steps].reverse().find((step: any) => step.decision)?.decision;
       setShowdownPlan(lastDecision || showdownPlan);
-      setShowdownRunSummary(result.run_summary || null);
       addMessage(`Autopilot ${result.run_summary?.stopped_reason || result.session?.status || 'ready'}: ${(result.actions || []).join(' / ') || 'running'} · ${steps.length} message(s).`);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || 'Showdown 自动驾驶失败');
@@ -525,7 +529,7 @@ export default function PokemonBattlePage() {
     setError(null);
     try {
       const session = (await pokemonApi.closeShowdownSession(showdownSession.session_id)).data;
-      setShowdownSession(session);
+      applyShowdownSession(session);
       addMessage('Showdown websocket closed.');
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '关闭 Showdown 会话失败');
@@ -578,6 +582,8 @@ export default function PokemonBattlePage() {
                   setShowdownSession(null);
                   setShowdownAnalysis(null);
                   setShowdownLearning(null);
+                  setShowdownPlan(null);
+                  setShowdownRunSummary(null);
                   setShowdownTeamKnowledge([]);
                   setShowdownTeamKnowledgeSummary(null);
                 }}
@@ -966,7 +972,9 @@ export default function PokemonBattlePage() {
               <div className="mt-3 rounded-md border border-border bg-black/20 p-3 text-xs leading-5 text-gray-400">
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <span className="text-[10px] font-semibold uppercase text-gray-500">Run summary</span>
-                  <span className="text-gray-200">{showdownRunSummary.stopped_reason || showdownRunSummary.status}</span>
+                  <span className="text-gray-200">
+                    #{showdownRunSummary.run_number ?? showdownSession?.run_history_count ?? '-'} · {showdownRunSummary.stopped_reason || showdownRunSummary.status}
+                  </span>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <Metric label="Steps" value={showdownRunSummary.step_count ?? 0} compact />
@@ -986,6 +994,15 @@ export default function PokemonBattlePage() {
                 {showdownRunSummary.actions?.length ? (
                   <div className="mt-2 break-words text-gray-500">
                     Actions: {showdownRunSummary.actions.join(' / ')}
+                  </div>
+                ) : null}
+                {showdownSession?.run_history?.length ? (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {showdownSession.run_history.slice(-4).reverse().map((run: any) => (
+                      <span key={run.run_number} className="rounded border border-border bg-black/20 px-1.5 py-0.5 text-[10px] text-gray-400">
+                        #{run.run_number} {run.stopped_reason || run.status}
+                      </span>
+                    ))}
                   </div>
                 ) : null}
                 {showdownRunSummary.error ? (
