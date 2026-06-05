@@ -804,6 +804,10 @@ async def test_run_until_stops_on_finished_and_close_marks_closed():
     assert len(result["steps"]) == 2
     assert result["session"]["status"] == "finished"
     assert result["session"]["result"] == {"type": "win", "winner": "Bot"}
+    assert result["run_summary"]["status"] == "finished"
+    assert result["run_summary"]["stopped_reason"] == "finished"
+    assert result["run_summary"]["step_count"] == 2
+    assert result["run_summary"]["sent_count"] == 0
     assert connector.closed
     assert closed["status"] == "finished"
 
@@ -822,6 +826,10 @@ async def test_run_until_records_receive_error_step_by_default():
     assert "Pokemon Showdown receive failed" in result["steps"][0]["error"]
     assert result["session"]["status"] == "error"
     assert "No fake Showdown payload" in result["session"]["last_error"]
+    assert result["run_summary"]["status"] == "error"
+    assert result["run_summary"]["stopped_reason"] == "error"
+    assert result["run_summary"]["step_count"] == 1
+    assert "Pokemon Showdown receive failed" in result["run_summary"]["error"]
 
 
 @pytest.mark.asyncio
@@ -867,3 +875,10 @@ async def test_autopilot_connects_searches_responds_and_stops_on_result():
     assert result["session"]["status"] == "finished"
     assert result["session"]["result"] == {"type": "win", "winner": "Bot"}
     assert result["session"]["pending_command_count"] == 0
+    assert result["run_summary"]["actions"] == ["connected", "search_queued"]
+    assert result["run_summary"]["initial_sent_count"] == 2
+    assert result["run_summary"]["total_sent_count"] == 3
+    assert result["run_summary"]["stopped_reason"] == "finished"
+    assert result["run_summary"]["command_count"] == 1
+    assert result["run_summary"]["sent_count"] == 1
+    assert result["run_summary"]["last_decision_type"] == "move"

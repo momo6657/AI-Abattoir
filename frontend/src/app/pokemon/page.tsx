@@ -93,6 +93,7 @@ export default function PokemonBattlePage() {
   const [showdownSession, setShowdownSession] = useState<any>(null);
   const [showdownAnalysis, setShowdownAnalysis] = useState<any>(null);
   const [showdownLearning, setShowdownLearning] = useState<any>(null);
+  const [showdownRunSummary, setShowdownRunSummary] = useState<any>(null);
   const [messages, setMessages] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -482,7 +483,8 @@ export default function PokemonBattlePage() {
       const steps = result.steps || [];
       const lastDecision = [...steps].reverse().find((step: any) => step.decision)?.decision;
       setShowdownPlan(lastDecision || showdownPlan);
-      addMessage(`Auto run stopped at ${result.session?.status || 'ready'} after ${steps.length} message(s).`);
+      setShowdownRunSummary(result.run_summary || null);
+      addMessage(`Auto run stopped at ${result.run_summary?.stopped_reason || result.session?.status || 'ready'} after ${steps.length} message(s).`);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '自动运行 Showdown 会话失败');
     } finally {
@@ -508,7 +510,8 @@ export default function PokemonBattlePage() {
       const steps = result.steps || [];
       const lastDecision = [...steps].reverse().find((step: any) => step.decision)?.decision;
       setShowdownPlan(lastDecision || showdownPlan);
-      addMessage(`Autopilot ${result.session?.status || 'ready'}: ${(result.actions || []).join(' / ') || 'running'} · ${steps.length} message(s).`);
+      setShowdownRunSummary(result.run_summary || null);
+      addMessage(`Autopilot ${result.run_summary?.stopped_reason || result.session?.status || 'ready'}: ${(result.actions || []).join(' / ') || 'running'} · ${steps.length} message(s).`);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || 'Showdown 自动驾驶失败');
     } finally {
@@ -551,6 +554,7 @@ export default function PokemonBattlePage() {
     ['Phase 17', '无可用招式且未被 trapped 时自动评分换人'],
     ['Phase 18', '按 room/rqid 去重，避免重复 websocket 请求重复出招'],
     ['Phase 19', '自动驾驶接收失败时记录错误并返回可见步骤'],
+    ['Phase 20', '连续运行返回结构化摘要，前端展示停止原因、发送量和最后决策'],
   ];
 
   return (
@@ -875,6 +879,7 @@ export default function PokemonBattlePage() {
                   setShowdownAnalysis(null);
                   setShowdownLearning(null);
                   setShowdownPlan(null);
+                  setShowdownRunSummary(null);
                   setShowdownTeamKnowledge([]);
                   setShowdownTeamKnowledgeSummary(null);
                 }}
@@ -956,6 +961,40 @@ export default function PokemonBattlePage() {
                 '等待 Showdown payload。'
               )}
             </div>
+
+            {showdownRunSummary ? (
+              <div className="mt-3 rounded-md border border-border bg-black/20 p-3 text-xs leading-5 text-gray-400">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-semibold uppercase text-gray-500">Run summary</span>
+                  <span className="text-gray-200">{showdownRunSummary.stopped_reason || showdownRunSummary.status}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Metric label="Steps" value={showdownRunSummary.step_count ?? 0} compact />
+                  <Metric label="Sent" value={showdownRunSummary.total_sent_count ?? showdownRunSummary.sent_count ?? 0} compact />
+                  <Metric label="Commands" value={showdownRunSummary.command_count ?? 0} compact />
+                  <Metric label="Decisions" value={showdownRunSummary.decision_count ?? 0} compact />
+                </div>
+                {showdownRunSummary.last_decision_type ? (
+                  <div className="mt-2 rounded bg-black/30 p-2">
+                    <div className="text-gray-500">Last decision</div>
+                    <div className="mt-1 break-all font-mono text-gray-200">
+                      {showdownRunSummary.last_decision_type}
+                      {showdownRunSummary.last_command ? ` · ${showdownRunSummary.last_command}` : ''}
+                    </div>
+                  </div>
+                ) : null}
+                {showdownRunSummary.actions?.length ? (
+                  <div className="mt-2 break-words text-gray-500">
+                    Actions: {showdownRunSummary.actions.join(' / ')}
+                  </div>
+                ) : null}
+                {showdownRunSummary.error ? (
+                  <div className="mt-2 break-words rounded border border-red-500/30 bg-red-500/10 p-2 text-red-100">
+                    {showdownRunSummary.error}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="mt-3 rounded-md border border-border bg-black/20 p-3 text-xs leading-5 text-gray-400">
               {showdownSession ? (

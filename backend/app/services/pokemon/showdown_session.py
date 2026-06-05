@@ -409,7 +409,12 @@ class PokemonShowdownSessionService:
             state = self._require_session(session_id)
             if stop_on_finished and state.status == "finished":
                 break
-        return {"session": self._require_session(session_id).to_dict(), "steps": results}
+        state = self._require_session(session_id)
+        return {
+            "session": state.to_dict(),
+            "steps": results,
+            "run_summary": self._build_run_summary(state, results, max_messages=max_messages),
+        }
 
     async def autopilot(
         self,
@@ -460,11 +465,16 @@ class PokemonShowdownSessionService:
             await self.close_session(session_id)
             actions.append("closed")
         session = self._require_session(session_id).to_dict()
+        run_summary = dict(run_result.get("run_summary") or {})
+        run_summary["actions"] = actions
+        run_summary["initial_sent_count"] = len(initial_sent)
+        run_summary["total_sent_count"] = int(run_summary.get("sent_count") or 0) + len(initial_sent)
         return {
             "session": session,
             "steps": run_result["steps"],
             "sent": initial_sent,
             "actions": actions,
+            "run_summary": run_summary,
         }
 
     async def close_session(self, session_id: str) -> dict[str, Any]:
@@ -493,6 +503,41 @@ class PokemonShowdownSessionService:
             return False
         search_command = f"|/search {state.showdown_format}"
         return search_command not in state.command_log
+
+    def _build_run_summary(
+        self,
+        state: ShowdownSessionState,
+        steps: list[dict[str, Any]],
+        *,
+        max_messages: int,
+    ) -> dict[str, Any]:
+        command_count = sum(len(step.get("commands") or []) for step in steps)
+        sent_count = sum(len(step.get("sent") or []) for step in steps)
+        error_step = next((step for step in steps if step.get("error")), None)
+        decisions = [step.get("decision") for step in steps if step.get("decision")]
+        last_decision = decisions[-1] if decisions else None
+        if error_step:
+            stopped_reason = "error"
+        elif state.status == "finished":
+            stopped_reason = "finished"
+        elif len(steps) >= max_messages:
+            stopped_reason = "max_messages"
+        else:
+            stopped_reason = state.status or "idle"
+        return {
+            "status": state.status,
+            "stopped_reason": stopped_reason,
+            "step_count": len(steps),
+            "max_messages": max_messages,
+            "command_count": command_count,
+            "sent_count": sent_count,
+            "total_sent_count": sent_count,
+            "decision_count": len(decisions),
+            "last_decision_type": last_decision.get("decision_type") if isinstance(last_decision, dict) else None,
+            "last_command": last_decision.get("command") if isinstance(last_decision, dict) else None,
+            "error": error_step.get("error") if isinstance(error_step, dict) else state.last_error,
+            "result": state.result,
+        }
 
     def cancel_ladder_search(self, session_id: str) -> list[str]:
         state = self._require_session(session_id)
