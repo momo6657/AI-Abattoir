@@ -559,6 +559,8 @@ export default function PokemonBattlePage() {
     ['Phase 18', '按 room/rqid 去重，避免重复 websocket 请求重复出招'],
     ['Phase 19', '自动驾驶接收失败时记录错误并返回可见步骤'],
     ['Phase 20', '连续运行返回结构化摘要，前端展示停止原因、发送量和最后决策'],
+    ['Phase 21', '会话快照保存最近运行历史，刷新后仍能复盘自动驾驶结果'],
+    ['Phase 22', '真实 Showdown 连接、发送、接收和登录 assertion 阶段诊断'],
   ];
 
   return (
@@ -1038,7 +1040,18 @@ export default function PokemonBattlePage() {
                     <Metric label="Assertion" value={showdownSession.has_login_assertion ? 'ready' : 'none'} compact />
                     <Metric label="Knowledge" value={showdownSession.has_knowledge_context ? 'ready' : 'none'} compact />
                     <Metric label="Sources" value={showdownSession.knowledge_context?.sources?.length ?? 0} compact />
+                    <Metric label="Conn Stage" value={showdownSession.connection_diagnostics?.stage || 'ready'} compact />
+                    <Metric label="Conn" value={showdownSession.connection_diagnostics?.connected ? 'live' : 'idle'} compact />
                   </div>
+                  {showdownSession.connection_diagnostics?.last_error ? (
+                    <div className="break-words rounded border border-red-500/30 bg-red-500/10 p-2 text-red-100">
+                      {showdownSession.connection_diagnostics.last_error}
+                    </div>
+                  ) : showdownSession.connection_diagnostics?.updated_at ? (
+                    <div className="break-words rounded bg-black/30 p-2 text-gray-500">
+                      Diagnostics: {showdownSession.connection_diagnostics.stage} · {showdownSession.connection_diagnostics.updated_at}
+                    </div>
+                  ) : null}
                   {showdownSession.team_preview?.length ? (
                     <div className="space-y-2">
                       <div className="text-[10px] font-semibold uppercase text-gray-500">Team preview</div>

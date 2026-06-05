@@ -9,19 +9,33 @@ from app.services.pokemon.showdown_session import PokemonShowdownSessionService
 
 
 class FakeShowdownConnector(PokemonShowdownConnector):
-    def __init__(self, incoming: list[str] | None = None):
+    def __init__(
+        self,
+        incoming: list[str] | None = None,
+        *,
+        fail_connect: bool = False,
+        fail_send: bool = False,
+        fail_assertion: bool = False,
+    ):
         super().__init__()
         self.incoming = incoming or []
         self.sent: list[str] = []
         self.connected = False
         self.closed = False
+        self.fail_connect = fail_connect
+        self.fail_send = fail_send
+        self.fail_assertion = fail_assertion
         self.assertion_requests: list[dict[str, str | None]] = []
 
     async def connect(self) -> None:
+        if self.fail_connect:
+            raise RuntimeError("Fake connect failed.")
         self.connected = True
         self.websocket = object()
 
     async def send(self, message: str) -> None:
+        if self.fail_send:
+            raise RuntimeError("Fake send failed.")
         self.sent.append(message)
 
     async def receive(self) -> str:
@@ -35,6 +49,8 @@ class FakeShowdownConnector(PokemonShowdownConnector):
 
     async def request_assertion(self, username: str, challstr: str, password: str | None = None) -> str:
         self.assertion_requests.append({"username": username, "challstr": challstr, "password": password})
+        if self.fail_assertion:
+            raise RuntimeError("Fake assertion failed.")
         return "ASSERT-FROM-PS"
 
 
@@ -700,6 +716,40 @@ async def test_connect_flushes_pending_commands_to_connector():
     assert result["session"]["sent_log"] == result["sent"]
     assert result["session"]["pending_command_count"] == 0
     assert result["session"]["sent_count"] == 2
+    assert result["session"]["connection_diagnostics"]["stage"] == "sent"
+    assert result["session"]["connection_diagnostics"]["connected"]
+    assert result["session"]["connection_diagnostics"]["pending_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_connect_failure_records_diagnostics():
+    connector = FakeShowdownConnector(fail_connect=True)
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None, connector=connector)
+
+    with pytest.raises(ShowdownConnectionError):
+        await service.connect_session(session.session_id)
+
+    snapshot = session.to_dict()
+    assert snapshot["status"] == "error"
+    assert snapshot["connection_diagnostics"]["stage"] == "connect_error"
+    assert "Fake connect failed" in snapshot["connection_diagnostics"]["last_error"]
+
+
+@pytest.mark.asyncio
+async def test_flush_send_failure_records_diagnostics():
+    connector = FakeShowdownConnector(fail_send=True)
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None, auto_search=True, connector=connector)
+    await connector.connect()
+
+    with pytest.raises(ShowdownConnectionError):
+        await service.flush_pending_commands(session.session_id)
+
+    snapshot = session.to_dict()
+    assert snapshot["status"] == "error"
+    assert snapshot["connection_diagnostics"]["stage"] == "send_error"
+    assert "Fake send failed" in snapshot["connection_diagnostics"]["last_error"]
 
 
 @pytest.mark.asyncio
@@ -767,7 +817,30 @@ async def test_run_once_auto_requests_assertion_from_challstr():
     assert result["session"]["status"] == "authenticated"
     assert result["session"]["has_login_assertion"]
     assert result["session"]["has_login_password"]
+    assert result["session"]["connection_diagnostics"]["stage"] == "sent"
+    assert result["session"]["connection_diagnostics"]["has_login_assertion"]
     assert "SECRET" not in json.dumps(result["session"])
+
+
+@pytest.mark.asyncio
+async def test_run_once_assertion_failure_records_diagnostics():
+    connector = FakeShowdownConnector(["|challstr|42|abcdef"], fail_assertion=True)
+    service = PokemonShowdownSessionService()
+    session = service.create_session(
+        username="Bot",
+        team=None,
+        login_password="SECRET",
+        connector=connector,
+    )
+
+    with pytest.raises(ShowdownConnectionError):
+        await service.run_once(session.session_id)
+
+    snapshot = session.to_dict()
+    assert snapshot["status"] == "error"
+    assert snapshot["connection_diagnostics"]["stage"] == "assertion_error"
+    assert "Fake assertion failed" in snapshot["connection_diagnostics"]["last_error"]
+    assert "SECRET" not in json.dumps(snapshot)
 
 
 @pytest.mark.asyncio
@@ -828,6 +901,7 @@ async def test_run_until_records_receive_error_step_by_default():
     assert "Pokemon Showdown receive failed" in result["steps"][0]["error"]
     assert result["session"]["status"] == "error"
     assert "No fake Showdown payload" in result["session"]["last_error"]
+    assert result["session"]["connection_diagnostics"]["stage"] == "receive_error"
     assert result["run_summary"]["status"] == "error"
     assert result["run_summary"]["stopped_reason"] == "error"
     assert result["run_summary"]["step_count"] == 1

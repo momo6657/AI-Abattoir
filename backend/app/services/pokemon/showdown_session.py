@@ -43,6 +43,7 @@ class ShowdownSessionState:
     mode_source: str = "manual"
     mode_recommendation: dict[str, Any] = field(default_factory=dict)
     status: str = "ready"
+    connection_diagnostics: dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     rooms: list[str] = field(default_factory=list)
@@ -111,6 +112,7 @@ class ShowdownSessionState:
             "mode_source": self.mode_source,
             "mode_recommendation": self.mode_recommendation,
             "status": self.status,
+            "connection_diagnostics": dict(self.connection_diagnostics),
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
             "rooms": self.rooms,
@@ -217,6 +219,13 @@ class PokemonShowdownSessionService:
             learning_profile=learning_profile or {},
         )
         self._ensure_team(state)
+        self._set_diagnostic(
+            state,
+            "ready",
+            connected=False,
+            websocket_url=connector.server_url,
+            login_url=connector.login_url,
+        )
         if auto_search:
             state.command_log.extend(connector.build_ladder_search_messages(state.team, format_info.showdown_format))
         self.sessions[session_id] = state
@@ -324,8 +333,14 @@ class PokemonShowdownSessionService:
     async def connect_session(self, session_id: str, *, send_pending: bool = True) -> dict[str, Any]:
         state = self._require_session(session_id)
         connector = self.connectors[session_id]
-        await connector.connect()
+        self._set_diagnostic(state, "connecting", connected=False, websocket_url=connector.server_url)
+        try:
+            await connector.connect()
+        except Exception as exc:
+            self._record_diagnostic_error(state, "connect_error", exc)
+            raise ShowdownConnectionError(state.last_error or str(exc)) from exc
         state.status = "connected"
+        self._set_diagnostic(state, "connected", connected=True)
         sent = []
         if send_pending:
             sent = await self.flush_pending_commands(session_id)
@@ -336,9 +351,20 @@ class PokemonShowdownSessionService:
         state = self._require_session(session_id)
         connector = self.connectors[session_id]
         pending = state.command_log[len(state.sent_log):]
+        self._set_diagnostic(state, "sending" if pending else "send_idle", pending_count=len(pending))
         for command in pending:
-            await connector.send(command)
+            try:
+                await connector.send(command)
+            except Exception as exc:
+                self._record_diagnostic_error(state, "send_error", exc)
+                raise ShowdownConnectionError(state.last_error or str(exc)) from exc
             state.sent_log.append(command)
+        self._set_diagnostic(
+            state,
+            "sent" if pending else "send_idle",
+            pending_count=max(0, len(state.command_log) - len(state.sent_log)),
+            sent_count=len(state.sent_log),
+        )
         state.touch()
         return pending
 
@@ -353,13 +379,13 @@ class PokemonShowdownSessionService:
     ) -> dict[str, Any]:
         state = self._require_session(session_id)
         connector = self.connectors[session_id]
+        self._set_diagnostic(state, "receiving")
         try:
             payload = await connector.receive()
         except Exception as exc:
-            state.last_error = f"Pokemon Showdown receive failed: {exc}"
-            state.status = "error"
-            state.touch()
+            self._record_diagnostic_error(state, "receive_error", exc, prefix="Pokemon Showdown receive failed")
             raise ShowdownConnectionError(state.last_error) from exc
+        self._set_diagnostic(state, "received", last_payload_size=len(payload))
         await self._prepare_login_assertion_from_payload(state, connector, payload)
         result = self.process_payload(
             session_id,
@@ -444,8 +470,14 @@ class PokemonShowdownSessionService:
         initial_sent: list[str] = []
 
         if not connector.websocket:
-            await connector.connect()
+            self._set_diagnostic(state, "connecting", connected=False, websocket_url=connector.server_url)
+            try:
+                await connector.connect()
+            except Exception as exc:
+                self._record_diagnostic_error(state, "connect_error", exc)
+                raise ShowdownConnectionError(state.last_error or str(exc)) from exc
             state.status = "connected"
+            self._set_diagnostic(state, "connected", connected=True)
             actions.append("connected")
 
         if auto_search and self._should_queue_ladder_search(state):
@@ -493,6 +525,7 @@ class PokemonShowdownSessionService:
         await connector.close()
         if state.status != "finished":
             state.status = "closed"
+        self._set_diagnostic(state, "closed", connected=False)
         state.touch()
         return state.to_dict()
 
@@ -568,6 +601,32 @@ class PokemonShowdownSessionService:
                 state.run_history = state.run_history[-10:]
         state.touch()
         return stored
+
+    def _set_diagnostic(self, state: ShowdownSessionState, stage: str, **updates: Any) -> None:
+        next_diagnostics = dict(state.connection_diagnostics)
+        next_diagnostics.update(updates)
+        next_diagnostics["stage"] = stage
+        next_diagnostics["updated_at"] = datetime.now(timezone.utc).isoformat()
+        state.connection_diagnostics = next_diagnostics
+
+    def _record_diagnostic_error(
+        self,
+        state: ShowdownSessionState,
+        stage: str,
+        exc: Exception,
+        *,
+        prefix: str | None = None,
+    ) -> None:
+        message = f"{prefix}: {exc}" if prefix else f"Pokemon Showdown {stage.replace('_', ' ')}: {exc}"
+        state.last_error = message
+        state.status = "error"
+        self._set_diagnostic(
+            state,
+            stage,
+            connected=False,
+            last_error=message,
+        )
+        state.touch()
 
     def cancel_ladder_search(self, session_id: str) -> list[str]:
         state = self._require_session(session_id)
@@ -647,6 +706,7 @@ class PokemonShowdownSessionService:
         challstr = self._extract_challstr_from_payload(payload)
         if not challstr:
             return
+        self._set_diagnostic(state, "requesting_assertion", has_login_password=state.login_password is not None)
         try:
             state.login_assertion = await connector.request_assertion(
                 state.username,
@@ -654,9 +714,14 @@ class PokemonShowdownSessionService:
                 password=state.login_password,
             )
         except Exception as exc:
-            state.last_error = f"Pokemon Showdown assertion request failed: {exc}"
-            state.status = "error"
+            self._record_diagnostic_error(
+                state,
+                "assertion_error",
+                exc,
+                prefix="Pokemon Showdown assertion request failed",
+            )
             raise ShowdownConnectionError(state.last_error) from exc
+        self._set_diagnostic(state, "assertion_ready", has_login_assertion=True)
 
     def _extract_challstr_from_payload(self, payload: str) -> str | None:
         for raw_line in payload.splitlines():
