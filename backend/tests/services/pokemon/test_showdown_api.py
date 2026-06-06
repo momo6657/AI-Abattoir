@@ -754,10 +754,13 @@ async def test_showdown_mission_creates_session_and_runs_supervisor(setup_db, mo
     assert data["mission_summary"]["step_count"] == 1
     assert data["mission_summary"]["mission_goal"] == "ladder"
     assert data["mission_summary"]["allowed_actions"] == ["start_search"]
+    assert data["mission_summary"]["mission_number"] == 1
     assert data["supervisor"]["steps"][0]["action"] == "start_search"
     assert data["session"]["status"] == "searching"
     assert data["session"]["has_knowledge_context"]
     assert data["session"]["last_supervisor_summary"]["actions"] == ["start_search"]
+    assert data["session"]["last_mission_summary"]["mission_goal"] == "ladder"
+    assert data["session"]["mission_history_count"] == 1
 
     await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
 
@@ -794,10 +797,12 @@ async def test_showdown_mission_prepare_goal_only_researches_team(setup_db, monk
     assert data["mission_summary"]["mission_goal"] == "prepare"
     assert data["mission_summary"]["allowed_actions"] == ["research_team"]
     assert data["mission_summary"]["stop_reason"] == "stop_action"
+    assert data["mission_summary"]["mission_number"] == 1
     assert data["supervisor"]["steps"][0]["action"] == "research_team"
     assert data["session"]["status"] == "ready"
     assert data["session"]["pending_command_count"] == 0
     assert data["session"]["has_knowledge_context"]
+    assert data["session"]["last_mission_summary"]["allowed_actions"] == ["research_team"]
 
     await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
 

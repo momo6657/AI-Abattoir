@@ -65,6 +65,7 @@ class ShowdownSessionState:
     result: dict[str, Any] | None = None
     run_history: list[dict[str, Any]] = field(default_factory=list)
     supervisor_history: list[dict[str, Any]] = field(default_factory=list)
+    mission_history: list[dict[str, Any]] = field(default_factory=list)
     last_error: str | None = None
     team: list[dict[str, Any]] | str | None = None
     login_assertion: str | None = None
@@ -208,6 +209,9 @@ class ShowdownSessionState:
             "last_supervisor_summary": dict(self.supervisor_history[-1]) if self.supervisor_history else None,
             "supervisor_history": [dict(item) for item in self.supervisor_history],
             "supervisor_history_count": len(self.supervisor_history),
+            "last_mission_summary": dict(self.mission_history[-1]) if self.mission_history else None,
+            "mission_history": [dict(item) for item in self.mission_history],
+            "mission_history_count": len(self.mission_history),
             "last_error": self.last_error,
             "next_actions": self._next_actions(),
         }
@@ -667,6 +671,21 @@ class PokemonShowdownSessionService:
         state.supervisor_history.append(stored)
         if len(state.supervisor_history) > 10:
             state.supervisor_history = state.supervisor_history[-10:]
+        state.touch()
+        return stored
+
+    def store_mission_summary(self, session_id: str, summary: dict[str, Any]) -> dict[str, Any]:
+        state = self._require_session(session_id)
+        stored = dict(summary)
+        previous_number = (
+            int(state.mission_history[-1].get("mission_number") or len(state.mission_history))
+            if state.mission_history
+            else 0
+        )
+        stored["mission_number"] = previous_number + 1
+        state.mission_history.append(stored)
+        if len(state.mission_history) > 10:
+            state.mission_history = state.mission_history[-10:]
         state.touch()
         return stored
 

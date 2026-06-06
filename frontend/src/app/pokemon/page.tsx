@@ -700,6 +700,7 @@ export default function PokemonBattlePage() {
     ['Phase 28', '自主任务入口可一键创建队伍、启动会话并进入监督循环'],
     ['Phase 29', 'Showdown 学习档案生成 Mastery 排行并在控制台展示实力变化'],
     ['Phase 30', '自主任务支持 prepare/queue/ladder/learn 目标预设和动作边界'],
+    ['Phase 31', '会话快照保存自主任务历史，前端展示任务目标和动作边界'],
   ];
 
   return (
@@ -1195,6 +1196,41 @@ export default function PokemonBattlePage() {
                 {showdownSession.last_supervisor_summary.error ? (
                   <div className="mt-2 break-words rounded border border-red-500/30 bg-red-500/10 p-2 text-red-100">
                     {showdownSession.last_supervisor_summary.error}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {showdownSession?.last_mission_summary ? (
+              <div className="mt-3 rounded-md border border-border bg-black/20 p-3 text-xs leading-5 text-gray-400">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-semibold uppercase text-gray-500">Mission summary</span>
+                  <span className="text-gray-200">
+                    #{showdownSession.last_mission_summary.mission_number ?? showdownSession.mission_history_count ?? '-'} · {showdownSession.last_mission_summary.mission_goal}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Metric label="Stop" value={showdownSession.last_mission_summary.stop_reason || 'ready'} compact />
+                  <Metric label="Steps" value={showdownSession.last_mission_summary.step_count ?? 0} compact />
+                  <Metric label="History" value={showdownSession.mission_history_count ?? 0} compact />
+                  <Metric label="Mode" value={showdownSession.last_mission_summary.mode || showdownSession.mode || '-'} compact />
+                </div>
+                {showdownSession.last_mission_summary.allowed_actions?.length ? (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {showdownSession.last_mission_summary.allowed_actions.map((action: string) => (
+                      <span key={`mission-${action}`} className="rounded border border-border bg-black/20 px-1.5 py-0.5 text-[10px] text-gray-400">
+                        {action}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {showdownSession?.mission_history?.length ? (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {showdownSession.mission_history.slice(-4).reverse().map((mission: any) => (
+                      <span key={mission.mission_number} className="rounded border border-border bg-black/20 px-1.5 py-0.5 text-[10px] text-gray-400">
+                        #{mission.mission_number} {mission.mission_goal}:{mission.stop_reason}
+                      </span>
+                    ))}
                   </div>
                 ) : null}
               </div>

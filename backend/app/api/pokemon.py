@@ -563,22 +563,29 @@ async def start_showdown_mission(payload: ShowdownSessionMissionRequest, db: Asy
     )
     supervisor = await supervise_showdown_session(session.session_id, supervisor_payload, db)
     final_session = supervisor.get("session") or session.to_dict()
+    mission_summary = {
+        "session_id": supervisor.get("session_id", session.session_id),
+        "original_session_id": session.session_id,
+        "username": payload.username,
+        "battle_format": final_session.get("battle_format"),
+        "showdown_format": final_session.get("showdown_format"),
+        "team_source": final_session.get("team_source"),
+        "mode": final_session.get("mode"),
+        "mission_goal": mission_policy["mission_goal"],
+        "allowed_actions": mission_policy["allowed_actions"],
+        "stop_reason": supervisor.get("stop_reason"),
+        "step_count": supervisor.get("step_count", 0),
+    }
+    stored_mission = pokemon_showdown_session_service.store_mission_summary(
+        mission_summary["session_id"],
+        mission_summary,
+    )
+    final_state = pokemon_showdown_session_service.get_session(mission_summary["session_id"])
+    final_session = final_state.to_dict() if final_state else final_session
     return {
         "session": final_session,
         "supervisor": supervisor,
-        "mission_summary": {
-            "session_id": supervisor.get("session_id", session.session_id),
-            "original_session_id": session.session_id,
-            "username": payload.username,
-            "battle_format": final_session.get("battle_format"),
-            "showdown_format": final_session.get("showdown_format"),
-            "team_source": final_session.get("team_source"),
-            "mode": final_session.get("mode"),
-            "mission_goal": mission_policy["mission_goal"],
-            "allowed_actions": mission_policy["allowed_actions"],
-            "stop_reason": supervisor.get("stop_reason"),
-            "step_count": supervisor.get("step_count", 0),
-        },
+        "mission_summary": stored_mission,
     }
 
 
