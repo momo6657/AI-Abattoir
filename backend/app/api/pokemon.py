@@ -544,10 +544,11 @@ async def start_showdown_mission(payload: ShowdownSessionMissionRequest, db: Asy
     if payload.max_actions < 1 or payload.max_actions > 20:
         raise HTTPException(status_code=400, detail="max_actions must be between 1 and 20.")
     try:
-        mission_policy = _resolve_showdown_mission_policy(payload)
+        _normalize_showdown_mission_goal(payload.mission_goal)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     session = await _create_showdown_session_state(payload, db, max_results=payload.max_results)
+    mission_policy = _resolve_showdown_mission_policy(payload, session.to_dict())
     supervisor_payload = ShowdownSessionSupervisorRequest(
         action=payload.start_action,
         max_messages=payload.max_messages,
@@ -571,6 +572,7 @@ async def start_showdown_mission(payload: ShowdownSessionMissionRequest, db: Asy
         "showdown_format": final_session.get("showdown_format"),
         "team_source": final_session.get("team_source"),
         "mode": final_session.get("mode"),
+        "requested_mission_goal": mission_policy["requested_mission_goal"],
         "mission_goal": mission_policy["mission_goal"],
         "allowed_actions": mission_policy["allowed_actions"],
         "stop_reason": supervisor.get("stop_reason"),
@@ -631,8 +633,18 @@ async def _create_showdown_session_state(
     return session
 
 
-def _resolve_showdown_mission_policy(payload: ShowdownSessionMissionRequest) -> dict:
-    goal = (payload.mission_goal or "ladder").lower()
+def _normalize_showdown_mission_goal(goal: str | None) -> str:
+    normalized = (goal or "ladder").lower()
+    if normalized not in {"auto", "prepare", "queue", "ladder", "learn"}:
+        raise ValueError("mission_goal must be one of: auto, prepare, queue, ladder, learn.")
+    return normalized
+
+
+def _resolve_showdown_mission_policy(payload: ShowdownSessionMissionRequest, session: dict | None = None) -> dict:
+    requested_goal = _normalize_showdown_mission_goal(payload.mission_goal)
+    goal = requested_goal
+    if goal == "auto":
+        goal = _recommend_showdown_mission_goal(session or {})
     presets = {
         "prepare": {
             "allowed_actions": ["research_team"],
@@ -679,10 +691,9 @@ def _resolve_showdown_mission_policy(payload: ShowdownSessionMissionRequest) -> 
             "stop_on_new_session": False,
         },
     }
-    if goal not in presets:
-        raise ValueError("mission_goal must be one of: prepare, queue, ladder, learn.")
     policy = dict(presets[goal])
     policy["mission_goal"] = goal
+    policy["requested_mission_goal"] = requested_goal
     if payload.allowed_actions:
         policy["allowed_actions"] = payload.allowed_actions
     if payload.stop_actions:
@@ -690,6 +701,25 @@ def _resolve_showdown_mission_policy(payload: ShowdownSessionMissionRequest) -> 
     if payload.auto_search:
         policy["auto_search"] = True
     return policy
+
+
+def _recommend_showdown_mission_goal(session: dict) -> str:
+    profile = session.get("learning_profile") or {}
+    battles = int(profile.get("battles") or 0)
+    win_rate = float(profile.get("win_rate") or 0.0)
+    average_reward = float(profile.get("average_reward") or 0.0)
+    has_knowledge = bool(session.get("has_knowledge_context"))
+    has_team_species = bool(session.get("team_species"))
+
+    if has_team_species and not has_knowledge:
+        return "prepare"
+    if battles < 3:
+        return "queue"
+    if win_rate < 0.45 or average_reward < 40:
+        return "prepare"
+    if win_rate >= 0.6 and average_reward >= 70:
+        return "learn"
+    return "ladder"
 
 
 @router.get("/showdown/learning/profiles")

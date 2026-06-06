@@ -89,7 +89,7 @@ export default function PokemonBattlePage() {
   const [showdownAutoResearch, setShowdownAutoResearch] = useState(false);
   const [showdownRunLimit, setShowdownRunLimit] = useState(10);
   const [showdownMode, setShowdownMode] = useState<'auto' | 'balanced' | 'aggressive' | 'defensive'>('auto');
-  const [showdownMissionGoal, setShowdownMissionGoal] = useState<'prepare' | 'queue' | 'ladder' | 'learn'>('ladder');
+  const [showdownMissionGoal, setShowdownMissionGoal] = useState<'auto' | 'prepare' | 'queue' | 'ladder' | 'learn'>('auto');
   const [showdownPlan, setShowdownPlan] = useState<any>(null);
   const [showdownSession, setShowdownSession] = useState<any>(null);
   const [showdownAnalysis, setShowdownAnalysis] = useState<any>(null);
@@ -701,6 +701,7 @@ export default function PokemonBattlePage() {
     ['Phase 29', 'Showdown 学习档案生成 Mastery 排行并在控制台展示实力变化'],
     ['Phase 30', '自主任务支持 prepare/queue/ladder/learn 目标预设和动作边界'],
     ['Phase 31', '会话快照保存自主任务历史，前端展示任务目标和动作边界'],
+    ['Phase 32', '自主任务支持 auto 目标，根据学习档案和知识状态选择训练节奏'],
   ];
 
   return (
@@ -978,8 +979,8 @@ export default function PokemonBattlePage() {
               ))}
             </div>
 
-            <div className="mt-2 grid grid-cols-4 gap-1 rounded-md border border-border bg-black/20 p-1">
-              {(['prepare', 'queue', 'ladder', 'learn'] as const).map((goal) => (
+            <div className="mt-2 grid grid-cols-5 gap-1 rounded-md border border-border bg-black/20 p-1">
+              {(['auto', 'prepare', 'queue', 'ladder', 'learn'] as const).map((goal) => (
                 <button
                   key={goal}
                   onClick={() => setShowdownMissionGoal(goal)}
@@ -1210,6 +1211,7 @@ export default function PokemonBattlePage() {
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
+                  <Metric label="Requested" value={showdownSession.last_mission_summary.requested_mission_goal || showdownSession.last_mission_summary.mission_goal || '-'} compact />
                   <Metric label="Stop" value={showdownSession.last_mission_summary.stop_reason || 'ready'} compact />
                   <Metric label="Steps" value={showdownSession.last_mission_summary.step_count ?? 0} compact />
                   <Metric label="History" value={showdownSession.mission_history_count ?? 0} compact />
