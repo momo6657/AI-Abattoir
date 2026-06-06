@@ -348,35 +348,6 @@ export default function PokemonBattlePage() {
     }
   }
 
-  async function createFreshShowdownSession(autoSearch = false) {
-    setBusy(true);
-    setError(null);
-    try {
-      resetShowdownState();
-      const session = (await pokemonApi.createShowdownSession({
-        username: showdownUsername || 'PokemonBot',
-        battle_format: selectedFormatInfo?.id || selectedFormat,
-        mode: showdownMode,
-        auto_login: showdownAutoLogin,
-        auto_accept_challenges: showdownAutoAccept,
-        auto_research_team: showdownAutoResearch,
-        login_password: showdownPassword || undefined,
-        auto_search: autoSearch,
-      })).data;
-      applyShowdownSession(session);
-      setShowdownAnalysis(session.analysis || null);
-      if (session.knowledge_context?.members?.length) {
-        setShowdownTeamKnowledge(session.knowledge_context.members);
-        setShowdownTeamKnowledgeSummary(session.knowledge_context);
-      }
-      addMessage(autoSearch ? 'Fresh Showdown session created with search queued.' : 'Fresh Showdown session created.');
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || err?.message || '创建新 Showdown 会话失败');
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function runShowdownSessionStep() {
     if (!showdownPayload.trim()) return;
     setBusy(true);
@@ -562,21 +533,6 @@ export default function PokemonBattlePage() {
     }
   }
 
-  async function analyzeShowdownSessionSummary() {
-    if (!showdownSession?.session_id) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const analysisResult = (await pokemonApi.analyzeShowdownSession(showdownSession.session_id)).data;
-      setShowdownAnalysis(analysisResult);
-      addMessage(`Showdown analysis: ${analysisResult.status || 'in_progress'} · reward ${analysisResult.reward ?? 0}`);
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || err?.message || '分析 Showdown 会话失败');
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function closeShowdownSession() {
     if (!showdownSession?.session_id) return;
     setBusy(true);
@@ -593,16 +549,34 @@ export default function PokemonBattlePage() {
   }
 
   async function executeShowdownNextAction(actionName: string) {
-    if (actionName === 'connect') return connectShowdownSession();
-    if (actionName === 'flush_pending') return flushShowdownPending();
-    if (actionName === 'run_once') return runLiveShowdownOnce();
-    if (actionName === 'autopilot') return runShowdownAutopilot();
-    if (actionName === 'start_search') return startShowdownSearch();
-    if (actionName === 'accept_challenge') return acceptShowdownChallenge();
-    if (actionName === 'research_team') return researchShowdownTeam();
-    if (actionName === 'analyze') return analyzeShowdownSessionSummary();
-    if (actionName === 'new_session') return createFreshShowdownSession(false);
-    setError(`暂不支持的 Showdown 建议动作：${actionName}`);
+    if (!showdownSession?.session_id) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = (await pokemonApi.executeShowdownNextAction(showdownSession.session_id, {
+        action: actionName,
+        max_messages: showdownRunLimit,
+        auto_search: true,
+        send_commands: true,
+        stop_on_finished: true,
+      })).data;
+      const result = response.result || {};
+      applyShowdownSession(response.session || result.session, result.run_summary);
+      setShowdownAnalysis(response.analysis || response.session?.analysis || showdownAnalysis);
+      setShowdownLearning(response.learning_profile || showdownLearning);
+      if (response.knowledge_context?.members?.length) {
+        setShowdownTeamKnowledge(response.knowledge_context.members);
+        setShowdownTeamKnowledgeSummary(response.knowledge_context);
+      }
+      const steps = result.steps || [];
+      const lastDecision = [...steps].reverse().find((step: any) => step.decision)?.decision;
+      setShowdownPlan(lastDecision || result.decision || showdownPlan);
+      addMessage(`Next action ${response.action || actionName}: ${result.run_summary?.stopped_reason || response.session?.status || 'done'}`);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '执行 Showdown 建议动作失败');
+    } finally {
+      setBusy(false);
+    }
   }
 
   const phaseItems = [
@@ -630,6 +604,7 @@ export default function PokemonBattlePage() {
     ['Phase 22', '真实 Showdown 连接、发送、接收和登录 assertion 阶段诊断'],
     ['Phase 23', '会话快照给出自动驾驶恢复计划和下一步动作建议'],
     ['Phase 24', '前端可一键执行恢复计划，建议动作直接驱动 Showdown 控制台'],
+    ['Phase 25', '后端统一执行恢复动作，智能体可通过 API 自主推进会话'],
   ];
 
   return (

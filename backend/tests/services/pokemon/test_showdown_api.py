@@ -538,6 +538,97 @@ async def test_showdown_session_knowledge_endpoint_attaches_context(setup_db, mo
 
 
 @pytest.mark.asyncio
+async def test_showdown_session_next_action_defaults_to_recommended_research(setup_db, monkeypatch, client):
+    async def fake_search_team(db, species, query_type="species_usage", max_results=3):
+        return {
+            "query_type": query_type,
+            "species": species,
+            "members": [{"species": species[0], "results": [{"title": "usage"}], "result_count": 1}],
+            "member_count": len(species),
+            "cached_count": 0,
+            "result_count": 1,
+            "failed_count": 0,
+            "sources": ["https://example.com/usage"],
+        }
+
+    monkeypatch.setattr(pokemon_knowledge_service, "search_team", fake_search_team)
+    created = await client.post("/api/pokemon/showdown/sessions", json={"username": "Bot", "team": None})
+    session_id = created.json()["session_id"]
+
+    response = await client.post(f"/api/pokemon/showdown/sessions/{session_id}/next-action", json={})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["action"] == "research_team"
+    assert data["knowledge_context"]["result_count"] == 1
+    assert data["session"]["has_knowledge_context"]
+
+    await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
+
+
+@pytest.mark.asyncio
+async def test_showdown_session_next_action_can_queue_search(setup_db, client):
+    created = await client.post("/api/pokemon/showdown/sessions", json={"username": "Bot", "team": None})
+    session_id = created.json()["session_id"]
+
+    response = await client.post(
+        f"/api/pokemon/showdown/sessions/{session_id}/next-action",
+        json={"action": "start_search"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["action"] == "start_search"
+    assert data["result"]["commands"][1] == "|/search gen9vgc2024regg"
+    assert data["session"]["status"] == "searching"
+    assert data["session"]["pending_command_count"] == 2
+
+    await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
+
+
+@pytest.mark.asyncio
+async def test_showdown_session_next_action_can_create_next_session(setup_db, client):
+    created = await client.post(
+        "/api/pokemon/showdown/sessions",
+        json={"username": "Bot", "team": None, "mode": "auto", "login_password": "SECRET"},
+    )
+    previous_id = created.json()["session_id"]
+
+    response = await client.post(
+        f"/api/pokemon/showdown/sessions/{previous_id}/next-action",
+        json={"action": "new_session"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    next_id = data["session"]["session_id"]
+    assert data["action"] == "new_session"
+    assert next_id != previous_id
+    assert data["result"]["previous_session"]["session_id"] == previous_id
+    assert data["session"]["requested_mode"] == "auto"
+    assert "SECRET" not in json.dumps(data)
+
+    await client.delete(f"/api/pokemon/showdown/sessions/{previous_id}")
+    await client.delete(f"/api/pokemon/showdown/sessions/{next_id}")
+
+
+@pytest.mark.asyncio
+async def test_showdown_session_next_action_rejects_unknown_action(setup_db, client):
+    created = await client.post("/api/pokemon/showdown/sessions", json={"username": "Bot", "team": None})
+    session_id = created.json()["session_id"]
+
+    response = await client.post(
+        f"/api/pokemon/showdown/sessions/{session_id}/next-action",
+        json={"action": "unsupported"},
+    )
+
+    assert response.status_code == 400
+    assert "Unsupported Showdown next action" in response.json()["detail"]
+
+    await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
+
+
+@pytest.mark.asyncio
 async def test_showdown_session_cancel_search_endpoint_records_command(setup_db, client):
     created = await client.post(
         "/api/pokemon/showdown/sessions",

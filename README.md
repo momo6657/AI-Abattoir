@@ -142,6 +142,7 @@ Abattoir（竞技场）是一个让 AI 展现真实能力的地方。在这里�
 - Showdown 连接诊断：会话快照记录 websocket 连接、命令发送、消息接收和 assertion 登录阶段，失败时返回可见诊断错误
 - Showdown 恢复计划：会话快照根据连接状态、错误阶段、待发命令、挑战和战后结果给出下一步动作建议
 - Showdown 可执行恢复：前端可直接点击恢复计划，触发连接、发送待发、继续自动驾驶、分析结果或创建下一局
+- Showdown 动作执行 API：后端提供统一 `next-action` 入口，智能体或调度器可按推荐动作自主推进会话
 - Showdown 多格式目标策略：单打/随机战会省略普通招式 target 位，双打/VGC 会保留精确目标位，降低跨格式指令不合法风险
 - Showdown 战术评分：对合法招式按伤害、功能招、铺场、模式偏好和自爆风险打分，并在前端显示选择依据
 - Showdown 自动会话：可创建会话、连接 websocket、记录搜索/房间/胜负状态，并对 PS payload 自动产生命令流
@@ -577,6 +578,7 @@ AI-Abattoir/
 | POST | `/api/pokemon/showdown/sessions/{id}/run-once` | 从 websocket 读取一条消息、自动决策并发送命令 |
 | POST | `/api/pokemon/showdown/sessions/{id}/run-until` | 有界运行 Showdown 自动会话循环 |
 | POST | `/api/pokemon/showdown/sessions/{id}/autopilot` | 一键连接、搜索并运行有界 Showdown 自动驾驶循环 |
+| POST | `/api/pokemon/showdown/sessions/{id}/next-action` | 执行会话推荐动作，支持连接、搜索、研究、自动驾驶、分析和创建下一局 |
 | POST | `/api/pokemon/showdown/sessions/{id}/close` | 关闭 Showdown websocket 会话 |
 | DELETE | `/api/pokemon/showdown/sessions/{id}` | 删除 Showdown 自动会话 |
 
@@ -797,6 +799,7 @@ alembic history
 - [x] 宝可梦 Showdown 真实连接和登录阶段诊断
 - [x] 宝可梦 Showdown 自动驾驶恢复计划和下一步动作建议
 - [x] 宝可梦 Showdown 前端一键执行恢复计划
+- [x] 宝可梦 Showdown 后端统一恢复动作执行 API
 - [ ] Pokemon Showdown 真实登录和天梯实战
 - [ ] 宝可梦完整多格式战斗策略（单打、随机战、不同世代规则）
 - [ ] 宝可梦强化学习闭环与长期策略评估

@@ -24,6 +24,7 @@ from app.schemas.pokemon import (
     ShowdownSessionAutopilotRequest,
     ShowdownSessionCreateRequest,
     ShowdownSessionMessageRequest,
+    ShowdownSessionNextActionRequest,
     ShowdownSessionRunRequest,
 )
 from app.models.pokemon import (
@@ -811,6 +812,48 @@ async def autopilot_showdown_session(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.post("/showdown/sessions/{session_id}/next-action")
+async def execute_showdown_session_next_action(
+    session_id: str,
+    payload: ShowdownSessionNextActionRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Execute one recommended Showdown session action for autonomous supervisors."""
+    state = pokemon_showdown_session_service.get_session(session_id)
+    if not state:
+        raise HTTPException(status_code=404, detail="Pokemon Showdown session not found")
+
+    action = payload.action
+    if not action:
+        next_actions = state.to_dict().get("next_actions") or []
+        action = next_actions[0].get("action") if next_actions else None
+    if not action:
+        session = state.to_dict()
+        return {
+            "action": None,
+            "session": session,
+            "result": {"skipped": True, "reason": "No recommended action is available."},
+        }
+
+    try:
+        result = await _execute_showdown_action(session_id, action, payload, db)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (ShowdownConnectionError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    session = result.get("session") or pokemon_showdown_session_service.get_session(session_id)
+    if hasattr(session, "to_dict"):
+        session = session.to_dict()
+    return {
+        "action": action,
+        "session": session,
+        "result": result,
+        "analysis": result.get("analysis"),
+        "learning_profile": result.get("learning_profile"),
+        "knowledge_context": result.get("knowledge_context"),
+    }
+
+
 @router.post("/showdown/sessions/{session_id}/close")
 async def close_showdown_session(session_id: str):
     """Close a connected Pokemon Showdown websocket session."""
@@ -861,6 +904,104 @@ async def _persist_showdown_learning(db: AsyncSession, result: dict) -> dict:
         state.learning_profile = profile
         result["session"] = state.to_dict()
     return profile
+
+
+async def _execute_showdown_action(
+    session_id: str,
+    action: str,
+    payload: ShowdownSessionNextActionRequest,
+    db: AsyncSession,
+) -> dict:
+    if action == "connect":
+        return await pokemon_showdown_session_service.connect_session(session_id, send_pending=payload.send_commands)
+    if action == "flush_pending":
+        sent = await pokemon_showdown_session_service.flush_pending_commands(session_id)
+        session = pokemon_showdown_session_service.get_session(session_id)
+        return {"sent": sent, "session": session.to_dict() if session else None}
+    if action == "run_once":
+        result = await pokemon_showdown_session_service.run_once(
+            session_id,
+            auto_respond=True,
+            send_commands=payload.send_commands,
+        )
+        result["learning_profile"] = await _persist_showdown_learning(db, result)
+        return result
+    if action == "autopilot":
+        result = await pokemon_showdown_session_service.autopilot(
+            session_id,
+            max_messages=payload.max_messages,
+            auto_search=payload.auto_search,
+            send_commands=payload.send_commands,
+            stop_on_finished=payload.stop_on_finished,
+            stop_on_error=payload.stop_on_error,
+        )
+        result["learning_profile"] = await _persist_showdown_learning(db, result)
+        return result
+    if action == "start_search":
+        commands = pokemon_showdown_session_service.start_ladder_search(session_id)
+        session = pokemon_showdown_session_service.get_session(session_id)
+        return {"commands": commands, "session": session.to_dict() if session else None}
+    if action == "accept_challenge":
+        commands = pokemon_showdown_session_service.accept_challenge(session_id)
+        session = pokemon_showdown_session_service.get_session(session_id)
+        return {"commands": commands, "session": session.to_dict() if session else None}
+    if action == "research_team":
+        if payload.max_results < 1 or payload.max_results > 10:
+            raise ValueError("max_results must be between 1 and 10.")
+        session = pokemon_showdown_session_service.get_session(session_id)
+        if not session:
+            raise KeyError(f"Pokemon Showdown session not found: {session_id}")
+        if not session.team_species:
+            raise ValueError("Showdown session has no team species to research.")
+        context = await pokemon_knowledge_service.search_team(
+            db,
+            session.team_species,
+            query_type="species_usage",
+            max_results=payload.max_results,
+        )
+        updated = pokemon_showdown_session_service.attach_knowledge_context(session_id, context)
+        return {"knowledge_context": context, "session": updated.to_dict()}
+    if action == "analyze":
+        analysis = pokemon_showdown_session_service.analyze_session(session_id)
+        session = pokemon_showdown_session_service.get_session(session_id)
+        result = {"analysis": analysis, "session": session.to_dict() if session else None}
+        result["learning_profile"] = await _persist_showdown_learning(db, result)
+        return result
+    if action == "new_session":
+        previous = pokemon_showdown_session_service.get_session(session_id)
+        if not previous:
+            raise KeyError(f"Pokemon Showdown session not found: {session_id}")
+        resolved_mode, mode_source, mode_recommendation, learning_profile = await _resolve_showdown_mode(
+            db,
+            username=previous.username,
+            battle_format=previous.battle_format,
+            requested_mode=previous.requested_mode,
+        )
+        next_session = pokemon_showdown_session_service.create_session(
+            username=previous.username,
+            team=None,
+            battle_format=previous.battle_format,
+            mode=resolved_mode,
+            requested_mode=previous.requested_mode,
+            mode_source=mode_source,
+            mode_recommendation=mode_recommendation,
+            login_password=previous.login_password,
+            auto_login=previous.auto_login,
+            auto_accept_challenges=previous.auto_accept_challenges,
+            auto_research_team=previous.auto_research_team,
+            auto_search=False,
+            learning_profile=learning_profile,
+        )
+        if previous.auto_research_team and next_session.team_species:
+            context = await pokemon_knowledge_service.search_team(
+                db,
+                next_session.team_species,
+                query_type="species_usage",
+                max_results=payload.max_results,
+            )
+            next_session = pokemon_showdown_session_service.attach_knowledge_context(next_session.session_id, context)
+        return {"session": next_session.to_dict(), "previous_session": previous.to_dict()}
+    raise ValueError(f"Unsupported Showdown next action: {action}")
 
 
 async def _resolve_showdown_mode(

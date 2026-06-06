@@ -198,3 +198,16 @@ class ShowdownSessionRunRequest(BaseModel):
 class ShowdownSessionAutopilotRequest(ShowdownSessionRunRequest):
     auto_search: bool = True
     close_on_finish: bool = False
+
+
+class ShowdownSessionNextActionRequest(BaseModel):
+    action: Optional[str] = Field(
+        None,
+        description="Recommended action to execute. If omitted, the first session next_actions item is used.",
+    )
+    max_messages: int = 50
+    auto_search: bool = True
+    send_commands: bool = True
+    stop_on_finished: bool = True
+    stop_on_error: bool = True
+    max_results: int = 3
