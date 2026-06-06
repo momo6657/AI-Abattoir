@@ -73,6 +73,41 @@ class PokemonShowdownLearningStore:
             groups.setdefault((record.username_key, record.battle_format), []).append(record)
         return [self._build_profile(records).to_dict() for records in groups.values()]
 
+    async def mastery_ranking(
+        self,
+        db: AsyncSession,
+        *,
+        battle_format: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        query = select(PokemonShowdownBattleRecord).order_by(PokemonShowdownBattleRecord.created_at.desc())
+        if battle_format:
+            query = query.where(PokemonShowdownBattleRecord.battle_format == battle_format)
+        result = await db.execute(query)
+        groups: dict[tuple[str, str], list[PokemonShowdownBattleRecord]] = {}
+        for record in result.scalars().all():
+            groups.setdefault((record.username_key, record.battle_format), []).append(record)
+
+        entries = []
+        for records in groups.values():
+            profile = self._build_profile(records).to_dict()
+            entries.append({
+                **profile,
+                "mastery_score": self._mastery_score(profile),
+            })
+        entries.sort(
+            key=lambda item: (
+                item["mastery_score"],
+                item.get("battles") or 0,
+                item.get("average_reward") or 0,
+                item.get("win_rate") or 0,
+            ),
+            reverse=True,
+        )
+        for index, entry in enumerate(entries[:limit], start=1):
+            entry["rank"] = index
+        return entries[:limit]
+
     async def _record_by_session(
         self,
         db: AsyncSession,
@@ -119,6 +154,19 @@ class PokemonShowdownLearningStore:
                 decisions=record.decisions or [],
             )
         return profile
+
+    def _mastery_score(self, profile: dict[str, Any]) -> float:
+        battles = int(profile.get("battles") or 0)
+        win_rate = float(profile.get("win_rate") or 0.0)
+        average_reward = float(profile.get("average_reward") or 0.0)
+        faint_delta = int(profile.get("faints_for") or 0) - int(profile.get("faints_against") or 0)
+        score = (
+            win_rate * 500.0
+            + max(0.0, min(200.0, average_reward)) * 2.0
+            + min(50, battles) * 4.0
+            + max(-50, min(50, faint_delta)) * 3.0
+        )
+        return round(score, 2)
 
 
 pokemon_showdown_learning_store = PokemonShowdownLearningStore()

@@ -71,3 +71,44 @@ async def test_showdown_learning_store_returns_training_focus_for_weak_results(s
     assert "Reduce knockout deficit" in focus_titles
     assert "Improve reward baseline" in focus_titles
     assert "Audit move decisions" in focus_titles
+
+
+@pytest.mark.asyncio
+async def test_showdown_learning_store_ranks_mastery_profiles(setup_db, db):
+    await pokemon_showdown_learning_store.record_session(
+        db,
+        session_id="mastery-strong-1",
+        username="StrongBot",
+        battle_format="vgc2024",
+        showdown_format="gen9vgc2024regg",
+        mode="balanced",
+        analysis={"status": "win", "reward": 140.0, "turns": 4, "faints_for": 3, "faints_against": 0},
+        decisions=[{"decision_type": "move"}],
+    )
+    await pokemon_showdown_learning_store.record_session(
+        db,
+        session_id="mastery-weak-1",
+        username="WeakBot",
+        battle_format="vgc2024",
+        showdown_format="gen9vgc2024regg",
+        mode="balanced",
+        analysis={"status": "loss", "reward": 10.0, "turns": 4, "faints_for": 0, "faints_against": 3},
+        decisions=[{"decision_type": "move"}],
+    )
+    await pokemon_showdown_learning_store.record_session(
+        db,
+        session_id="mastery-ou-1",
+        username="OuBot",
+        battle_format="gen9ou",
+        showdown_format="gen9ou",
+        mode="balanced",
+        analysis={"status": "win", "reward": 150.0, "turns": 4, "faints_for": 2, "faints_against": 0},
+        decisions=[{"decision_type": "move"}],
+    )
+
+    ranking = await pokemon_showdown_learning_store.mastery_ranking(db, battle_format="vgc2024", limit=2)
+
+    assert [entry["username"] for entry in ranking] == ["StrongBot", "WeakBot"]
+    assert ranking[0]["rank"] == 1
+    assert ranking[0]["mastery_score"] > ranking[1]["mastery_score"]
+    assert all(entry["battle_format"] == "vgc2024" for entry in ranking)

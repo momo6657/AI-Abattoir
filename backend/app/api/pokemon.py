@@ -638,6 +638,28 @@ async def get_showdown_learning_profile(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.get("/showdown/learning/mastery")
+async def list_showdown_mastery_ranking(
+    battle_format: str | None = None,
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
+):
+    """Rank learned Pokemon Showdown profiles by mastery score."""
+    if limit < 1 or limit > 100:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 100.")
+    normalized_format = None
+    if battle_format:
+        try:
+            normalized_format = pokemon_format_catalog.get(battle_format).id
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return await pokemon_showdown_learning_store.mastery_ranking(
+        db,
+        battle_format=normalized_format,
+        limit=limit,
+    )
+
+
 @router.get("/showdown/sessions")
 async def list_showdown_sessions():
     """List in-memory Pokemon Showdown automation sessions."""

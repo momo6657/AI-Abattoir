@@ -93,6 +93,7 @@ export default function PokemonBattlePage() {
   const [showdownSession, setShowdownSession] = useState<any>(null);
   const [showdownAnalysis, setShowdownAnalysis] = useState<any>(null);
   const [showdownLearning, setShowdownLearning] = useState<any>(null);
+  const [showdownMastery, setShowdownMastery] = useState<any[]>([]);
   const [showdownRunSummary, setShowdownRunSummary] = useState<any>(null);
   const [messages, setMessages] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -111,10 +112,17 @@ export default function PokemonBattlePage() {
   const showdownChallengeUser = showdownChallengeUsers[0];
   const showdownRooms = Object.values(showdownSession?.room_details || {}) as any[];
   const activeShowdownLearning = showdownLearning || showdownSession?.learning_profile || null;
+  const activeMasteryEntry = showdownMastery.find((entry) =>
+    String(entry.username || '').toLowerCase() === String(showdownUsername || '').toLowerCase()
+  );
 
   useEffect(() => {
     refreshOverview();
   }, []);
+
+  useEffect(() => {
+    refreshShowdownMastery();
+  }, [selectedFormat]);
 
   function addMessage(message: string) {
     setMessages((prev) => [message, ...prev].slice(0, 14));
@@ -138,15 +146,17 @@ export default function PokemonBattlePage() {
 
   async function refreshOverview() {
     try {
-      const [speciesRes, movesRes, historyRes, formatsRes] = await Promise.all([
+      const [speciesRes, movesRes, historyRes, formatsRes, masteryRes] = await Promise.all([
         pokemonApi.listSpecies(),
         pokemonApi.listMoves(),
         pokemonApi.getHistory(8),
         pokemonApi.listFormats(),
+        pokemonApi.listShowdownMastery(selectedFormat, 5),
       ]);
       setSpeciesCount(speciesRes.data.length || 0);
       setMoveCount(movesRes.data.length || 0);
       setHistory(historyRes.data || []);
+      setShowdownMastery(masteryRes.data || []);
       const nextFormats = formatsRes.data || [];
       setFormats(nextFormats);
       if (nextFormats.length && !nextFormats.some((format: PokemonFormat) => format.id === selectedFormat)) {
@@ -154,6 +164,15 @@ export default function PokemonBattlePage() {
       }
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '无法读取 Pokemon 模块状态');
+    }
+  }
+
+  async function refreshShowdownMastery() {
+    try {
+      const mastery = (await pokemonApi.listShowdownMastery(selectedFormat, 5)).data || [];
+      setShowdownMastery(mastery);
+    } catch {
+      setShowdownMastery([]);
     }
   }
 
@@ -377,6 +396,7 @@ export default function PokemonBattlePage() {
       const lastStep = [...(response.supervisor?.steps || [])].reverse().find((step: any) => step.result?.decision);
       setShowdownPlan(lastStep?.result?.decision || null);
       addMessage(`Mission started: ${response.mission_summary?.stop_reason || 'ready'} · ${response.mission_summary?.step_count || 0} action(s).`);
+      refreshShowdownMastery();
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '启动 Showdown 自主任务失败');
     } finally {
@@ -608,6 +628,7 @@ export default function PokemonBattlePage() {
       const lastDecision = [...steps].reverse().find((step: any) => step.decision)?.decision;
       setShowdownPlan(lastDecision || result.decision || showdownPlan);
       addMessage(`Next action ${response.action || actionName}: ${result.run_summary?.stopped_reason || response.session?.status || 'done'}`);
+      refreshShowdownMastery();
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '执行 Showdown 建议动作失败');
     } finally {
@@ -638,6 +659,7 @@ export default function PokemonBattlePage() {
       const lastStep = [...(response.steps || [])].reverse().find((step: any) => step.result?.decision);
       setShowdownPlan(lastStep?.result?.decision || showdownPlan);
       addMessage(`Supervisor stopped: ${response.stop_reason || 'done'} · ${response.step_count || 0} action(s).`);
+      refreshShowdownMastery();
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || 'Showdown 监督循环失败');
     } finally {
@@ -674,6 +696,7 @@ export default function PokemonBattlePage() {
     ['Phase 26', '后端监督循环可连续执行推荐动作，推进会话直到停止条件'],
     ['Phase 27', '会话快照保存监督循环历史，前端展示自主执行轨迹'],
     ['Phase 28', '自主任务入口可一键创建队伍、启动会话并进入监督循环'],
+    ['Phase 29', 'Showdown 学习档案生成 Mastery 排行并在控制台展示实力变化'],
   ];
 
   return (
@@ -1160,6 +1183,34 @@ export default function PokemonBattlePage() {
               </div>
             ) : null}
 
+            {showdownMastery.length ? (
+              <div className="mt-3 rounded-md border border-border bg-black/20 p-3 text-xs leading-5 text-gray-400">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-semibold uppercase text-gray-500">Mastery board</span>
+                  <span className="text-gray-200">{selectedFormatInfo?.name || selectedFormat}</span>
+                </div>
+                <div className="space-y-2">
+                  {showdownMastery.slice(0, 5).map((entry: any) => {
+                    const isActive = String(entry.username || '').toLowerCase() === String(showdownUsername || '').toLowerCase();
+                    return (
+                      <div key={`${entry.rank}-${entry.username}-${entry.battle_format}`} className={`rounded border p-2 ${isActive ? 'border-accent bg-accent/10' : 'border-border bg-black/30'}`}>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="min-w-0 break-words font-medium text-gray-100">#{entry.rank} {entry.username}</span>
+                          <span className="shrink-0 font-mono text-gray-300">{Number(entry.mastery_score || 0).toFixed(0)}</span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-gray-500">
+                          <span>{Math.round((entry.win_rate || 0) * 100)}% WR</span>
+                          <span>{entry.battles || 0} battle(s)</span>
+                          <span>{Number(entry.average_reward || 0).toFixed(1)} avg</span>
+                          <span>{entry.recommendation?.mode || 'balanced'}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
             <div className="mt-3 rounded-md border border-border bg-black/20 p-3 text-xs leading-5 text-gray-400">
               {showdownSession ? (
                 <div className="space-y-2">
@@ -1382,6 +1433,8 @@ export default function PokemonBattlePage() {
                         <Metric label="Avg Reward" value={Number(activeShowdownLearning.average_reward || 0).toFixed(1)} compact />
                         <Metric label="Samples" value={activeShowdownLearning.battles || 0} compact />
                         <Metric label="Losses" value={activeShowdownLearning.losses || 0} compact />
+                        <Metric label="Rank" value={activeMasteryEntry?.rank ? `#${activeMasteryEntry.rank}` : '-'} compact />
+                        <Metric label="Score" value={activeMasteryEntry ? Number(activeMasteryEntry.mastery_score || 0).toFixed(0) : '-'} compact />
                       </div>
                       <div className="mt-2 text-gray-500">
                         Suggested mode: <span className="text-gray-200">{activeShowdownLearning.recommendation?.mode || 'balanced'}</span>

@@ -921,6 +921,50 @@ async def test_showdown_session_analysis_endpoint_returns_learning_signals(setup
 
 
 @pytest.mark.asyncio
+async def test_showdown_learning_mastery_endpoint_ranks_profiles(setup_db, db, client):
+    await pokemon_showdown_learning_store.record_session(
+        db,
+        session_id="api-mastery-strong",
+        username="StrongBot",
+        battle_format="vgc2024",
+        showdown_format="gen9vgc2024regg",
+        mode="balanced",
+        analysis={"status": "win", "reward": 140.0, "turns": 5, "faints_for": 3, "faints_against": 0},
+        decisions=[{"decision_type": "move"}],
+    )
+    await pokemon_showdown_learning_store.record_session(
+        db,
+        session_id="api-mastery-weak",
+        username="WeakBot",
+        battle_format="vgc2024",
+        showdown_format="gen9vgc2024regg",
+        mode="balanced",
+        analysis={"status": "loss", "reward": 10.0, "turns": 5, "faints_for": 0, "faints_against": 3},
+        decisions=[{"decision_type": "move"}],
+    )
+
+    response = await client.get(
+        "/api/pokemon/showdown/learning/mastery",
+        params={"battle_format": "vgc2024", "limit": 2},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert [entry["username"] for entry in data[:2]] == ["StrongBot", "WeakBot"]
+    assert data[0]["rank"] == 1
+    assert data[0]["mastery_score"] > data[1]["mastery_score"]
+    assert data[0]["recommendation"]["mode"] == "balanced"
+
+
+@pytest.mark.asyncio
+async def test_showdown_learning_mastery_endpoint_rejects_bad_limit(setup_db, client):
+    response = await client.get("/api/pokemon/showdown/learning/mastery", params={"limit": 0})
+
+    assert response.status_code == 400
+    assert "limit must be between 1 and 100" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_showdown_session_run_once_requires_connected_socket(setup_db, client):
     created = await client.post("/api/pokemon/showdown/sessions", json={"username": "Bot", "team": None})
     session_id = created.json()["session_id"]

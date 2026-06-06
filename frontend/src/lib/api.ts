@@ -172,6 +172,10 @@ export const pokemonApi = {
   listShowdownLearningProfiles: () => api.get("/pokemon/showdown/learning/profiles"),
   getShowdownLearningProfile: (username: string, battleFormat = "vgc2024") =>
     api.get("/pokemon/showdown/learning/profile", { params: { username, battle_format: battleFormat } }),
+  listShowdownMastery: (battleFormat?: string, limit = 5) =>
+    api.get("/pokemon/showdown/learning/mastery", {
+      params: battleFormat ? { battle_format: battleFormat, limit } : { limit },
+    }),
   createShowdownSession: (data: Record<string, unknown>) => api.post("/pokemon/showdown/sessions", data),
   startShowdownMission: (data: Record<string, unknown>) => api.post("/pokemon/showdown/mission", data),
   startShowdownSearch: (sessionId: string) => api.post(`/pokemon/showdown/sessions/${sessionId}/search`),
