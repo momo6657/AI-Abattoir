@@ -227,3 +227,22 @@ class ShowdownSessionSupervisorRequest(ShowdownSessionNextActionRequest):
         description="Optional action names that stop the supervisor immediately after they run.",
     )
     stop_on_new_session: bool = True
+
+
+class ShowdownSessionMissionRequest(ShowdownSessionCreateRequest):
+    start_action: Optional[str] = Field(
+        None,
+        description="Optional first supervisor action after creating the session.",
+    )
+    max_actions: int = Field(
+        5,
+        description="Maximum recommended actions the mission supervisor may execute after session creation.",
+    )
+    allowed_actions: Optional[List[str]] = None
+    stop_actions: Optional[List[str]] = None
+    max_messages: int = 50
+    send_commands: bool = True
+    stop_on_finished: bool = True
+    stop_on_error: bool = True
+    stop_on_new_session: bool = True
+    max_results: int = 3

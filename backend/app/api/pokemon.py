@@ -24,6 +24,7 @@ from app.schemas.pokemon import (
     ShowdownSessionAutopilotRequest,
     ShowdownSessionCreateRequest,
     ShowdownSessionMessageRequest,
+    ShowdownSessionMissionRequest,
     ShowdownSessionNextActionRequest,
     ShowdownSessionRunRequest,
     ShowdownSessionSupervisorRequest,
@@ -533,6 +534,54 @@ async def plan_showdown_decision(payload: ShowdownDecisionRequest):
 @router.post("/showdown/sessions")
 async def create_showdown_session(payload: ShowdownSessionCreateRequest, db: AsyncSession = Depends(get_db)):
     """Create an autonomous Pokemon Showdown session state machine."""
+    session = await _create_showdown_session_state(payload, db)
+    return session.to_dict()
+
+
+@router.post("/showdown/mission")
+async def start_showdown_mission(payload: ShowdownSessionMissionRequest, db: AsyncSession = Depends(get_db)):
+    """Create a Showdown session and immediately run a bounded autonomous supervisor."""
+    if payload.max_actions < 1 or payload.max_actions > 20:
+        raise HTTPException(status_code=400, detail="max_actions must be between 1 and 20.")
+    session = await _create_showdown_session_state(payload, db, max_results=payload.max_results)
+    supervisor_payload = ShowdownSessionSupervisorRequest(
+        action=payload.start_action,
+        max_messages=payload.max_messages,
+        auto_search=payload.auto_search,
+        send_commands=payload.send_commands,
+        stop_on_finished=payload.stop_on_finished,
+        stop_on_error=payload.stop_on_error,
+        max_results=payload.max_results,
+        max_actions=payload.max_actions,
+        allowed_actions=payload.allowed_actions,
+        stop_actions=payload.stop_actions,
+        stop_on_new_session=payload.stop_on_new_session,
+    )
+    supervisor = await supervise_showdown_session(session.session_id, supervisor_payload, db)
+    final_session = supervisor.get("session") or session.to_dict()
+    return {
+        "session": final_session,
+        "supervisor": supervisor,
+        "mission_summary": {
+            "session_id": supervisor.get("session_id", session.session_id),
+            "original_session_id": session.session_id,
+            "username": payload.username,
+            "battle_format": final_session.get("battle_format"),
+            "showdown_format": final_session.get("showdown_format"),
+            "team_source": final_session.get("team_source"),
+            "mode": final_session.get("mode"),
+            "stop_reason": supervisor.get("stop_reason"),
+            "step_count": supervisor.get("step_count", 0),
+        },
+    }
+
+
+async def _create_showdown_session_state(
+    payload: ShowdownSessionCreateRequest,
+    db: AsyncSession,
+    *,
+    max_results: int = 3,
+):
     try:
         resolved_mode, mode_source, mode_recommendation, learning_profile = await _resolve_showdown_mode(
             db,
@@ -563,10 +612,10 @@ async def create_showdown_session(payload: ShowdownSessionCreateRequest, db: Asy
             db,
             session.team_species,
             query_type="species_usage",
-            max_results=3,
+            max_results=max_results,
         )
         session = pokemon_showdown_session_service.attach_knowledge_context(session.session_id, context)
-    return session.to_dict()
+    return session
 
 
 @router.get("/showdown/learning/profiles")

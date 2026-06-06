@@ -173,6 +173,7 @@ export const pokemonApi = {
   getShowdownLearningProfile: (username: string, battleFormat = "vgc2024") =>
     api.get("/pokemon/showdown/learning/profile", { params: { username, battle_format: battleFormat } }),
   createShowdownSession: (data: Record<string, unknown>) => api.post("/pokemon/showdown/sessions", data),
+  startShowdownMission: (data: Record<string, unknown>) => api.post("/pokemon/showdown/mission", data),
   startShowdownSearch: (sessionId: string) => api.post(`/pokemon/showdown/sessions/${sessionId}/search`),
   cancelShowdownSearch: (sessionId: string) => api.post(`/pokemon/showdown/sessions/${sessionId}/cancel-search`),
   acceptShowdownChallenge: (sessionId: string, username?: string) =>

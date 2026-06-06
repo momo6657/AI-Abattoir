@@ -348,6 +348,42 @@ export default function PokemonBattlePage() {
     }
   }
 
+  async function startShowdownMission() {
+    setBusy(true);
+    setError(null);
+    try {
+      resetShowdownState();
+      const response = (await pokemonApi.startShowdownMission({
+        username: showdownUsername || 'PokemonBot',
+        battle_format: selectedFormatInfo?.id || selectedFormat,
+        mode: showdownMode,
+        auto_login: showdownAutoLogin,
+        auto_accept_challenges: showdownAutoAccept,
+        auto_research_team: true,
+        login_password: showdownPassword || undefined,
+        auto_search: true,
+        max_actions: Math.min(20, Math.max(1, showdownRunLimit)),
+        max_messages: showdownRunLimit,
+        stop_on_finished: false,
+      })).data;
+      const session = response.session || response.supervisor?.session;
+      applyShowdownSession(session);
+      setShowdownAnalysis(response.supervisor?.analysis || session?.analysis || null);
+      setShowdownLearning(response.supervisor?.learning_profile || session?.learning_profile || null);
+      if (session?.knowledge_context?.members?.length) {
+        setShowdownTeamKnowledge(session.knowledge_context.members);
+        setShowdownTeamKnowledgeSummary(session.knowledge_context);
+      }
+      const lastStep = [...(response.supervisor?.steps || [])].reverse().find((step: any) => step.result?.decision);
+      setShowdownPlan(lastStep?.result?.decision || null);
+      addMessage(`Mission started: ${response.mission_summary?.stop_reason || 'ready'} · ${response.mission_summary?.step_count || 0} action(s).`);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '启动 Showdown 自主任务失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function runShowdownSessionStep() {
     if (!showdownPayload.trim()) return;
     setBusy(true);
@@ -637,6 +673,7 @@ export default function PokemonBattlePage() {
     ['Phase 25', '后端统一执行恢复动作，智能体可通过 API 自主推进会话'],
     ['Phase 26', '后端监督循环可连续执行推荐动作，推进会话直到停止条件'],
     ['Phase 27', '会话快照保存监督循环历史，前端展示自主执行轨迹'],
+    ['Phase 28', '自主任务入口可一键创建队伍、启动会话并进入监督循环'],
   ];
 
   return (
@@ -917,6 +954,9 @@ export default function PokemonBattlePage() {
             <div className="mt-3 grid grid-cols-2 gap-2">
               <button onClick={() => createShowdownSession(false)} disabled={busy} className="btn-secondary disabled:opacity-50">
                 创建会话
+              </button>
+              <button onClick={startShowdownMission} disabled={busy} className="btn-primary disabled:opacity-50">
+                启动任务
               </button>
               <button onClick={startShowdownSearch} disabled={busy} className="btn-primary disabled:opacity-50">
                 搜索天梯
