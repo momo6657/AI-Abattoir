@@ -89,6 +89,7 @@ export default function PokemonBattlePage() {
   const [showdownAutoResearch, setShowdownAutoResearch] = useState(false);
   const [showdownRunLimit, setShowdownRunLimit] = useState(10);
   const [showdownMode, setShowdownMode] = useState<'auto' | 'balanced' | 'aggressive' | 'defensive'>('auto');
+  const [showdownMissionGoal, setShowdownMissionGoal] = useState<'prepare' | 'queue' | 'ladder' | 'learn'>('ladder');
   const [showdownPlan, setShowdownPlan] = useState<any>(null);
   const [showdownSession, setShowdownSession] = useState<any>(null);
   const [showdownAnalysis, setShowdownAnalysis] = useState<any>(null);
@@ -378,9 +379,10 @@ export default function PokemonBattlePage() {
         mode: showdownMode,
         auto_login: showdownAutoLogin,
         auto_accept_challenges: showdownAutoAccept,
-        auto_research_team: true,
+        auto_research_team: false,
         login_password: showdownPassword || undefined,
-        auto_search: true,
+        mission_goal: showdownMissionGoal,
+        auto_search: showdownMissionGoal !== 'prepare',
         max_actions: Math.min(20, Math.max(1, showdownRunLimit)),
         max_messages: showdownRunLimit,
         stop_on_finished: false,
@@ -395,7 +397,7 @@ export default function PokemonBattlePage() {
       }
       const lastStep = [...(response.supervisor?.steps || [])].reverse().find((step: any) => step.result?.decision);
       setShowdownPlan(lastStep?.result?.decision || null);
-      addMessage(`Mission started: ${response.mission_summary?.stop_reason || 'ready'} · ${response.mission_summary?.step_count || 0} action(s).`);
+      addMessage(`Mission ${response.mission_summary?.mission_goal || showdownMissionGoal}: ${response.mission_summary?.stop_reason || 'ready'} · ${response.mission_summary?.step_count || 0} action(s).`);
       refreshShowdownMastery();
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '启动 Showdown 自主任务失败');
@@ -697,6 +699,7 @@ export default function PokemonBattlePage() {
     ['Phase 27', '会话快照保存监督循环历史，前端展示自主执行轨迹'],
     ['Phase 28', '自主任务入口可一键创建队伍、启动会话并进入监督循环'],
     ['Phase 29', 'Showdown 学习档案生成 Mastery 排行并在控制台展示实力变化'],
+    ['Phase 30', '自主任务支持 prepare/queue/ladder/learn 目标预设和动作边界'],
   ];
 
   return (
@@ -970,6 +973,20 @@ export default function PokemonBattlePage() {
                   }`}
                 >
                   {mode}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-2 grid grid-cols-4 gap-1 rounded-md border border-border bg-black/20 p-1">
+              {(['prepare', 'queue', 'ladder', 'learn'] as const).map((goal) => (
+                <button
+                  key={goal}
+                  onClick={() => setShowdownMissionGoal(goal)}
+                  className={`rounded px-2 py-1.5 text-xs transition ${
+                    showdownMissionGoal === goal ? 'bg-accent text-white' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  {goal}
                 </button>
               ))}
             </div>

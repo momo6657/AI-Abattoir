@@ -230,6 +230,10 @@ class ShowdownSessionSupervisorRequest(ShowdownSessionNextActionRequest):
 
 
 class ShowdownSessionMissionRequest(ShowdownSessionCreateRequest):
+    mission_goal: str = Field(
+        "ladder",
+        description="Mission preset: prepare, queue, ladder, or learn. Custom allowed_actions still override preset actions.",
+    )
     start_action: Optional[str] = Field(
         None,
         description="Optional first supervisor action after creating the session.",

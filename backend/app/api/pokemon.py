@@ -543,19 +543,23 @@ async def start_showdown_mission(payload: ShowdownSessionMissionRequest, db: Asy
     """Create a Showdown session and immediately run a bounded autonomous supervisor."""
     if payload.max_actions < 1 or payload.max_actions > 20:
         raise HTTPException(status_code=400, detail="max_actions must be between 1 and 20.")
+    try:
+        mission_policy = _resolve_showdown_mission_policy(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     session = await _create_showdown_session_state(payload, db, max_results=payload.max_results)
     supervisor_payload = ShowdownSessionSupervisorRequest(
         action=payload.start_action,
         max_messages=payload.max_messages,
-        auto_search=payload.auto_search,
+        auto_search=mission_policy["auto_search"],
         send_commands=payload.send_commands,
         stop_on_finished=payload.stop_on_finished,
         stop_on_error=payload.stop_on_error,
         max_results=payload.max_results,
         max_actions=payload.max_actions,
-        allowed_actions=payload.allowed_actions,
-        stop_actions=payload.stop_actions,
-        stop_on_new_session=payload.stop_on_new_session,
+        allowed_actions=mission_policy["allowed_actions"],
+        stop_actions=mission_policy["stop_actions"],
+        stop_on_new_session=mission_policy["stop_on_new_session"],
     )
     supervisor = await supervise_showdown_session(session.session_id, supervisor_payload, db)
     final_session = supervisor.get("session") or session.to_dict()
@@ -570,6 +574,8 @@ async def start_showdown_mission(payload: ShowdownSessionMissionRequest, db: Asy
             "showdown_format": final_session.get("showdown_format"),
             "team_source": final_session.get("team_source"),
             "mode": final_session.get("mode"),
+            "mission_goal": mission_policy["mission_goal"],
+            "allowed_actions": mission_policy["allowed_actions"],
             "stop_reason": supervisor.get("stop_reason"),
             "step_count": supervisor.get("step_count", 0),
         },
@@ -616,6 +622,67 @@ async def _create_showdown_session_state(
         )
         session = pokemon_showdown_session_service.attach_knowledge_context(session.session_id, context)
     return session
+
+
+def _resolve_showdown_mission_policy(payload: ShowdownSessionMissionRequest) -> dict:
+    goal = (payload.mission_goal or "ladder").lower()
+    presets = {
+        "prepare": {
+            "allowed_actions": ["research_team"],
+            "stop_actions": ["research_team"],
+            "auto_search": False,
+            "stop_on_new_session": True,
+        },
+        "queue": {
+            "allowed_actions": ["research_team", "start_search", "flush_pending"],
+            "stop_actions": ["start_search"],
+            "auto_search": True,
+            "stop_on_new_session": True,
+        },
+        "ladder": {
+            "allowed_actions": [
+                "research_team",
+                "connect",
+                "flush_pending",
+                "start_search",
+                "accept_challenge",
+                "run_once",
+                "autopilot",
+                "analyze",
+                "new_session",
+            ],
+            "stop_actions": payload.stop_actions,
+            "auto_search": True,
+            "stop_on_new_session": payload.stop_on_new_session,
+        },
+        "learn": {
+            "allowed_actions": [
+                "research_team",
+                "connect",
+                "flush_pending",
+                "start_search",
+                "accept_challenge",
+                "run_once",
+                "autopilot",
+                "analyze",
+                "new_session",
+            ],
+            "stop_actions": payload.stop_actions,
+            "auto_search": True,
+            "stop_on_new_session": False,
+        },
+    }
+    if goal not in presets:
+        raise ValueError("mission_goal must be one of: prepare, queue, ladder, learn.")
+    policy = dict(presets[goal])
+    policy["mission_goal"] = goal
+    if payload.allowed_actions:
+        policy["allowed_actions"] = payload.allowed_actions
+    if payload.stop_actions:
+        policy["stop_actions"] = payload.stop_actions
+    if payload.auto_search:
+        policy["auto_search"] = True
+    return policy
 
 
 @router.get("/showdown/learning/profiles")

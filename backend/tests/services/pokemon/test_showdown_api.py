@@ -752,10 +752,52 @@ async def test_showdown_mission_creates_session_and_runs_supervisor(setup_db, mo
     session_id = data["session"]["session_id"]
     assert data["mission_summary"]["username"] == "MissionBot"
     assert data["mission_summary"]["step_count"] == 1
+    assert data["mission_summary"]["mission_goal"] == "ladder"
+    assert data["mission_summary"]["allowed_actions"] == ["start_search"]
     assert data["supervisor"]["steps"][0]["action"] == "start_search"
     assert data["session"]["status"] == "searching"
     assert data["session"]["has_knowledge_context"]
     assert data["session"]["last_supervisor_summary"]["actions"] == ["start_search"]
+
+    await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
+
+
+@pytest.mark.asyncio
+async def test_showdown_mission_prepare_goal_only_researches_team(setup_db, monkeypatch, client):
+    async def fake_search_team(db, species, query_type="species_usage", max_results=3):
+        return {
+            "query_type": query_type,
+            "species": species,
+            "members": [{"species": species[0], "results": [{"title": "usage"}], "result_count": 1}],
+            "member_count": len(species),
+            "cached_count": 0,
+            "result_count": 1,
+            "failed_count": 0,
+            "sources": ["https://example.com/usage"],
+        }
+
+    monkeypatch.setattr(pokemon_knowledge_service, "search_team", fake_search_team)
+
+    response = await client.post(
+        "/api/pokemon/showdown/mission",
+        json={
+            "username": "PrepBot",
+            "team": None,
+            "mission_goal": "prepare",
+            "max_actions": 3,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    session_id = data["session"]["session_id"]
+    assert data["mission_summary"]["mission_goal"] == "prepare"
+    assert data["mission_summary"]["allowed_actions"] == ["research_team"]
+    assert data["mission_summary"]["stop_reason"] == "stop_action"
+    assert data["supervisor"]["steps"][0]["action"] == "research_team"
+    assert data["session"]["status"] == "ready"
+    assert data["session"]["pending_command_count"] == 0
+    assert data["session"]["has_knowledge_context"]
 
     await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
 
@@ -769,6 +811,17 @@ async def test_showdown_mission_rejects_invalid_supervisor_limit(setup_db, clien
 
     assert response.status_code == 400
     assert "max_actions must be between 1 and 20" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_showdown_mission_rejects_unknown_goal(setup_db, client):
+    response = await client.post(
+        "/api/pokemon/showdown/mission",
+        json={"username": "MissionBot", "team": None, "mission_goal": "chaos"},
+    )
+
+    assert response.status_code == 400
+    assert "mission_goal must be one of" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
