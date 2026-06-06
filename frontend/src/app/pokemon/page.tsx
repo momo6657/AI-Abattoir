@@ -636,6 +636,7 @@ export default function PokemonBattlePage() {
     ['Phase 24', '前端可一键执行恢复计划，建议动作直接驱动 Showdown 控制台'],
     ['Phase 25', '后端统一执行恢复动作，智能体可通过 API 自主推进会话'],
     ['Phase 26', '后端监督循环可连续执行推荐动作，推进会话直到停止条件'],
+    ['Phase 27', '会话快照保存监督循环历史，前端展示自主执行轨迹'],
   ];
 
   return (
@@ -1074,6 +1075,46 @@ export default function PokemonBattlePage() {
                 {showdownRunSummary.error ? (
                   <div className="mt-2 break-words rounded border border-red-500/30 bg-red-500/10 p-2 text-red-100">
                     {showdownRunSummary.error}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {showdownSession?.last_supervisor_summary ? (
+              <div className="mt-3 rounded-md border border-border bg-black/20 p-3 text-xs leading-5 text-gray-400">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-semibold uppercase text-gray-500">Supervisor summary</span>
+                  <span className="text-gray-200">
+                    #{showdownSession.last_supervisor_summary.supervisor_number ?? showdownSession.supervisor_history_count ?? '-'} · {showdownSession.last_supervisor_summary.stop_reason}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Metric label="Actions" value={showdownSession.last_supervisor_summary.step_count ?? 0} compact />
+                  <Metric label="Status" value={showdownSession.last_supervisor_summary.status || 'ready'} compact />
+                  <Metric label="Last" value={showdownSession.last_supervisor_summary.last_action || '-'} compact />
+                  <Metric label="History" value={showdownSession.supervisor_history_count ?? 0} compact />
+                </div>
+                {showdownSession.last_supervisor_summary.actions?.length ? (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {showdownSession.last_supervisor_summary.actions.map((action: string, index: number) => (
+                      <span key={`${action}-${index}`} className="rounded border border-border bg-black/20 px-1.5 py-0.5 text-[10px] text-gray-400">
+                        {index + 1}. {action}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {showdownSession?.supervisor_history?.length ? (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {showdownSession.supervisor_history.slice(-4).reverse().map((run: any) => (
+                      <span key={run.supervisor_number} className="rounded border border-border bg-black/20 px-1.5 py-0.5 text-[10px] text-gray-400">
+                        #{run.supervisor_number} {run.stop_reason}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {showdownSession.last_supervisor_summary.error ? (
+                  <div className="mt-2 break-words rounded border border-red-500/30 bg-red-500/10 p-2 text-red-100">
+                    {showdownSession.last_supervisor_summary.error}
                   </div>
                 ) : null}
               </div>

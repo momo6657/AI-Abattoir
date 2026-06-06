@@ -659,6 +659,10 @@ async def test_showdown_session_supervisor_runs_allowed_recommendations(setup_db
     assert data["knowledge_context"]["result_count"] == 1
     assert data["session"]["status"] == "searching"
     assert data["session"]["pending_command_count"] == 2
+    assert data["supervisor_summary"]["actions"] == ["research_team", "start_search"]
+    assert data["supervisor_summary"]["supervisor_number"] == 1
+    assert data["session"]["last_supervisor_summary"]["stop_reason"] == "max_actions"
+    assert data["session"]["supervisor_history_count"] == 1
 
     await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
 
@@ -691,6 +695,8 @@ async def test_showdown_session_supervisor_can_advance_to_new_session(setup_db, 
     assert data["original_session_id"] == previous_id
     assert data["session_id"] == next_id
     assert next_id != previous_id
+    assert data["supervisor_summary"]["session_id"] == next_id
+    assert data["session"]["last_supervisor_summary"]["last_action"] == "new_session"
     assert "SECRET" not in json.dumps(data)
 
     await client.delete(f"/api/pokemon/showdown/sessions/{previous_id}")

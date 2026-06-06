@@ -933,6 +933,19 @@ async def supervise_showdown_session(
             stop_reason = "finished"
             break
 
+    supervisor_summary = None
+    final_state = pokemon_showdown_session_service.get_session(current_session_id)
+    if final_state:
+        supervisor_summary = pokemon_showdown_session_service.store_supervisor_summary(
+            current_session_id,
+            _build_showdown_supervisor_summary(
+                original_session_id=session_id,
+                session_id=current_session_id,
+                status=final_state.status,
+                stop_reason=stop_reason,
+                steps=steps,
+            ),
+        )
     final_state = pokemon_showdown_session_service.get_session(current_session_id)
     final_session = final_state.to_dict() if final_state else None
     return {
@@ -942,6 +955,7 @@ async def supervise_showdown_session(
         "steps": steps,
         "step_count": len(steps),
         "stop_reason": stop_reason,
+        "supervisor_summary": supervisor_summary,
         "analysis": analysis,
         "learning_profile": learning_profile,
         "knowledge_context": knowledge_context,
@@ -1114,6 +1128,28 @@ def _select_showdown_supervisor_action(session: dict, payload: ShowdownSessionSu
             continue
         return name
     return None
+
+
+def _build_showdown_supervisor_summary(
+    *,
+    original_session_id: str,
+    session_id: str,
+    status: str,
+    stop_reason: str,
+    steps: list[dict],
+) -> dict:
+    error_step = next((step for step in steps if step.get("error")), None)
+    actions = [step.get("action") for step in steps if step.get("action")]
+    return {
+        "original_session_id": original_session_id,
+        "session_id": session_id,
+        "status": status,
+        "stop_reason": stop_reason,
+        "step_count": len(steps),
+        "actions": actions,
+        "last_action": actions[-1] if actions else None,
+        "error": error_step.get("error") if isinstance(error_step, dict) else None,
+    }
 
 
 async def _resolve_showdown_mode(

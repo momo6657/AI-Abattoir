@@ -998,3 +998,25 @@ async def test_run_history_keeps_recent_summaries_only():
     assert snapshot["run_history_count"] == 10
     assert snapshot["last_run_summary"]["run_number"] == 12
     assert [item["run_number"] for item in snapshot["run_history"]] == list(range(3, 13))
+
+
+def test_supervisor_history_keeps_recent_summaries_only():
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None, connector=FakeShowdownConnector([]))
+
+    for index in range(12):
+        service.store_supervisor_summary(
+            session.session_id,
+            {
+                "status": "ready",
+                "stop_reason": "max_actions",
+                "step_count": index,
+                "actions": ["research_team"],
+                "last_action": "research_team",
+            },
+        )
+
+    snapshot = session.to_dict()
+    assert snapshot["supervisor_history_count"] == 10
+    assert snapshot["last_supervisor_summary"]["supervisor_number"] == 12
+    assert [item["supervisor_number"] for item in snapshot["supervisor_history"]] == list(range(3, 13))
