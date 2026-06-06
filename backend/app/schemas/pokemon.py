@@ -211,3 +211,19 @@ class ShowdownSessionNextActionRequest(BaseModel):
     stop_on_finished: bool = True
     stop_on_error: bool = True
     max_results: int = 3
+
+
+class ShowdownSessionSupervisorRequest(ShowdownSessionNextActionRequest):
+    max_actions: int = Field(
+        5,
+        description="Maximum recommended actions the backend supervisor may execute in one request.",
+    )
+    allowed_actions: Optional[List[str]] = Field(
+        None,
+        description="Optional allow-list. The supervisor skips recommendations outside this set.",
+    )
+    stop_actions: Optional[List[str]] = Field(
+        None,
+        description="Optional action names that stop the supervisor immediately after they run.",
+    )
+    stop_on_new_session: bool = True

@@ -26,6 +26,7 @@ from app.schemas.pokemon import (
     ShowdownSessionMessageRequest,
     ShowdownSessionNextActionRequest,
     ShowdownSessionRunRequest,
+    ShowdownSessionSupervisorRequest,
 )
 from app.models.pokemon import (
     PokemonSpecies,
@@ -854,6 +855,99 @@ async def execute_showdown_session_next_action(
     }
 
 
+@router.post("/showdown/sessions/{session_id}/supervise")
+async def supervise_showdown_session(
+    session_id: str,
+    payload: ShowdownSessionSupervisorRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Execute a bounded sequence of recommended Showdown actions."""
+    if payload.max_actions < 1 or payload.max_actions > 20:
+        raise HTTPException(status_code=400, detail="max_actions must be between 1 and 20.")
+
+    state = pokemon_showdown_session_service.get_session(session_id)
+    if not state:
+        raise HTTPException(status_code=404, detail="Pokemon Showdown session not found")
+
+    current_session_id = session_id
+    steps = []
+    stop_reason = "max_actions"
+    learning_profile = None
+    analysis = None
+    knowledge_context = None
+
+    for index in range(payload.max_actions):
+        state = pokemon_showdown_session_service.get_session(current_session_id)
+        if not state:
+            stop_reason = "session_missing"
+            break
+
+        snapshot = state.to_dict()
+        action = (
+            payload.action
+            if index == 0 and payload.action
+            else _select_showdown_supervisor_action(snapshot, payload)
+        )
+        if not action:
+            stop_reason = "no_allowed_action"
+            break
+
+        step = {
+            "index": index + 1,
+            "session_id": current_session_id,
+            "action": action,
+            "status_before": snapshot.get("status"),
+        }
+        try:
+            result = await _execute_showdown_action(current_session_id, action, payload, db)
+        except (KeyError, ShowdownConnectionError, ValueError) as exc:
+            refreshed = pokemon_showdown_session_service.get_session(current_session_id)
+            step["error"] = str(exc)
+            step["session"] = refreshed.to_dict() if refreshed else None
+            steps.append(step)
+            stop_reason = "error"
+            if payload.stop_on_error:
+                break
+            continue
+
+        session = _normalize_showdown_session_result(result.get("session"))
+        step["session"] = session
+        step["result"] = result
+        step["status_after"] = session.get("status") if session else None
+        step["next_actions"] = session.get("next_actions") if session else []
+        steps.append(step)
+
+        learning_profile = result.get("learning_profile") or learning_profile
+        analysis = result.get("analysis") or (session or {}).get("analysis") or analysis
+        knowledge_context = result.get("knowledge_context") or knowledge_context
+
+        if action == "new_session" and session and session.get("session_id"):
+            current_session_id = session["session_id"]
+            if payload.stop_on_new_session:
+                stop_reason = "new_session"
+                break
+        if payload.stop_actions and action in set(payload.stop_actions):
+            stop_reason = "stop_action"
+            break
+        if payload.stop_on_finished and session and session.get("status") == "finished":
+            stop_reason = "finished"
+            break
+
+    final_state = pokemon_showdown_session_service.get_session(current_session_id)
+    final_session = final_state.to_dict() if final_state else None
+    return {
+        "session_id": current_session_id,
+        "original_session_id": session_id,
+        "session": final_session,
+        "steps": steps,
+        "step_count": len(steps),
+        "stop_reason": stop_reason,
+        "analysis": analysis,
+        "learning_profile": learning_profile,
+        "knowledge_context": knowledge_context,
+    }
+
+
 @router.post("/showdown/sessions/{session_id}/close")
 async def close_showdown_session(session_id: str):
     """Close a connected Pokemon Showdown websocket session."""
@@ -1002,6 +1096,24 @@ async def _execute_showdown_action(
             next_session = pokemon_showdown_session_service.attach_knowledge_context(next_session.session_id, context)
         return {"session": next_session.to_dict(), "previous_session": previous.to_dict()}
     raise ValueError(f"Unsupported Showdown next action: {action}")
+
+
+def _normalize_showdown_session_result(session):
+    if hasattr(session, "to_dict"):
+        return session.to_dict()
+    return session
+
+
+def _select_showdown_supervisor_action(session: dict, payload: ShowdownSessionSupervisorRequest) -> str | None:
+    allowed_actions = set(payload.allowed_actions or [])
+    for action in session.get("next_actions") or []:
+        name = action.get("action")
+        if not name:
+            continue
+        if allowed_actions and name not in allowed_actions:
+            continue
+        return name
+    return None
 
 
 async def _resolve_showdown_mode(

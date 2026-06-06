@@ -629,6 +629,91 @@ async def test_showdown_session_next_action_rejects_unknown_action(setup_db, cli
 
 
 @pytest.mark.asyncio
+async def test_showdown_session_supervisor_runs_allowed_recommendations(setup_db, monkeypatch, client):
+    async def fake_search_team(db, species, query_type="species_usage", max_results=3):
+        return {
+            "query_type": query_type,
+            "species": species,
+            "members": [{"species": species[0], "results": [{"title": "usage"}], "result_count": 1}],
+            "member_count": len(species),
+            "cached_count": 0,
+            "result_count": 1,
+            "failed_count": 0,
+            "sources": ["https://example.com/usage"],
+        }
+
+    monkeypatch.setattr(pokemon_knowledge_service, "search_team", fake_search_team)
+    created = await client.post("/api/pokemon/showdown/sessions", json={"username": "Bot", "team": None})
+    session_id = created.json()["session_id"]
+
+    response = await client.post(
+        f"/api/pokemon/showdown/sessions/{session_id}/supervise",
+        json={"max_actions": 2, "allowed_actions": ["research_team", "start_search"]},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["stop_reason"] == "max_actions"
+    assert data["step_count"] == 2
+    assert [step["action"] for step in data["steps"]] == ["research_team", "start_search"]
+    assert data["knowledge_context"]["result_count"] == 1
+    assert data["session"]["status"] == "searching"
+    assert data["session"]["pending_command_count"] == 2
+
+    await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
+
+
+@pytest.mark.asyncio
+async def test_showdown_session_supervisor_can_advance_to_new_session(setup_db, client):
+    created = await client.post(
+        "/api/pokemon/showdown/sessions",
+        json={"username": "Bot", "team": None, "mode": "auto", "login_password": "SECRET"},
+    )
+    previous_id = created.json()["session_id"]
+    marked_finished = await client.post(
+        f"/api/pokemon/showdown/sessions/{previous_id}/message",
+        json={"payload": ">battle-gen9vgc-91\n|win|Bot", "auto_respond": False},
+    )
+    assert marked_finished.status_code == 200
+    assert marked_finished.json()["session"]["status"] == "finished"
+
+    response = await client.post(
+        f"/api/pokemon/showdown/sessions/{previous_id}/supervise",
+        json={"max_actions": 3, "allowed_actions": ["new_session"]},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    next_id = data["session"]["session_id"]
+    assert data["stop_reason"] == "new_session"
+    assert data["step_count"] == 1
+    assert data["steps"][0]["action"] == "new_session"
+    assert data["original_session_id"] == previous_id
+    assert data["session_id"] == next_id
+    assert next_id != previous_id
+    assert "SECRET" not in json.dumps(data)
+
+    await client.delete(f"/api/pokemon/showdown/sessions/{previous_id}")
+    await client.delete(f"/api/pokemon/showdown/sessions/{next_id}")
+
+
+@pytest.mark.asyncio
+async def test_showdown_session_supervisor_rejects_invalid_action_limit(setup_db, client):
+    created = await client.post("/api/pokemon/showdown/sessions", json={"username": "Bot", "team": None})
+    session_id = created.json()["session_id"]
+
+    response = await client.post(
+        f"/api/pokemon/showdown/sessions/{session_id}/supervise",
+        json={"max_actions": 0},
+    )
+
+    assert response.status_code == 400
+    assert "max_actions must be between 1 and 20" in response.json()["detail"]
+
+    await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
+
+
+@pytest.mark.asyncio
 async def test_showdown_session_cancel_search_endpoint_records_command(setup_db, client):
     created = await client.post(
         "/api/pokemon/showdown/sessions",

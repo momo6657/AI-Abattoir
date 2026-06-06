@@ -195,6 +195,8 @@ export const pokemonApi = {
     api.post(`/pokemon/showdown/sessions/${sessionId}/autopilot`, data),
   executeShowdownNextAction: (sessionId: string, data: Record<string, unknown>) =>
     api.post(`/pokemon/showdown/sessions/${sessionId}/next-action`, data),
+  superviseShowdownSession: (sessionId: string, data: Record<string, unknown>) =>
+    api.post(`/pokemon/showdown/sessions/${sessionId}/supervise`, data),
   closeShowdownSession: (sessionId: string) => api.post(`/pokemon/showdown/sessions/${sessionId}/close`),
   deleteShowdownSession: (sessionId: string) => api.delete(`/pokemon/showdown/sessions/${sessionId}`),
 };

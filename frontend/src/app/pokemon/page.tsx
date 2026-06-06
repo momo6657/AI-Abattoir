@@ -579,6 +579,36 @@ export default function PokemonBattlePage() {
     }
   }
 
+  async function runShowdownSupervisor() {
+    if (!showdownSession?.session_id) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = (await pokemonApi.superviseShowdownSession(showdownSession.session_id, {
+        max_actions: Math.min(20, Math.max(1, showdownRunLimit)),
+        max_messages: showdownRunLimit,
+        auto_search: true,
+        send_commands: true,
+        stop_on_finished: false,
+        stop_on_error: true,
+      })).data;
+      applyShowdownSession(response.session);
+      setShowdownAnalysis(response.analysis || response.session?.analysis || showdownAnalysis);
+      setShowdownLearning(response.learning_profile || showdownLearning);
+      if (response.knowledge_context?.members?.length) {
+        setShowdownTeamKnowledge(response.knowledge_context.members);
+        setShowdownTeamKnowledgeSummary(response.knowledge_context);
+      }
+      const lastStep = [...(response.steps || [])].reverse().find((step: any) => step.result?.decision);
+      setShowdownPlan(lastStep?.result?.decision || showdownPlan);
+      addMessage(`Supervisor stopped: ${response.stop_reason || 'done'} · ${response.step_count || 0} action(s).`);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || 'Showdown 监督循环失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const phaseItems = [
     ['Phase 1', '本地双打引擎、伤害计算、REST 流程、训练 UI'],
     ['Phase 2', '知识检索、缓存、决策记录、强化学习雏形'],
@@ -605,6 +635,7 @@ export default function PokemonBattlePage() {
     ['Phase 23', '会话快照给出自动驾驶恢复计划和下一步动作建议'],
     ['Phase 24', '前端可一键执行恢复计划，建议动作直接驱动 Showdown 控制台'],
     ['Phase 25', '后端统一执行恢复动作，智能体可通过 API 自主推进会话'],
+    ['Phase 26', '后端监督循环可连续执行推荐动作，推进会话直到停止条件'],
   ];
 
   return (
@@ -900,6 +931,9 @@ export default function PokemonBattlePage() {
               </button>
               <button onClick={runShowdownAutopilot} disabled={busy} className="btn-primary disabled:opacity-50">
                 一键自动
+              </button>
+              <button onClick={runShowdownSupervisor} disabled={busy || !showdownSession?.session_id} className="btn-primary disabled:opacity-50">
+                监督循环
               </button>
               <button onClick={researchShowdownTeam} disabled={busy} className="btn-secondary disabled:opacity-50">
                 研究队伍
