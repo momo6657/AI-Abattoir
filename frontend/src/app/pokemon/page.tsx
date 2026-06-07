@@ -708,6 +708,7 @@ export default function PokemonBattlePage() {
     ['Phase 31', '会话快照保存自主任务历史，前端展示任务目标和动作边界'],
     ['Phase 32', '自主任务支持 auto 目标，根据学习档案和知识状态选择训练节奏'],
     ['Phase 33', '学习档案输出结构化训练计划，任务摘要展示下一轮目标和动作队列'],
+    ['Phase 34', 'auto 自主任务读取训练计划推荐下一轮目标，并展示推荐来源'],
   ];
 
   return (
@@ -1222,7 +1223,13 @@ export default function PokemonBattlePage() {
                   <Metric label="Steps" value={showdownSession.last_mission_summary.step_count ?? 0} compact />
                   <Metric label="History" value={showdownSession.mission_history_count ?? 0} compact />
                   <Metric label="Mode" value={showdownSession.last_mission_summary.mode || showdownSession.mode || '-'} compact />
+                  <Metric label="Source" value={showdownSession.last_mission_summary.mission_goal_source || '-'} compact />
                 </div>
+                {showdownSession.last_mission_summary.mission_goal_reason ? (
+                  <div className="mt-2 break-words rounded border border-border bg-black/20 p-2 text-[10px] leading-4 text-gray-400">
+                    {showdownSession.last_mission_summary.mission_goal_reason}
+                  </div>
+                ) : null}
                 {showdownSession.last_mission_summary.allowed_actions?.length ? (
                   <div className="mt-2 flex flex-wrap gap-1">
                     {showdownSession.last_mission_summary.allowed_actions.map((action: string) => (

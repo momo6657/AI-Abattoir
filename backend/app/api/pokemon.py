@@ -574,6 +574,8 @@ async def start_showdown_mission(payload: ShowdownSessionMissionRequest, db: Asy
         "mode": final_session.get("mode"),
         "requested_mission_goal": mission_policy["requested_mission_goal"],
         "mission_goal": mission_policy["mission_goal"],
+        "mission_goal_source": mission_policy["mission_goal_source"],
+        "mission_goal_reason": mission_policy["mission_goal_reason"],
         "allowed_actions": mission_policy["allowed_actions"],
         "stop_reason": supervisor.get("stop_reason"),
         "step_count": supervisor.get("step_count", 0),
@@ -644,8 +646,9 @@ def _normalize_showdown_mission_goal(goal: str | None) -> str:
 def _resolve_showdown_mission_policy(payload: ShowdownSessionMissionRequest, session: dict | None = None) -> dict:
     requested_goal = _normalize_showdown_mission_goal(payload.mission_goal)
     goal = requested_goal
+    recommendation = _recommend_showdown_mission_goal(session or {})
     if goal == "auto":
-        goal = _recommend_showdown_mission_goal(session or {})
+        goal = recommendation["mission_goal"]
     presets = {
         "prepare": {
             "allowed_actions": ["research_team"],
@@ -695,6 +698,8 @@ def _resolve_showdown_mission_policy(payload: ShowdownSessionMissionRequest, ses
     policy = dict(presets[goal])
     policy["mission_goal"] = goal
     policy["requested_mission_goal"] = requested_goal
+    policy["mission_goal_source"] = recommendation["source"] if requested_goal == "auto" else "manual"
+    policy["mission_goal_reason"] = recommendation["reason"] if requested_goal == "auto" else "Mission goal was selected manually."
     if payload.allowed_actions:
         policy["allowed_actions"] = payload.allowed_actions
     if payload.stop_actions:
@@ -704,8 +709,10 @@ def _resolve_showdown_mission_policy(payload: ShowdownSessionMissionRequest, ses
     return policy
 
 
-def _recommend_showdown_mission_goal(session: dict) -> str:
+def _recommend_showdown_mission_goal(session: dict) -> dict[str, str]:
     profile = session.get("learning_profile") or {}
+    training_plan = profile.get("training_plan") or {}
+    plan_goal = str(training_plan.get("next_mission_goal") or "").lower()
     battles = int(profile.get("battles") or 0)
     win_rate = float(profile.get("win_rate") or 0.0)
     average_reward = float(profile.get("average_reward") or 0.0)
@@ -713,14 +720,40 @@ def _recommend_showdown_mission_goal(session: dict) -> str:
     has_team_species = bool(session.get("team_species"))
 
     if has_team_species and not has_knowledge:
-        return "prepare"
+        return {
+            "mission_goal": "prepare",
+            "source": "knowledge_precheck",
+            "reason": "Current generated team has no attached knowledge context yet.",
+        }
+    if plan_goal in {"prepare", "queue", "ladder", "learn"}:
+        return {
+            "mission_goal": plan_goal,
+            "source": "training_plan",
+            "reason": training_plan.get("reason") or "Learning profile training plan selected the next mission goal.",
+        }
     if battles < 3:
-        return "queue"
+        return {
+            "mission_goal": "queue",
+            "source": "sample_size",
+            "reason": "Fewer than 3 completed battles are available, so collect baseline samples first.",
+        }
     if win_rate < 0.45 or average_reward < 40:
-        return "prepare"
+        return {
+            "mission_goal": "prepare",
+            "source": "performance_guard",
+            "reason": "Win rate or average reward is weak, so prepare before longer ladder runs.",
+        }
     if win_rate >= 0.6 and average_reward >= 70:
-        return "learn"
-    return "ladder"
+        return {
+            "mission_goal": "learn",
+            "source": "performance_signal",
+            "reason": "Win rate and reward are strong enough to continue learning loops.",
+        }
+    return {
+        "mission_goal": "ladder",
+        "source": "balanced_default",
+        "reason": "Learning signals are stable enough for a bounded ladder run.",
+    }
 
 
 @router.get("/showdown/learning/profiles")

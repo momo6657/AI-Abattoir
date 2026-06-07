@@ -838,11 +838,51 @@ async def test_showdown_mission_auto_goal_resolves_from_session_state(setup_db, 
     session_id = data["session"]["session_id"]
     assert data["mission_summary"]["requested_mission_goal"] == "auto"
     assert data["mission_summary"]["mission_goal"] == "prepare"
+    assert data["mission_summary"]["mission_goal_source"] == "knowledge_precheck"
     assert data["mission_summary"]["allowed_actions"] == ["research_team"]
     assert data["mission_summary"]["training_plan"]["stage"] == "collect_data"
     assert data["mission_summary"]["training_plan"]["next_mission_goal"] == "queue"
     assert data["session"]["last_mission_summary"]["mission_goal"] == "prepare"
     assert data["session"]["has_knowledge_context"]
+
+    await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
+
+
+@pytest.mark.asyncio
+async def test_showdown_mission_auto_goal_uses_training_plan(setup_db, db, client):
+    await pokemon_showdown_learning_store.record_session(
+        db,
+        session_id="planned-auto-win",
+        username="PlanBot",
+        battle_format="gen9randombattle",
+        showdown_format="gen9randombattle",
+        mode="aggressive",
+        analysis={"status": "win", "reward": 120.0, "turns": 6, "faints_for": 3, "faints_against": 1},
+        decisions=[{"decision_type": "move"}],
+    )
+
+    response = await client.post(
+        "/api/pokemon/showdown/mission",
+        json={
+            "username": "PlanBot",
+            "battle_format": "gen9randombattle",
+            "team": None,
+            "mode": "auto",
+            "mission_goal": "auto",
+            "max_actions": 1,
+            "allowed_actions": ["start_search"],
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    session_id = data["session"]["session_id"]
+    assert data["mission_summary"]["requested_mission_goal"] == "auto"
+    assert data["mission_summary"]["mission_goal"] == "learn"
+    assert data["mission_summary"]["mission_goal_source"] == "training_plan"
+    assert data["mission_summary"]["training_plan"]["stage"] == "exploit"
+    assert data["mission_summary"]["training_plan"]["next_mission_goal"] == "learn"
+    assert data["session"]["last_mission_summary"]["mission_goal_source"] == "training_plan"
 
     await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
 
