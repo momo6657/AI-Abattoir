@@ -108,6 +108,9 @@ class PokemonShowdownLearningStore:
             entry["rank"] = index
         return entries[:limit]
 
+    def score_profile(self, profile: dict[str, Any]) -> float:
+        return self._mastery_score(profile)
+
     async def _record_by_session(
         self,
         db: AsyncSession,

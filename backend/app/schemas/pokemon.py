@@ -250,3 +250,18 @@ class ShowdownSessionMissionRequest(ShowdownSessionCreateRequest):
     stop_on_error: bool = True
     stop_on_new_session: bool = True
     max_results: int = 3
+
+
+class ShowdownTrainingChainRequest(ShowdownSessionMissionRequest):
+    rounds: int = Field(
+        2,
+        description="Maximum autonomous mission rounds to plan and execute in one training chain.",
+    )
+    mastery_score_target: Optional[float] = Field(
+        None,
+        description="Optional mastery score threshold. The chain stops after a round reaches this score.",
+    )
+    stop_on_no_progress: bool = Field(
+        True,
+        description="Stop the chain when a round executes no supervisor actions.",
+    )

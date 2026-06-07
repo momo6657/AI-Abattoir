@@ -876,6 +876,85 @@ async def test_showdown_mission_plan_prepares_generated_team_without_knowledge(s
 
 
 @pytest.mark.asyncio
+async def test_showdown_training_chain_runs_adaptive_planned_rounds(setup_db, db, client):
+    await pokemon_showdown_learning_store.record_session(
+        db,
+        session_id="chain-preview-win",
+        username="ChainBot",
+        battle_format="gen9randombattle",
+        showdown_format="gen9randombattle",
+        mode="aggressive",
+        analysis={"status": "win", "reward": 130.0, "turns": 4, "faints_for": 3, "faints_against": 0},
+        decisions=[{"decision_type": "move"}],
+    )
+
+    response = await client.post(
+        "/api/pokemon/showdown/training-chain",
+        json={
+            "username": "ChainBot",
+            "battle_format": "gen9randombattle",
+            "mode": "auto",
+            "mission_goal": "auto",
+            "rounds": 2,
+            "max_actions": 1,
+            "allowed_actions": ["start_search"],
+            "stop_on_finished": False,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["requested_rounds"] == 2
+    assert data["completed_rounds"] == 2
+    assert data["stop_reason"] == "round_limit"
+    assert data["learning_profile"]["training_plan"]["next_mission_goal"] == "learn"
+    assert data["mastery_score"] > 0
+    assert [round_item["planned_goal"] for round_item in data["rounds"]] == ["learn", "learn"]
+    assert all(round_item["planned_goal_source"] == "training_plan" for round_item in data["rounds"])
+    assert all(round_item["action_plan_source"] == "custom" for round_item in data["rounds"])
+    assert all(round_item["supervisor_step_count"] == 1 for round_item in data["rounds"])
+    assert all(round_item["mission_summary"]["allowed_actions"] == ["start_search"] for round_item in data["rounds"])
+
+    for round_item in data["rounds"]:
+        await client.delete(f"/api/pokemon/showdown/sessions/{round_item['session_id']}")
+
+
+@pytest.mark.asyncio
+async def test_showdown_training_chain_stops_on_mastery_target(setup_db, db, client):
+    await pokemon_showdown_learning_store.record_session(
+        db,
+        session_id="chain-target-win",
+        username="TargetBot",
+        battle_format="gen9randombattle",
+        showdown_format="gen9randombattle",
+        mode="balanced",
+        analysis={"status": "win", "reward": 100.0, "turns": 7, "faints_for": 2, "faints_against": 1},
+        decisions=[{"decision_type": "move"}],
+    )
+
+    response = await client.post(
+        "/api/pokemon/showdown/training-chain",
+        json={
+            "username": "TargetBot",
+            "battle_format": "gen9randombattle",
+            "mission_goal": "auto",
+            "rounds": 5,
+            "max_actions": 1,
+            "allowed_actions": ["start_search"],
+            "mastery_score_target": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["completed_rounds"] == 1
+    assert data["stop_reason"] == "mastery_score_target"
+    assert data["rounds"][0]["mastery_score"] >= 1
+
+    await client.delete(f"/api/pokemon/showdown/sessions/{data['rounds'][0]['session_id']}")
+
+
+@pytest.mark.asyncio
 async def test_showdown_mission_auto_goal_resolves_from_session_state(setup_db, monkeypatch, client):
     async def fake_search_team(db, species, query_type="species_usage", max_results=3):
         return {

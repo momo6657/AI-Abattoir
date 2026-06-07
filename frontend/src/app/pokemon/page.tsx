@@ -88,9 +88,11 @@ export default function PokemonBattlePage() {
   const [showdownAutoAccept, setShowdownAutoAccept] = useState(false);
   const [showdownAutoResearch, setShowdownAutoResearch] = useState(false);
   const [showdownRunLimit, setShowdownRunLimit] = useState(10);
+  const [showdownChainRounds, setShowdownChainRounds] = useState(2);
   const [showdownMode, setShowdownMode] = useState<'auto' | 'balanced' | 'aggressive' | 'defensive'>('auto');
   const [showdownMissionGoal, setShowdownMissionGoal] = useState<'auto' | 'prepare' | 'queue' | 'ladder' | 'learn'>('auto');
   const [showdownMissionPlan, setShowdownMissionPlan] = useState<any>(null);
+  const [showdownTrainingChain, setShowdownTrainingChain] = useState<any>(null);
   const [showdownPlan, setShowdownPlan] = useState<any>(null);
   const [showdownSession, setShowdownSession] = useState<any>(null);
   const [showdownAnalysis, setShowdownAnalysis] = useState<any>(null);
@@ -147,6 +149,7 @@ export default function PokemonBattlePage() {
     setShowdownLearning(null);
     setShowdownPlan(null);
     setShowdownMissionPlan(null);
+    setShowdownTrainingChain(null);
     setShowdownRunSummary(null);
     setShowdownTeamKnowledge([]);
     setShowdownTeamKnowledgeSummary(null);
@@ -382,7 +385,7 @@ export default function PokemonBattlePage() {
       mode: showdownMode,
       auto_login: showdownAutoLogin,
       auto_accept_challenges: showdownAutoAccept,
-      auto_research_team: false,
+      auto_research_team: showdownAutoResearch,
       login_password: showdownPassword || undefined,
       mission_goal: showdownMissionGoal,
       auto_search: showdownMissionGoal !== 'prepare',
@@ -429,6 +432,28 @@ export default function PokemonBattlePage() {
       refreshShowdownMastery();
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '启动 Showdown 自主任务失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runShowdownTrainingChain() {
+    setBusy(true);
+    setError(null);
+    try {
+      resetShowdownState();
+      const response = (await pokemonApi.runShowdownTrainingChain(buildShowdownMissionPayload({
+        rounds: Math.min(10, Math.max(1, showdownChainRounds)),
+      }))).data;
+      setShowdownTrainingChain(response);
+      applyShowdownSession(response.final_session);
+      setShowdownLearning(response.learning_profile || response.final_session?.learning_profile || null);
+      setShowdownAnalysis(response.final_session?.analysis || null);
+      const lastRound = [...(response.rounds || [])].reverse()[0];
+      addMessage(`Training chain ${response.completed_rounds}/${response.requested_rounds}: ${response.stop_reason} · ${lastRound?.planned_goal || 'auto'}.`);
+      refreshShowdownMastery();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '启动 Showdown 训练链失败');
     } finally {
       setBusy(false);
     }
@@ -734,6 +759,7 @@ export default function PokemonBattlePage() {
     ['Phase 34', 'auto 自主任务读取训练计划推荐下一轮目标，并展示推荐来源'],
     ['Phase 35', '训练计划动作会翻译为可执行 supervisor 白名单，任务摘要展示执行覆盖'],
     ['Phase 36', '新增下一轮任务计划预览接口，前端可查看并按计划启动自主训练'],
+    ['Phase 37', '新增多轮训练链入口，按学习计划连续规划、执行、评分并在前端复盘'],
   ];
 
   return (
@@ -936,12 +962,23 @@ export default function PokemonBattlePage() {
               </button>
             </div>
 
-            <div className="mt-3 grid grid-cols-[minmax(0,1fr)_88px] gap-2">
+            <div className="mt-3 grid grid-cols-[minmax(0,1fr)_88px_88px] gap-2">
               <label className="text-xs text-gray-500">
                 Username
                 <input
                   value={showdownUsername}
                   onChange={(event) => setShowdownUsername(event.target.value)}
+                  className="mt-1 w-full rounded-md border border-border bg-black/30 px-3 py-2 text-sm normal-case text-gray-100 outline-none focus:border-accent"
+                />
+              </label>
+              <label className="text-xs text-gray-500">
+                Rounds
+                <input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={showdownChainRounds}
+                  onChange={(event) => setShowdownChainRounds(Math.max(1, Math.min(10, Number(event.target.value) || 1)))}
                   className="mt-1 w-full rounded-md border border-border bg-black/30 px-3 py-2 text-sm normal-case text-gray-100 outline-none focus:border-accent"
                 />
               </label>
@@ -1042,6 +1079,9 @@ export default function PokemonBattlePage() {
               >
                 按计划启动
               </button>
+              <button onClick={runShowdownTrainingChain} disabled={busy} className="btn-primary disabled:opacity-50">
+                训练链
+              </button>
               <button onClick={startShowdownSearch} disabled={busy} className="btn-primary disabled:opacity-50">
                 搜索天梯
               </button>
@@ -1112,6 +1152,35 @@ export default function PokemonBattlePage() {
                       <span key={`preview-${action}`} className="rounded border border-accent/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-gray-200">
                         {action}
                       </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {showdownTrainingChain ? (
+              <div className="mt-3 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs leading-5 text-gray-300">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[10px] font-semibold uppercase text-emerald-200">Training chain</span>
+                  <span className="rounded bg-black/30 px-2 py-0.5 text-[10px] text-gray-100">
+                    {showdownTrainingChain.completed_rounds}/{showdownTrainingChain.requested_rounds} · {showdownTrainingChain.stop_reason}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Metric label="Mastery" value={showdownTrainingChain.mastery_score != null ? Number(showdownTrainingChain.mastery_score).toFixed(0) : '-'} compact />
+                  <Metric label="Rounds" value={showdownTrainingChain.completed_rounds || 0} compact />
+                  <Metric label="Final" value={showdownTrainingChain.final_session?.status || '-'} compact />
+                  <Metric label="Samples" value={showdownTrainingChain.learning_profile?.battles || 0} compact />
+                </div>
+                {showdownTrainingChain.rounds?.length ? (
+                  <div className="mt-2 space-y-1.5">
+                    {showdownTrainingChain.rounds.slice(-4).map((round: any) => (
+                      <div key={`chain-${round.round}`} className="flex flex-wrap items-center justify-between gap-2 rounded border border-border bg-black/20 px-2 py-1">
+                        <span className="text-gray-200">#{round.round} {round.planned_goal}</span>
+                        <span className="text-[10px] text-gray-500">
+                          {round.planned_goal_source} · {round.supervisor_stop_reason} · {round.supervisor_step_count} step(s)
+                        </span>
+                      </div>
                     ))}
                   </div>
                 ) : null}

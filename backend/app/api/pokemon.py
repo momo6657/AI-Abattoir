@@ -28,6 +28,7 @@ from app.schemas.pokemon import (
     ShowdownSessionNextActionRequest,
     ShowdownSessionRunRequest,
     ShowdownSessionSupervisorRequest,
+    ShowdownTrainingChainRequest,
 )
 from app.models.pokemon import (
     PokemonSpecies,
@@ -661,6 +662,83 @@ async def start_showdown_mission(payload: ShowdownSessionMissionRequest, db: Asy
         "session": final_session,
         "supervisor": supervisor,
         "mission_summary": stored_mission,
+    }
+
+
+@router.post("/showdown/training-chain")
+async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db: AsyncSession = Depends(get_db)):
+    """Plan and execute multiple adaptive Showdown missions as one bounded training chain."""
+    if payload.rounds < 1 or payload.rounds > 10:
+        raise HTTPException(status_code=400, detail="rounds must be between 1 and 10.")
+    if payload.max_actions < 1 or payload.max_actions > 20:
+        raise HTTPException(status_code=400, detail="max_actions must be between 1 and 20.")
+    if payload.mastery_score_target is not None and payload.mastery_score_target < 0:
+        raise HTTPException(status_code=400, detail="mastery_score_target must be greater than or equal to 0.")
+
+    mission_payload = ShowdownSessionMissionRequest(
+        **payload.model_dump(exclude={"rounds", "mastery_score_target", "stop_on_no_progress"})
+    )
+    rounds = []
+    stop_reason = "round_limit"
+    final_session = None
+    latest_learning_profile = None
+    latest_mastery_score = None
+
+    for index in range(payload.rounds):
+        plan = await plan_showdown_mission(mission_payload, db)
+        mission = await start_showdown_mission(mission_payload, db)
+        final_session = mission.get("session")
+        supervisor = mission.get("supervisor") or {}
+        mission_summary = mission.get("mission_summary") or {}
+        learning_profile = (
+            supervisor.get("learning_profile")
+            or (final_session or {}).get("learning_profile")
+            or await pokemon_showdown_learning_store.profile(
+                db,
+                username=payload.username,
+                battle_format=plan["battle_format"],
+            )
+        )
+        latest_learning_profile = learning_profile
+        latest_mastery_score = pokemon_showdown_learning_store.score_profile(learning_profile)
+        round_summary = {
+            "round": index + 1,
+            "planned_goal": plan["mission_goal"],
+            "planned_goal_source": plan["mission_goal_source"],
+            "planned_actions": plan["allowed_actions"],
+            "action_plan_source": plan["action_plan_source"],
+            "session_id": (final_session or {}).get("session_id"),
+            "status": (final_session or {}).get("status"),
+            "mission_summary": mission_summary,
+            "supervisor_stop_reason": supervisor.get("stop_reason"),
+            "supervisor_step_count": supervisor.get("step_count", 0),
+            "learning_profile": learning_profile,
+            "mastery_score": latest_mastery_score,
+        }
+        rounds.append(round_summary)
+
+        if payload.mastery_score_target is not None and latest_mastery_score >= payload.mastery_score_target:
+            stop_reason = "mastery_score_target"
+            break
+        if payload.stop_on_error and supervisor.get("stop_reason") == "error":
+            stop_reason = "error"
+            break
+        if payload.stop_on_no_progress and int(supervisor.get("step_count") or 0) == 0:
+            stop_reason = "no_progress"
+            break
+    else:
+        stop_reason = "round_limit"
+
+    return {
+        "username": payload.username,
+        "battle_format": (rounds[-1]["mission_summary"].get("battle_format") if rounds else payload.battle_format),
+        "requested_rounds": payload.rounds,
+        "completed_rounds": len(rounds),
+        "stop_reason": stop_reason,
+        "final_session": final_session,
+        "learning_profile": latest_learning_profile,
+        "mastery_score": latest_mastery_score,
+        "rounds": rounds,
     }
 
 
