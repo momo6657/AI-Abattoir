@@ -577,6 +577,10 @@ async def start_showdown_mission(payload: ShowdownSessionMissionRequest, db: Asy
         "mission_goal_source": mission_policy["mission_goal_source"],
         "mission_goal_reason": mission_policy["mission_goal_reason"],
         "allowed_actions": mission_policy["allowed_actions"],
+        "training_plan_actions": mission_policy["training_plan_actions"],
+        "executable_plan_actions": mission_policy["executable_plan_actions"],
+        "unsupported_plan_actions": mission_policy["unsupported_plan_actions"],
+        "action_plan_source": mission_policy["action_plan_source"],
         "stop_reason": supervisor.get("stop_reason"),
         "step_count": supervisor.get("step_count", 0),
         "training_plan": (final_session.get("learning_profile") or {}).get("training_plan"),
@@ -644,9 +648,10 @@ def _normalize_showdown_mission_goal(goal: str | None) -> str:
 
 
 def _resolve_showdown_mission_policy(payload: ShowdownSessionMissionRequest, session: dict | None = None) -> dict:
+    session = session or {}
     requested_goal = _normalize_showdown_mission_goal(payload.mission_goal)
     goal = requested_goal
-    recommendation = _recommend_showdown_mission_goal(session or {})
+    recommendation = _recommend_showdown_mission_goal(session)
     if goal == "auto":
         goal = recommendation["mission_goal"]
     presets = {
@@ -700,8 +705,17 @@ def _resolve_showdown_mission_policy(payload: ShowdownSessionMissionRequest, ses
     policy["requested_mission_goal"] = requested_goal
     policy["mission_goal_source"] = recommendation["source"] if requested_goal == "auto" else "manual"
     policy["mission_goal_reason"] = recommendation["reason"] if requested_goal == "auto" else "Mission goal was selected manually."
+    plan_actions, executable_plan_actions, unsupported_plan_actions = _resolve_showdown_training_plan_actions(session)
+    policy["training_plan_actions"] = plan_actions
+    policy["executable_plan_actions"] = executable_plan_actions
+    policy["unsupported_plan_actions"] = unsupported_plan_actions
+    policy["action_plan_source"] = "preset"
+    if requested_goal == "auto" and recommendation["source"] == "training_plan" and executable_plan_actions:
+        policy["allowed_actions"] = executable_plan_actions
+        policy["action_plan_source"] = "training_plan"
     if payload.allowed_actions:
         policy["allowed_actions"] = payload.allowed_actions
+        policy["action_plan_source"] = "custom"
     if payload.stop_actions:
         policy["stop_actions"] = payload.stop_actions
     if payload.auto_search:
@@ -754,6 +768,47 @@ def _recommend_showdown_mission_goal(session: dict) -> dict[str, str]:
         "source": "balanced_default",
         "reason": "Learning signals are stable enough for a bounded ladder run.",
     }
+
+
+def _resolve_showdown_training_plan_actions(session: dict) -> tuple[list[str], list[str], list[str]]:
+    profile = session.get("learning_profile") or {}
+    training_plan = profile.get("training_plan") or {}
+    plan_actions = [
+        str(action).strip().lower()
+        for action in training_plan.get("actions") or []
+        if str(action).strip()
+    ]
+    executable: list[str] = []
+    unsupported: list[str] = []
+
+    aliases = {
+        "research_team": ["research_team"],
+        "plan_adjustments": ["research_team"],
+        "start_search": ["connect", "flush_pending", "start_search"],
+        "queue_short_run": ["connect", "flush_pending", "start_search", "autopilot", "analyze"],
+        "connect": ["connect"],
+        "flush_pending": ["connect", "flush_pending"],
+        "accept_challenge": ["accept_challenge", "connect", "flush_pending"],
+        "run_once": ["connect", "flush_pending", "run_once"],
+        "autopilot": ["connect", "flush_pending", "start_search", "autopilot"],
+        "analyze": ["analyze"],
+        "new_session": ["new_session"],
+    }
+
+    def add(action: str) -> None:
+        if action not in executable:
+            executable.append(action)
+
+    for action in plan_actions:
+        mapped = aliases.get(action)
+        if mapped is None and action.startswith("audit_"):
+            mapped = ["analyze"]
+        if mapped is None:
+            unsupported.append(action)
+            continue
+        for item in mapped:
+            add(item)
+    return plan_actions, executable, unsupported
 
 
 @router.get("/showdown/learning/profiles")

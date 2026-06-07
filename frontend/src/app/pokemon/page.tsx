@@ -709,6 +709,7 @@ export default function PokemonBattlePage() {
     ['Phase 32', '自主任务支持 auto 目标，根据学习档案和知识状态选择训练节奏'],
     ['Phase 33', '学习档案输出结构化训练计划，任务摘要展示下一轮目标和动作队列'],
     ['Phase 34', 'auto 自主任务读取训练计划推荐下一轮目标，并展示推荐来源'],
+    ['Phase 35', '训练计划动作会翻译为可执行 supervisor 白名单，任务摘要展示执行覆盖'],
   ];
 
   return (
@@ -1224,6 +1225,7 @@ export default function PokemonBattlePage() {
                   <Metric label="History" value={showdownSession.mission_history_count ?? 0} compact />
                   <Metric label="Mode" value={showdownSession.last_mission_summary.mode || showdownSession.mode || '-'} compact />
                   <Metric label="Source" value={showdownSession.last_mission_summary.mission_goal_source || '-'} compact />
+                  <Metric label="Action Source" value={showdownSession.last_mission_summary.action_plan_source || '-'} compact />
                 </div>
                 {showdownSession.last_mission_summary.mission_goal_reason ? (
                   <div className="mt-2 break-words rounded border border-border bg-black/20 p-2 text-[10px] leading-4 text-gray-400">
@@ -1263,6 +1265,23 @@ export default function PokemonBattlePage() {
                             {action}
                           </span>
                         ))}
+                      </div>
+                    ) : null}
+                    {showdownSession.last_mission_summary.executable_plan_actions?.length ? (
+                      <div className="mt-2">
+                        <div className="text-[10px] font-semibold uppercase text-emerald-200/80">Executable</div>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {showdownSession.last_mission_summary.executable_plan_actions.map((action: string) => (
+                            <span key={`executable-${action}`} className="rounded border border-border bg-black/30 px-1.5 py-0.5 text-[10px] text-gray-300">
+                              {action}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {showdownSession.last_mission_summary.unsupported_plan_actions?.length ? (
+                      <div className="mt-2 break-words rounded border border-amber-500/30 bg-amber-500/10 p-2 text-[10px] text-amber-100">
+                        Unsupported: {showdownSession.last_mission_summary.unsupported_plan_actions.join(' / ')}
                       </div>
                     ) : null}
                   </div>

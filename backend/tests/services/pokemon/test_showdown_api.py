@@ -4,6 +4,8 @@ import json
 
 import pytest
 
+from app.api import pokemon as pokemon_api
+from app.schemas.pokemon import ShowdownSessionMissionRequest
 from app.services.pokemon.showdown_learning_store import pokemon_showdown_learning_store
 from app.services.pokemon.knowledge_service import pokemon_knowledge_service
 
@@ -880,11 +882,94 @@ async def test_showdown_mission_auto_goal_uses_training_plan(setup_db, db, clien
     assert data["mission_summary"]["requested_mission_goal"] == "auto"
     assert data["mission_summary"]["mission_goal"] == "learn"
     assert data["mission_summary"]["mission_goal_source"] == "training_plan"
+    assert data["mission_summary"]["action_plan_source"] == "custom"
+    assert data["mission_summary"]["training_plan_actions"] == ["start_search", "autopilot", "analyze", "new_session"]
+    assert data["mission_summary"]["executable_plan_actions"] == [
+        "connect",
+        "flush_pending",
+        "start_search",
+        "autopilot",
+        "analyze",
+        "new_session",
+    ]
     assert data["mission_summary"]["training_plan"]["stage"] == "exploit"
     assert data["mission_summary"]["training_plan"]["next_mission_goal"] == "learn"
     assert data["session"]["last_mission_summary"]["mission_goal_source"] == "training_plan"
 
     await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
+
+
+def test_showdown_auto_policy_translates_training_plan_actions():
+    payload = ShowdownSessionMissionRequest(
+        username="PolicyBot",
+        battle_format="gen9randombattle",
+        mission_goal="auto",
+    )
+    session = {
+        "has_knowledge_context": False,
+        "team_species": [],
+        "learning_profile": {
+            "battles": 3,
+            "win_rate": 0.75,
+            "average_reward": 95.0,
+            "training_plan": {
+                "next_mission_goal": "learn",
+                "actions": ["start_search", "autopilot", "analyze", "new_session"],
+                "reason": "Continue collecting strong ladder samples.",
+            },
+        },
+    }
+
+    policy = pokemon_api._resolve_showdown_mission_policy(payload, session)
+
+    assert policy["mission_goal"] == "learn"
+    assert policy["mission_goal_source"] == "training_plan"
+    assert policy["action_plan_source"] == "training_plan"
+    assert policy["allowed_actions"] == [
+        "connect",
+        "flush_pending",
+        "start_search",
+        "autopilot",
+        "analyze",
+        "new_session",
+    ]
+    assert policy["training_plan_actions"] == ["start_search", "autopilot", "analyze", "new_session"]
+    assert policy["unsupported_plan_actions"] == []
+
+
+def test_showdown_auto_policy_maps_abstract_training_actions():
+    payload = ShowdownSessionMissionRequest(
+        username="WeakPolicyBot",
+        battle_format="gen9randombattle",
+        mission_goal="auto",
+    )
+    session = {
+        "has_knowledge_context": False,
+        "team_species": [],
+        "learning_profile": {
+            "battles": 3,
+            "win_rate": 0.1,
+            "average_reward": 20.0,
+            "training_plan": {
+                "next_mission_goal": "prepare",
+                "actions": ["research_team", "audit_switch", "plan_adjustments", "queue_short_run"],
+                "reason": "Stabilize weak battle results.",
+            },
+        },
+    }
+
+    policy = pokemon_api._resolve_showdown_mission_policy(payload, session)
+
+    assert policy["mission_goal"] == "prepare"
+    assert policy["allowed_actions"] == [
+        "research_team",
+        "analyze",
+        "connect",
+        "flush_pending",
+        "start_search",
+        "autopilot",
+    ]
+    assert policy["unsupported_plan_actions"] == []
 
 
 @pytest.mark.asyncio
