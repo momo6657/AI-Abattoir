@@ -729,6 +729,37 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
     else:
         stop_reason = "round_limit"
 
+    training_chain_summary = None
+    if final_session and final_session.get("session_id"):
+        training_chain_summary = pokemon_showdown_session_service.store_training_chain_summary(
+            final_session["session_id"],
+            {
+                "username": payload.username,
+                "battle_format": final_session.get("battle_format"),
+                "showdown_format": final_session.get("showdown_format"),
+                "requested_rounds": payload.rounds,
+                "completed_rounds": len(rounds),
+                "stop_reason": stop_reason,
+                "mastery_score": latest_mastery_score,
+                "learning_battles": (latest_learning_profile or {}).get("battles", 0),
+                "last_goal": rounds[-1]["planned_goal"] if rounds else None,
+                "last_goal_source": rounds[-1]["planned_goal_source"] if rounds else None,
+                "rounds": [
+                    {
+                        "round": item["round"],
+                        "planned_goal": item["planned_goal"],
+                        "planned_goal_source": item["planned_goal_source"],
+                        "supervisor_stop_reason": item["supervisor_stop_reason"],
+                        "supervisor_step_count": item["supervisor_step_count"],
+                        "mastery_score": item["mastery_score"],
+                    }
+                    for item in rounds
+                ],
+            },
+        )
+        refreshed = pokemon_showdown_session_service.get_session(final_session["session_id"])
+        final_session = refreshed.to_dict() if refreshed else final_session
+
     return {
         "username": payload.username,
         "battle_format": (rounds[-1]["mission_summary"].get("battle_format") if rounds else payload.battle_format),
@@ -738,6 +769,7 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
         "final_session": final_session,
         "learning_profile": latest_learning_profile,
         "mastery_score": latest_mastery_score,
+        "training_chain_summary": training_chain_summary,
         "rounds": rounds,
     }
 

@@ -66,6 +66,7 @@ class ShowdownSessionState:
     run_history: list[dict[str, Any]] = field(default_factory=list)
     supervisor_history: list[dict[str, Any]] = field(default_factory=list)
     mission_history: list[dict[str, Any]] = field(default_factory=list)
+    training_chain_history: list[dict[str, Any]] = field(default_factory=list)
     last_error: str | None = None
     team: list[dict[str, Any]] | str | None = None
     login_assertion: str | None = None
@@ -212,6 +213,9 @@ class ShowdownSessionState:
             "last_mission_summary": dict(self.mission_history[-1]) if self.mission_history else None,
             "mission_history": [dict(item) for item in self.mission_history],
             "mission_history_count": len(self.mission_history),
+            "last_training_chain_summary": dict(self.training_chain_history[-1]) if self.training_chain_history else None,
+            "training_chain_history": [dict(item) for item in self.training_chain_history],
+            "training_chain_history_count": len(self.training_chain_history),
             "last_error": self.last_error,
             "next_actions": self._next_actions(),
         }
@@ -686,6 +690,21 @@ class PokemonShowdownSessionService:
         state.mission_history.append(stored)
         if len(state.mission_history) > 10:
             state.mission_history = state.mission_history[-10:]
+        state.touch()
+        return stored
+
+    def store_training_chain_summary(self, session_id: str, summary: dict[str, Any]) -> dict[str, Any]:
+        state = self._require_session(session_id)
+        stored = dict(summary)
+        previous_number = (
+            int(state.training_chain_history[-1].get("chain_number") or len(state.training_chain_history))
+            if state.training_chain_history
+            else 0
+        )
+        stored["chain_number"] = previous_number + 1
+        state.training_chain_history.append(stored)
+        if len(state.training_chain_history) > 10:
+            state.training_chain_history = state.training_chain_history[-10:]
         state.touch()
         return stored
 

@@ -124,6 +124,7 @@ export default function PokemonBattlePage() {
     activeShowdownLearning?.training_plan ||
     showdownSession?.learning_profile?.training_plan ||
     null;
+  const activeShowdownTrainingChain = showdownTrainingChain || showdownSession?.last_training_chain_summary || null;
 
   useEffect(() => {
     refreshOverview();
@@ -760,6 +761,7 @@ export default function PokemonBattlePage() {
     ['Phase 35', '训练计划动作会翻译为可执行 supervisor 白名单，任务摘要展示执行覆盖'],
     ['Phase 36', '新增下一轮任务计划预览接口，前端可查看并按计划启动自主训练'],
     ['Phase 37', '新增多轮训练链入口，按学习计划连续规划、执行、评分并在前端复盘'],
+    ['Phase 38', '会话快照保存训练链历史，刷新后仍能复盘多轮训练表现'],
   ];
 
   return (
@@ -1158,29 +1160,38 @@ export default function PokemonBattlePage() {
               </div>
             ) : null}
 
-            {showdownTrainingChain ? (
+            {activeShowdownTrainingChain ? (
               <div className="mt-3 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs leading-5 text-gray-300">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                   <span className="text-[10px] font-semibold uppercase text-emerald-200">Training chain</span>
                   <span className="rounded bg-black/30 px-2 py-0.5 text-[10px] text-gray-100">
-                    {showdownTrainingChain.completed_rounds}/{showdownTrainingChain.requested_rounds} · {showdownTrainingChain.stop_reason}
+                    #{activeShowdownTrainingChain.chain_number ?? activeShowdownTrainingChain.training_chain_summary?.chain_number ?? '-'} · {activeShowdownTrainingChain.completed_rounds}/{activeShowdownTrainingChain.requested_rounds} · {activeShowdownTrainingChain.stop_reason}
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <Metric label="Mastery" value={showdownTrainingChain.mastery_score != null ? Number(showdownTrainingChain.mastery_score).toFixed(0) : '-'} compact />
-                  <Metric label="Rounds" value={showdownTrainingChain.completed_rounds || 0} compact />
-                  <Metric label="Final" value={showdownTrainingChain.final_session?.status || '-'} compact />
-                  <Metric label="Samples" value={showdownTrainingChain.learning_profile?.battles || 0} compact />
+                  <Metric label="Mastery" value={activeShowdownTrainingChain.mastery_score != null ? Number(activeShowdownTrainingChain.mastery_score).toFixed(0) : '-'} compact />
+                  <Metric label="Rounds" value={activeShowdownTrainingChain.completed_rounds || 0} compact />
+                  <Metric label="Final" value={activeShowdownTrainingChain.final_session?.status || showdownSession?.status || '-'} compact />
+                  <Metric label="Samples" value={activeShowdownTrainingChain.learning_profile?.battles ?? activeShowdownTrainingChain.learning_battles ?? 0} compact />
                 </div>
-                {showdownTrainingChain.rounds?.length ? (
+                {activeShowdownTrainingChain.rounds?.length ? (
                   <div className="mt-2 space-y-1.5">
-                    {showdownTrainingChain.rounds.slice(-4).map((round: any) => (
+                    {activeShowdownTrainingChain.rounds.slice(-4).map((round: any) => (
                       <div key={`chain-${round.round}`} className="flex flex-wrap items-center justify-between gap-2 rounded border border-border bg-black/20 px-2 py-1">
                         <span className="text-gray-200">#{round.round} {round.planned_goal}</span>
                         <span className="text-[10px] text-gray-500">
                           {round.planned_goal_source} · {round.supervisor_stop_reason} · {round.supervisor_step_count} step(s)
                         </span>
                       </div>
+                    ))}
+                  </div>
+                ) : null}
+                {showdownSession?.training_chain_history?.length ? (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {showdownSession.training_chain_history.slice(-4).reverse().map((chain: any) => (
+                      <span key={chain.chain_number} className="rounded border border-emerald-500/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-emerald-100">
+                        #{chain.chain_number} {chain.completed_rounds}/{chain.requested_rounds}:{chain.stop_reason}
+                      </span>
                     ))}
                   </div>
                 ) : null}

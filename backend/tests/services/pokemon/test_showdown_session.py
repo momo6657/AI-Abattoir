@@ -646,6 +646,30 @@ def test_attach_knowledge_context_updates_session_snapshot():
     assert snapshot["knowledge_context"]["sources"] == ["https://example.com/Incineroar"]
 
 
+def test_store_training_chain_summary_updates_session_snapshot():
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None)
+
+    for index in range(12):
+        stored = service.store_training_chain_summary(
+            session.session_id,
+            {
+                "completed_rounds": index + 1,
+                "requested_rounds": 12,
+                "stop_reason": "round_limit",
+                "mastery_score": 100 + index,
+            },
+        )
+
+    snapshot = session.to_dict()
+
+    assert stored["chain_number"] == 12
+    assert snapshot["training_chain_history_count"] == 10
+    assert snapshot["last_training_chain_summary"]["chain_number"] == 12
+    assert snapshot["last_training_chain_summary"]["mastery_score"] == 111
+    assert snapshot["training_chain_history"][0]["chain_number"] == 3
+
+
 def test_process_payload_passes_attached_knowledge_context_to_decision():
     service = PokemonShowdownSessionService()
     session = service.create_session(username="Bot", team=None)
