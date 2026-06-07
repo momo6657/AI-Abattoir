@@ -90,6 +90,7 @@ export default function PokemonBattlePage() {
   const [showdownRunLimit, setShowdownRunLimit] = useState(10);
   const [showdownMode, setShowdownMode] = useState<'auto' | 'balanced' | 'aggressive' | 'defensive'>('auto');
   const [showdownMissionGoal, setShowdownMissionGoal] = useState<'auto' | 'prepare' | 'queue' | 'ladder' | 'learn'>('auto');
+  const [showdownMissionPlan, setShowdownMissionPlan] = useState<any>(null);
   const [showdownPlan, setShowdownPlan] = useState<any>(null);
   const [showdownSession, setShowdownSession] = useState<any>(null);
   const [showdownAnalysis, setShowdownAnalysis] = useState<any>(null);
@@ -145,6 +146,7 @@ export default function PokemonBattlePage() {
     setShowdownAnalysis(null);
     setShowdownLearning(null);
     setShowdownPlan(null);
+    setShowdownMissionPlan(null);
     setShowdownRunSummary(null);
     setShowdownTeamKnowledge([]);
     setShowdownTeamKnowledgeSummary(null);
@@ -373,25 +375,46 @@ export default function PokemonBattlePage() {
     }
   }
 
-  async function startShowdownMission() {
+  function buildShowdownMissionPayload(overrides: Record<string, unknown> = {}) {
+    return {
+      username: showdownUsername || 'PokemonBot',
+      battle_format: selectedFormatInfo?.id || selectedFormat,
+      mode: showdownMode,
+      auto_login: showdownAutoLogin,
+      auto_accept_challenges: showdownAutoAccept,
+      auto_research_team: false,
+      login_password: showdownPassword || undefined,
+      mission_goal: showdownMissionGoal,
+      auto_search: showdownMissionGoal !== 'prepare',
+      max_actions: Math.min(20, Math.max(1, showdownRunLimit)),
+      max_messages: showdownRunLimit,
+      stop_on_finished: false,
+      ...overrides,
+    };
+  }
+
+  async function previewShowdownMissionPlan() {
+    setBusy(true);
+    setError(null);
+    try {
+      const payload = buildShowdownMissionPayload({ login_password: undefined });
+      const plan = (await pokemonApi.planShowdownMission(payload)).data;
+      setShowdownMissionPlan(plan);
+      setShowdownLearning(plan.learning_profile || showdownLearning);
+      addMessage(`Mission plan ${plan.mission_goal}: ${plan.mission_goal_source || 'preset'} · ${(plan.executable_plan_actions || plan.allowed_actions || []).length} executable action(s).`);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '生成 Showdown 任务计划失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startShowdownMission(plannedRequest?: Record<string, unknown>) {
     setBusy(true);
     setError(null);
     try {
       resetShowdownState();
-      const response = (await pokemonApi.startShowdownMission({
-        username: showdownUsername || 'PokemonBot',
-        battle_format: selectedFormatInfo?.id || selectedFormat,
-        mode: showdownMode,
-        auto_login: showdownAutoLogin,
-        auto_accept_challenges: showdownAutoAccept,
-        auto_research_team: false,
-        login_password: showdownPassword || undefined,
-        mission_goal: showdownMissionGoal,
-        auto_search: showdownMissionGoal !== 'prepare',
-        max_actions: Math.min(20, Math.max(1, showdownRunLimit)),
-        max_messages: showdownRunLimit,
-        stop_on_finished: false,
-      })).data;
+      const response = (await pokemonApi.startShowdownMission(buildShowdownMissionPayload(plannedRequest || {}))).data;
       const session = response.session || response.supervisor?.session;
       applyShowdownSession(session);
       setShowdownAnalysis(response.supervisor?.analysis || session?.analysis || null);
@@ -710,6 +733,7 @@ export default function PokemonBattlePage() {
     ['Phase 33', '学习档案输出结构化训练计划，任务摘要展示下一轮目标和动作队列'],
     ['Phase 34', 'auto 自主任务读取训练计划推荐下一轮目标，并展示推荐来源'],
     ['Phase 35', '训练计划动作会翻译为可执行 supervisor 白名单，任务摘要展示执行覆盖'],
+    ['Phase 36', '新增下一轮任务计划预览接口，前端可查看并按计划启动自主训练'],
   ];
 
   return (
@@ -1005,8 +1029,18 @@ export default function PokemonBattlePage() {
               <button onClick={() => createShowdownSession(false)} disabled={busy} className="btn-secondary disabled:opacity-50">
                 创建会话
               </button>
-              <button onClick={startShowdownMission} disabled={busy} className="btn-primary disabled:opacity-50">
+              <button onClick={() => startShowdownMission()} disabled={busy} className="btn-primary disabled:opacity-50">
                 启动任务
+              </button>
+              <button onClick={previewShowdownMissionPlan} disabled={busy} className="btn-secondary disabled:opacity-50">
+                预览计划
+              </button>
+              <button
+                onClick={() => startShowdownMission(showdownMissionPlan?.mission_request || {})}
+                disabled={busy || !showdownMissionPlan?.mission_request}
+                className="btn-primary disabled:opacity-50"
+              >
+                按计划启动
               </button>
               <button onClick={startShowdownSearch} disabled={busy} className="btn-primary disabled:opacity-50">
                 搜索天梯
@@ -1052,6 +1086,37 @@ export default function PokemonBattlePage() {
                 重置
               </button>
             </div>
+
+            {showdownMissionPlan ? (
+              <div className="mt-3 rounded-md border border-accent/30 bg-accent/10 p-3 text-xs leading-5 text-gray-300">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[10px] font-semibold uppercase text-accent-hover">Next mission plan</span>
+                  <span className="rounded bg-black/30 px-2 py-0.5 text-[10px] text-gray-100">
+                    {showdownMissionPlan.mission_goal} · {showdownMissionPlan.mission_goal_source}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Metric label="Mode" value={showdownMissionPlan.mode || '-'} compact />
+                  <Metric label="Actions" value={(showdownMissionPlan.executable_plan_actions || showdownMissionPlan.allowed_actions || []).length} compact />
+                  <Metric label="Action Source" value={showdownMissionPlan.action_plan_source || '-'} compact />
+                  <Metric label="Samples" value={showdownMissionPlan.learning_profile?.battles || 0} compact />
+                </div>
+                {showdownMissionPlan.mission_goal_reason ? (
+                  <div className="mt-2 break-words rounded border border-border bg-black/20 p-2 text-[10px] leading-4 text-gray-300">
+                    {showdownMissionPlan.mission_goal_reason}
+                  </div>
+                ) : null}
+                {(showdownMissionPlan.executable_plan_actions || []).length ? (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {showdownMissionPlan.executable_plan_actions.map((action: string) => (
+                      <span key={`preview-${action}`} className="rounded border border-accent/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-gray-200">
+                        {action}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="mt-3 rounded-md border border-border bg-black/20 px-3 py-2 text-xs text-gray-400">
               <div className="space-y-2">

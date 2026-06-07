@@ -810,6 +810,72 @@ async def test_showdown_mission_prepare_goal_only_researches_team(setup_db, monk
 
 
 @pytest.mark.asyncio
+async def test_showdown_mission_plan_returns_next_request_from_learning_profile(setup_db, db, client):
+    await pokemon_showdown_learning_store.record_session(
+        db,
+        session_id="planned-preview-win",
+        username="PlanPreviewBot",
+        battle_format="gen9randombattle",
+        showdown_format="gen9randombattle",
+        mode="aggressive",
+        analysis={"status": "win", "reward": 125.0, "turns": 5, "faints_for": 3, "faints_against": 1},
+        decisions=[{"decision_type": "move"}],
+    )
+
+    response = await client.post(
+        "/api/pokemon/showdown/mission/plan",
+        json={
+            "username": "PlanPreviewBot",
+            "battle_format": "gen9randombattle",
+            "mode": "auto",
+            "mission_goal": "auto",
+            "login_password": "secret",
+            "max_actions": 4,
+            "max_messages": 12,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["mission_goal"] == "learn"
+    assert data["mission_goal_source"] == "training_plan"
+    assert data["action_plan_source"] == "training_plan"
+    assert data["mission_request"]["mission_goal"] == "auto"
+    assert data["mission_request"]["battle_format"] == "gen9randombattle"
+    assert data["mission_request"]["max_actions"] == 4
+    assert data["mission_request"]["max_messages"] == 12
+    assert "login_password" not in data["mission_request"]
+    assert data["executable_plan_actions"] == [
+        "connect",
+        "flush_pending",
+        "start_search",
+        "autopilot",
+        "analyze",
+        "new_session",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_showdown_mission_plan_prepares_generated_team_without_knowledge(setup_db, client):
+    response = await client.post(
+        "/api/pokemon/showdown/mission/plan",
+        json={
+            "username": "PlanPreviewBot",
+            "battle_format": "vgc2024",
+            "mission_goal": "auto",
+            "max_actions": 2,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["mission_goal"] == "prepare"
+    assert data["mission_goal_source"] == "knowledge_precheck"
+    assert data["allowed_actions"] == ["research_team"]
+    assert data["mission_request"]["auto_search"] is False
+
+
+@pytest.mark.asyncio
 async def test_showdown_mission_auto_goal_resolves_from_session_state(setup_db, monkeypatch, client):
     async def fake_search_team(db, species, query_type="species_usage", max_results=3):
         return {

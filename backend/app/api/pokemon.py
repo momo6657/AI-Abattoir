@@ -538,6 +538,72 @@ async def create_showdown_session(payload: ShowdownSessionCreateRequest, db: Asy
     return session.to_dict()
 
 
+@router.post("/showdown/mission/plan")
+async def plan_showdown_mission(payload: ShowdownSessionMissionRequest, db: AsyncSession = Depends(get_db)):
+    """Plan the next autonomous Showdown mission without creating a live session."""
+    if payload.max_actions < 1 or payload.max_actions > 20:
+        raise HTTPException(status_code=400, detail="max_actions must be between 1 and 20.")
+    try:
+        _normalize_showdown_mission_goal(payload.mission_goal)
+        resolved_mode, mode_source, mode_recommendation, learning_profile = await _resolve_showdown_mode(
+            db,
+            username=payload.username,
+            battle_format=payload.battle_format,
+            requested_mode=payload.mode,
+        )
+        format_info = pokemon_format_catalog.get(payload.battle_format)
+    except ValueError as exc:
+        raise HTTPException(status_code=404 if "Unsupported Pokemon battle format" in str(exc) else 400, detail=str(exc)) from exc
+
+    snapshot = _build_showdown_mission_plan_snapshot(
+        payload,
+        format_info=format_info,
+        resolved_mode=resolved_mode,
+        mode_source=mode_source,
+        mode_recommendation=mode_recommendation,
+        learning_profile=learning_profile,
+    )
+    mission_policy = _resolve_showdown_mission_policy(payload, snapshot)
+    mission_request = {
+        "username": payload.username,
+        "battle_format": format_info.id,
+        "mode": payload.mode,
+        "auto_login": payload.auto_login,
+        "auto_accept_challenges": payload.auto_accept_challenges,
+        "auto_research_team": payload.auto_research_team,
+        "mission_goal": payload.mission_goal,
+        "auto_search": mission_policy["auto_search"],
+        "max_actions": payload.max_actions,
+        "max_messages": payload.max_messages,
+        "send_commands": payload.send_commands,
+        "stop_on_finished": payload.stop_on_finished,
+        "stop_on_error": payload.stop_on_error,
+        "stop_on_new_session": mission_policy["stop_on_new_session"],
+        "max_results": payload.max_results,
+    }
+    return {
+        "username": payload.username,
+        "battle_format": format_info.id,
+        "showdown_format": format_info.showdown_format,
+        "mode": resolved_mode,
+        "requested_mode": payload.mode,
+        "mode_source": mode_source,
+        "mode_recommendation": mode_recommendation,
+        "learning_profile": learning_profile,
+        "training_plan": learning_profile.get("training_plan"),
+        "mission_goal": mission_policy["mission_goal"],
+        "requested_mission_goal": mission_policy["requested_mission_goal"],
+        "mission_goal_source": mission_policy["mission_goal_source"],
+        "mission_goal_reason": mission_policy["mission_goal_reason"],
+        "allowed_actions": mission_policy["allowed_actions"],
+        "training_plan_actions": mission_policy["training_plan_actions"],
+        "executable_plan_actions": mission_policy["executable_plan_actions"],
+        "unsupported_plan_actions": mission_policy["unsupported_plan_actions"],
+        "action_plan_source": mission_policy["action_plan_source"],
+        "mission_request": mission_request,
+    }
+
+
 @router.post("/showdown/mission")
 async def start_showdown_mission(payload: ShowdownSessionMissionRequest, db: AsyncSession = Depends(get_db)):
     """Create a Showdown session and immediately run a bounded autonomous supervisor."""
@@ -638,6 +704,39 @@ async def _create_showdown_session_state(
         )
         session = pokemon_showdown_session_service.attach_knowledge_context(session.session_id, context)
     return session
+
+
+def _build_showdown_mission_plan_snapshot(
+    payload: ShowdownSessionMissionRequest,
+    *,
+    format_info,
+    resolved_mode: str,
+    mode_source: str,
+    mode_recommendation: dict,
+    learning_profile: dict,
+) -> dict:
+    team_species: list[str] = []
+    if isinstance(payload.team, list):
+        team_species = [
+            str(member.get("species") or member.get("name") or "Unknown")
+            for member in payload.team
+            if isinstance(member, dict)
+        ]
+    elif payload.team is None and format_info.requires_team:
+        team_species = ["generated_team"]
+
+    return {
+        "username": payload.username,
+        "battle_format": format_info.id,
+        "showdown_format": format_info.showdown_format,
+        "mode": resolved_mode,
+        "requested_mode": payload.mode,
+        "mode_source": mode_source,
+        "mode_recommendation": mode_recommendation,
+        "learning_profile": learning_profile,
+        "team_species": team_species,
+        "has_knowledge_context": bool(payload.auto_research_team and team_species),
+    }
 
 
 def _normalize_showdown_mission_goal(goal: str | None) -> str:

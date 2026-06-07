@@ -177,6 +177,7 @@ export const pokemonApi = {
       params: battleFormat ? { battle_format: battleFormat, limit } : { limit },
     }),
   createShowdownSession: (data: Record<string, unknown>) => api.post("/pokemon/showdown/sessions", data),
+  planShowdownMission: (data: Record<string, unknown>) => api.post("/pokemon/showdown/mission/plan", data),
   startShowdownMission: (data: Record<string, unknown>) => api.post("/pokemon/showdown/mission", data),
   startShowdownSearch: (sessionId: string) => api.post(`/pokemon/showdown/sessions/${sessionId}/search`),
   cancelShowdownSearch: (sessionId: string) => api.post(`/pokemon/showdown/sessions/${sessionId}/cancel-search`),
