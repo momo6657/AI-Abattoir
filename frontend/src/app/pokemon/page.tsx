@@ -116,6 +116,11 @@ export default function PokemonBattlePage() {
   const activeMasteryEntry = showdownMastery.find((entry) =>
     String(entry.username || '').toLowerCase() === String(showdownUsername || '').toLowerCase()
   );
+  const showdownTrainingPlan =
+    showdownSession?.last_mission_summary?.training_plan ||
+    activeShowdownLearning?.training_plan ||
+    showdownSession?.learning_profile?.training_plan ||
+    null;
 
   useEffect(() => {
     refreshOverview();
@@ -702,6 +707,7 @@ export default function PokemonBattlePage() {
     ['Phase 30', '自主任务支持 prepare/queue/ladder/learn 目标预设和动作边界'],
     ['Phase 31', '会话快照保存自主任务历史，前端展示任务目标和动作边界'],
     ['Phase 32', '自主任务支持 auto 目标，根据学习档案和知识状态选择训练节奏'],
+    ['Phase 33', '学习档案输出结构化训练计划，任务摘要展示下一轮目标和动作队列'],
   ];
 
   return (
@@ -1226,6 +1232,34 @@ export default function PokemonBattlePage() {
                     ))}
                   </div>
                 ) : null}
+                {showdownSession.last_mission_summary.training_plan ? (
+                  <div className="mt-3 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[10px] font-semibold uppercase text-emerald-200">Training plan</span>
+                      <span className="rounded bg-black/30 px-2 py-0.5 text-[10px] text-emerald-100">
+                        {showdownSession.last_mission_summary.training_plan.stage} · {showdownSession.last_mission_summary.training_plan.next_mission_goal}
+                      </span>
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <Metric label="Next Goal" value={showdownSession.last_mission_summary.training_plan.next_mission_goal || '-'} compact />
+                      <Metric label="Plan Mode" value={showdownSession.last_mission_summary.training_plan.recommended_mode || '-'} compact />
+                    </div>
+                    {showdownSession.last_mission_summary.training_plan.reason ? (
+                      <div className="mt-2 break-words text-[10px] leading-4 text-gray-300">
+                        {showdownSession.last_mission_summary.training_plan.reason}
+                      </div>
+                    ) : null}
+                    {showdownSession.last_mission_summary.training_plan.actions?.length ? (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {showdownSession.last_mission_summary.training_plan.actions.map((action: string) => (
+                          <span key={`training-${action}`} className="rounded border border-emerald-500/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-emerald-100">
+                            {action}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 {showdownSession?.mission_history?.length ? (
                   <div className="mt-2 flex flex-wrap gap-1">
                     {showdownSession.mission_history.slice(-4).reverse().map((mission: any) => (
@@ -1494,6 +1528,34 @@ export default function PokemonBattlePage() {
                       <div className="mt-2 text-gray-500">
                         Suggested mode: <span className="text-gray-200">{activeShowdownLearning.recommendation?.mode || 'balanced'}</span>
                       </div>
+                      {showdownTrainingPlan ? (
+                        <div className="mt-3 rounded-md border border-accent/30 bg-accent/10 p-2">
+                          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-[10px] font-semibold uppercase text-accent-hover">Next training</span>
+                            <span className="rounded bg-black/30 px-2 py-0.5 text-[10px] text-gray-200">
+                              {showdownTrainingPlan.stage || 'plan'} · {showdownTrainingPlan.confidence || 'low'}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <Metric label="Mission" value={showdownTrainingPlan.next_mission_goal || '-'} compact />
+                            <Metric label="Mode" value={showdownTrainingPlan.recommended_mode || '-'} compact />
+                          </div>
+                          {showdownTrainingPlan.stop_condition ? (
+                            <div className="mt-2 break-words text-[10px] leading-4 text-gray-400">
+                              {showdownTrainingPlan.stop_condition}
+                            </div>
+                          ) : null}
+                          {showdownTrainingPlan.actions?.length ? (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {showdownTrainingPlan.actions.map((action: string) => (
+                                <span key={`learning-plan-${action}`} className="rounded border border-accent/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-gray-200">
+                                  {action}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
                       {activeShowdownLearning.training_focus?.length ? (
                         <div className="mt-3 space-y-2">
                           {activeShowdownLearning.training_focus.map((focus: any) => {
@@ -1533,7 +1595,7 @@ function Metric({ label, value, compact = false }: { label: string; value: strin
   return (
     <div className={`rounded-lg border border-border bg-black/20 ${compact ? 'p-3' : 'p-4'}`}>
       <div className="text-xs uppercase text-gray-500">{label}</div>
-      <div className={`${compact ? 'mt-1 text-lg' : 'mt-2 text-2xl'} font-semibold text-white`}>{value}</div>
+      <div className={`${compact ? 'mt-1 text-lg' : 'mt-2 text-2xl'} min-w-0 break-words font-semibold text-white`}>{value}</div>
     </div>
   );
 }

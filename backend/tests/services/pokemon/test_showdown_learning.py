@@ -33,6 +33,9 @@ def test_showdown_learning_profile_records_completed_sessions_once():
     assert duplicate["modes"]["balanced"]["average_reward"] == 120.0
     assert duplicate["decision_types"]["move"]["count"] == 1
     assert duplicate["recommendation"]["mode"] == "balanced"
+    assert duplicate["training_plan"]["next_mission_goal"] == "learn"
+    assert duplicate["training_plan"]["recommended_mode"] == "balanced"
+    assert duplicate["training_plan"]["stage"] == "exploit"
 
 
 def test_showdown_learning_profile_ignores_in_progress_sessions():
@@ -50,3 +53,24 @@ def test_showdown_learning_profile_ignores_in_progress_sessions():
 
     assert profile["battles"] == 0
     assert profile["recommendation"]["mode"] == "balanced"
+    assert profile["training_plan"]["stage"] == "collect_data"
+    assert profile["training_plan"]["next_mission_goal"] == "queue"
+
+
+def test_showdown_learning_profile_training_plan_stabilizes_weak_results():
+    service = PokemonShowdownLearningService()
+
+    profile = service.record_session(
+        session_id="s3",
+        username="Bot",
+        battle_format="vgc2024",
+        showdown_format="gen9vgc2024regg",
+        mode="defensive",
+        analysis={"status": "loss", "reward": 20.0, "turns": 5, "faints_for": 0, "faints_against": 2},
+        decisions=[{"decision_type": "switch"}, {"decision_type": "switch"}],
+    )
+
+    assert profile["training_plan"]["stage"] == "stabilize"
+    assert profile["training_plan"]["next_mission_goal"] == "prepare"
+    assert profile["training_plan"]["recommended_mode"] == "defensive"
+    assert "audit_switch" in profile["training_plan"]["actions"]

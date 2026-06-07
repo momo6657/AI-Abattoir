@@ -839,6 +839,8 @@ async def test_showdown_mission_auto_goal_resolves_from_session_state(setup_db, 
     assert data["mission_summary"]["requested_mission_goal"] == "auto"
     assert data["mission_summary"]["mission_goal"] == "prepare"
     assert data["mission_summary"]["allowed_actions"] == ["research_team"]
+    assert data["mission_summary"]["training_plan"]["stage"] == "collect_data"
+    assert data["mission_summary"]["training_plan"]["next_mission_goal"] == "queue"
     assert data["session"]["last_mission_summary"]["mission_goal"] == "prepare"
     assert data["session"]["has_knowledge_context"]
 

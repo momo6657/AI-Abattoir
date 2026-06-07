@@ -577,6 +577,7 @@ async def start_showdown_mission(payload: ShowdownSessionMissionRequest, db: Asy
         "allowed_actions": mission_policy["allowed_actions"],
         "stop_reason": supervisor.get("stop_reason"),
         "step_count": supervisor.get("step_count", 0),
+        "training_plan": (final_session.get("learning_profile") or {}).get("training_plan"),
     }
     stored_mission = pokemon_showdown_session_service.store_mission_summary(
         mission_summary["session_id"],

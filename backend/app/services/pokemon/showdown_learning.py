@@ -111,6 +111,7 @@ class ShowdownLearningProfile:
             "decision_types": decision_summaries,
             "recommendation": self._recommendation(mode_summaries),
             "training_focus": self._training_focus(mode_summaries, decision_summaries),
+            "training_plan": self._training_plan(mode_summaries, decision_summaries),
             "recent_sessions": self.recent_sessions,
         }
 
@@ -201,6 +202,64 @@ class ShowdownLearningProfile:
                 }
             )
         return focus[:5]
+
+    def _training_plan(
+        self,
+        mode_summaries: dict[str, dict[str, Any]],
+        decision_summaries: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        recommendation = self._recommendation(mode_summaries)
+        recommended_mode = recommendation["mode"]
+        weakest_decision = self._weakest_decision(decision_summaries)
+        win_rate = self.wins / max(self.battles, 1) if self.battles else 0.0
+        average_reward = self.total_reward / max(self.battles, 1) if self.battles else 0.0
+        faint_delta = self.total_faints_for - self.total_faints_against
+
+        if not self.battles:
+            return {
+                "stage": "collect_data",
+                "next_mission_goal": "queue",
+                "recommended_mode": "balanced",
+                "confidence": "low",
+                "actions": ["research_team", "start_search", "autopilot", "analyze"],
+                "stop_condition": "Stop after the first completed battle summary is available.",
+                "reason": "No completed Showdown battles are recorded, so the agent should gather a baseline sample.",
+            }
+
+        if win_rate < 0.45 or average_reward < 40 or faint_delta < 0:
+            actions = ["research_team", "plan_adjustments", "queue_short_run", "analyze"]
+            if weakest_decision:
+                actions.insert(1, f"audit_{weakest_decision}")
+            return {
+                "stage": "stabilize",
+                "next_mission_goal": "prepare",
+                "recommended_mode": recommended_mode,
+                "confidence": "medium" if self.battles >= 3 else "low",
+                "actions": actions,
+                "stop_condition": "Stop after team research and one bounded battle review.",
+                "reason": "Recent learning signals are weak; prioritize knowledge-backed adjustments before longer ladder runs.",
+            }
+
+        if win_rate >= 0.6 and average_reward >= 70:
+            return {
+                "stage": "exploit",
+                "next_mission_goal": "learn",
+                "recommended_mode": recommended_mode,
+                "confidence": "high" if self.battles >= 5 else "medium",
+                "actions": ["start_search", "autopilot", "analyze", "new_session"],
+                "stop_condition": "Continue bounded runs while reward and win rate remain stable.",
+                "reason": "The profile is performing well enough to collect more ladder samples and reinforce successful choices.",
+            }
+
+        return {
+            "stage": "improve",
+            "next_mission_goal": "ladder",
+            "recommended_mode": recommended_mode,
+            "confidence": "medium" if self.battles >= 3 else "low",
+            "actions": ["research_team", "start_search", "autopilot", "analyze"],
+            "stop_condition": "Stop after each battle to refresh learning and review decision rewards.",
+            "reason": "The profile has usable data but still needs controlled samples to improve mode and decision estimates.",
+        }
 
     def _weakest_mode(self, mode_summaries: dict[str, dict[str, Any]]) -> str | None:
         if len(mode_summaries) < 2:
