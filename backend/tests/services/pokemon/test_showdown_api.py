@@ -914,8 +914,13 @@ async def test_showdown_training_chain_runs_adaptive_planned_rounds(setup_db, db
     assert all(round_item["action_plan_source"] == "custom" for round_item in data["rounds"])
     assert all(round_item["supervisor_step_count"] == 1 for round_item in data["rounds"])
     assert all(round_item["mission_summary"]["allowed_actions"] == ["start_search"] for round_item in data["rounds"])
+    assert data["progress"]["before_mastery_score"] > 0
+    assert data["progress"]["after_mastery_score"] == data["mastery_score"]
+    assert data["progress"]["battle_delta"] == 0
+    assert data["progress"]["direction"] == "unchanged"
     assert data["training_chain_summary"]["chain_number"] == 1
     assert data["training_chain_summary"]["completed_rounds"] == 2
+    assert data["training_chain_summary"]["progress"]["after_mastery_score"] == data["mastery_score"]
     assert data["training_chain_summary"]["rounds"][-1]["planned_goal"] == "learn"
     assert data["final_session"]["last_training_chain_summary"]["completed_rounds"] == 2
     assert data["final_session"]["training_chain_history_count"] == 1
@@ -1120,6 +1125,49 @@ def test_showdown_auto_policy_maps_abstract_training_actions():
         "autopilot",
     ]
     assert policy["unsupported_plan_actions"] == []
+
+
+def test_showdown_training_chain_progress_marks_improvement():
+    progress = pokemon_api._build_showdown_training_chain_progress(
+        baseline_learning_profile={"battles": 2},
+        baseline_mastery_score=120.0,
+        latest_learning_profile={"battles": 3},
+        latest_mastery_score=160.25,
+    )
+
+    assert progress["before_mastery_score"] == 120.0
+    assert progress["after_mastery_score"] == 160.25
+    assert progress["mastery_score_delta"] == 40.25
+    assert progress["battle_delta"] == 1
+    assert progress["direction"] == "improved"
+    assert progress["improved"] is True
+
+
+def test_showdown_training_chain_progress_marks_decline():
+    progress = pokemon_api._build_showdown_training_chain_progress(
+        baseline_learning_profile={"battles": 1},
+        baseline_mastery_score=200.0,
+        latest_learning_profile={"battles": 2},
+        latest_mastery_score=190.0,
+    )
+
+    assert progress["mastery_score_delta"] == -10.0
+    assert progress["battle_delta"] == 1
+    assert progress["direction"] == "declined"
+    assert progress["improved"] is False
+
+
+def test_showdown_training_chain_progress_keeps_zero_latest_score():
+    progress = pokemon_api._build_showdown_training_chain_progress(
+        baseline_learning_profile={"battles": 1},
+        baseline_mastery_score=25.0,
+        latest_learning_profile={"battles": 2},
+        latest_mastery_score=0.0,
+    )
+
+    assert progress["after_mastery_score"] == 0.0
+    assert progress["mastery_score_delta"] == -25.0
+    assert progress["direction"] == "declined"
 
 
 @pytest.mark.asyncio

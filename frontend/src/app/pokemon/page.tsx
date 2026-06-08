@@ -762,6 +762,7 @@ export default function PokemonBattlePage() {
     ['Phase 36', '新增下一轮任务计划预览接口，前端可查看并按计划启动自主训练'],
     ['Phase 37', '新增多轮训练链入口，按学习计划连续规划、执行、评分并在前端复盘'],
     ['Phase 38', '会话快照保存训练链历史，刷新后仍能复盘多轮训练表现'],
+    ['Phase 39', '训练链输出 Mastery 前后变化、样本增量和趋势建议，判断是否真的变强'],
   ];
 
   return (
@@ -1170,10 +1171,16 @@ export default function PokemonBattlePage() {
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <Metric label="Mastery" value={activeShowdownTrainingChain.mastery_score != null ? Number(activeShowdownTrainingChain.mastery_score).toFixed(0) : '-'} compact />
+                  <Metric label="Delta" value={activeShowdownTrainingChain.progress?.mastery_score_delta != null ? Number(activeShowdownTrainingChain.progress.mastery_score_delta).toFixed(1) : '-'} compact />
                   <Metric label="Rounds" value={activeShowdownTrainingChain.completed_rounds || 0} compact />
-                  <Metric label="Final" value={activeShowdownTrainingChain.final_session?.status || showdownSession?.status || '-'} compact />
+                  <Metric label="Trend" value={activeShowdownTrainingChain.progress?.direction || '-'} compact />
                   <Metric label="Samples" value={activeShowdownTrainingChain.learning_profile?.battles ?? activeShowdownTrainingChain.learning_battles ?? 0} compact />
                 </div>
+                {activeShowdownTrainingChain.progress?.recommendation ? (
+                  <div className="mt-2 break-words rounded border border-emerald-500/20 bg-black/20 p-2 text-[10px] leading-4 text-emerald-100">
+                    {activeShowdownTrainingChain.progress.recommendation}
+                  </div>
+                ) : null}
                 {activeShowdownTrainingChain.rounds?.length ? (
                   <div className="mt-2 space-y-1.5">
                     {activeShowdownTrainingChain.rounds.slice(-4).map((round: any) => (

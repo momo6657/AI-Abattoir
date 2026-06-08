@@ -675,6 +675,17 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
     if payload.mastery_score_target is not None and payload.mastery_score_target < 0:
         raise HTTPException(status_code=400, detail="mastery_score_target must be greater than or equal to 0.")
 
+    try:
+        format_info = pokemon_format_catalog.get(payload.battle_format)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    baseline_learning_profile = await pokemon_showdown_learning_store.profile(
+        db,
+        username=payload.username,
+        battle_format=format_info.id,
+    )
+    baseline_mastery_score = pokemon_showdown_learning_store.score_profile(baseline_learning_profile)
+
     mission_payload = ShowdownSessionMissionRequest(
         **payload.model_dump(exclude={"rounds", "mastery_score_target", "stop_on_no_progress"})
     )
@@ -729,6 +740,12 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
     else:
         stop_reason = "round_limit"
 
+    progress = _build_showdown_training_chain_progress(
+        baseline_learning_profile=baseline_learning_profile,
+        baseline_mastery_score=baseline_mastery_score,
+        latest_learning_profile=latest_learning_profile,
+        latest_mastery_score=latest_mastery_score,
+    )
     training_chain_summary = None
     if final_session and final_session.get("session_id"):
         training_chain_summary = pokemon_showdown_session_service.store_training_chain_summary(
@@ -742,6 +759,7 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
                 "stop_reason": stop_reason,
                 "mastery_score": latest_mastery_score,
                 "learning_battles": (latest_learning_profile or {}).get("battles", 0),
+                "progress": progress,
                 "last_goal": rounds[-1]["planned_goal"] if rounds else None,
                 "last_goal_source": rounds[-1]["planned_goal_source"] if rounds else None,
                 "rounds": [
@@ -769,6 +787,7 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
         "final_session": final_session,
         "learning_profile": latest_learning_profile,
         "mastery_score": latest_mastery_score,
+        "progress": progress,
         "training_chain_summary": training_chain_summary,
         "rounds": rounds,
     }
@@ -814,6 +833,44 @@ async def _create_showdown_session_state(
         )
         session = pokemon_showdown_session_service.attach_knowledge_context(session.session_id, context)
     return session
+
+
+def _build_showdown_training_chain_progress(
+    *,
+    baseline_learning_profile: dict | None,
+    baseline_mastery_score: float | None,
+    latest_learning_profile: dict | None,
+    latest_mastery_score: float | None,
+) -> dict:
+    before_score = float(baseline_mastery_score) if baseline_mastery_score is not None else 0.0
+    after_score = float(latest_mastery_score) if latest_mastery_score is not None else before_score
+    before_battles = int((baseline_learning_profile or {}).get("battles") or 0)
+    after_battles = int((latest_learning_profile or baseline_learning_profile or {}).get("battles") or before_battles)
+    score_delta = round(after_score - before_score, 2)
+    battle_delta = max(0, after_battles - before_battles)
+    if score_delta > 0:
+        direction = "improved"
+        recommendation = "Continue the current training chain while the mastery score is rising."
+    elif score_delta < 0:
+        direction = "declined"
+        recommendation = "Review the losing or low-reward samples before extending the training chain."
+    elif battle_delta > 0:
+        direction = "sampled"
+        recommendation = "Review the new samples before extending the training chain."
+    else:
+        direction = "unchanged"
+        recommendation = "No new completed battle sample was recorded; run or resume live Showdown battles."
+    return {
+        "before_mastery_score": round(before_score, 2),
+        "after_mastery_score": round(after_score, 2),
+        "mastery_score_delta": score_delta,
+        "before_battles": before_battles,
+        "after_battles": after_battles,
+        "battle_delta": battle_delta,
+        "direction": direction,
+        "improved": score_delta > 0,
+        "recommendation": recommendation,
+    }
 
 
 def _build_showdown_mission_plan_snapshot(
