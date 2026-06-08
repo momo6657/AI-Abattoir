@@ -125,6 +125,7 @@ export default function PokemonBattlePage() {
     showdownSession?.learning_profile?.training_plan ||
     null;
   const activeShowdownTrainingChain = showdownTrainingChain || showdownSession?.last_training_chain_summary || null;
+  const activeTrainingChainTrend = showdownSession?.training_chain_trend || showdownTrainingChain?.final_session?.training_chain_trend || null;
 
   useEffect(() => {
     refreshOverview();
@@ -763,6 +764,7 @@ export default function PokemonBattlePage() {
     ['Phase 37', '新增多轮训练链入口，按学习计划连续规划、执行、评分并在前端复盘'],
     ['Phase 38', '会话快照保存训练链历史，刷新后仍能复盘多轮训练表现'],
     ['Phase 39', '训练链输出 Mastery 前后变化、样本增量和趋势建议，判断是否真的变强'],
+    ['Phase 40', '会话快照汇总训练链长期趋势，展示持续进步、下降和样本积累情况'],
   ];
 
   return (
@@ -1200,6 +1202,25 @@ export default function PokemonBattlePage() {
                         #{chain.chain_number} {chain.completed_rounds}/{chain.requested_rounds}:{chain.stop_reason}
                       </span>
                     ))}
+                  </div>
+                ) : null}
+                {activeTrainingChainTrend?.chain_count ? (
+                  <div className="mt-2 rounded border border-emerald-500/25 bg-black/20 p-2">
+                    <div className="mb-2 flex items-center justify-between gap-2 text-[10px] uppercase text-gray-500">
+                      <span>Long trend</span>
+                      <span className="text-emerald-100">{activeTrainingChainTrend.direction}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Metric label="Total Δ" value={Number(activeTrainingChainTrend.mastery_score_delta || 0).toFixed(1)} compact />
+                      <Metric label="Chains" value={activeTrainingChainTrend.chain_count || 0} compact />
+                      <Metric label="Up/Down" value={`${activeTrainingChainTrend.improved_chains || 0}/${activeTrainingChainTrend.declined_chains || 0}`} compact />
+                      <Metric label="Samples Δ" value={activeTrainingChainTrend.battle_delta || 0} compact />
+                    </div>
+                    {activeTrainingChainTrend.recommendation ? (
+                      <div className="mt-2 break-words text-[10px] leading-4 text-gray-300">
+                        {activeTrainingChainTrend.recommendation}
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
               </div>

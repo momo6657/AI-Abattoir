@@ -668,6 +668,56 @@ def test_store_training_chain_summary_updates_session_snapshot():
     assert snapshot["last_training_chain_summary"]["chain_number"] == 12
     assert snapshot["last_training_chain_summary"]["mastery_score"] == 111
     assert snapshot["training_chain_history"][0]["chain_number"] == 3
+    assert snapshot["training_chain_trend"]["chain_count"] == 10
+    assert snapshot["training_chain_trend"]["first_chain_number"] == 3
+    assert snapshot["training_chain_trend"]["last_chain_number"] == 12
+    assert snapshot["training_chain_trend"]["mastery_score_delta"] == 9.0
+    assert snapshot["training_chain_trend"]["direction"] == "improving"
+
+
+def test_training_chain_trend_counts_progress_directions():
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None)
+
+    service.store_training_chain_summary(
+        session.session_id,
+        {
+            "completed_rounds": 1,
+            "requested_rounds": 3,
+            "stop_reason": "round_limit",
+            "mastery_score": 100,
+            "progress": {"direction": "improved", "battle_delta": 2},
+        },
+    )
+    service.store_training_chain_summary(
+        session.session_id,
+        {
+            "completed_rounds": 1,
+            "requested_rounds": 3,
+            "stop_reason": "round_limit",
+            "mastery_score": 90,
+            "progress": {"direction": "declined", "battle_delta": 1},
+        },
+    )
+    service.store_training_chain_summary(
+        session.session_id,
+        {
+            "completed_rounds": 1,
+            "requested_rounds": 3,
+            "stop_reason": "round_limit",
+            "mastery_score": 90,
+            "progress": {"direction": "sampled", "battle_delta": 3},
+        },
+    )
+
+    trend = session.to_dict()["training_chain_trend"]
+
+    assert trend["mastery_score_delta"] == -10.0
+    assert trend["battle_delta"] == 6
+    assert trend["improved_chains"] == 1
+    assert trend["declined_chains"] == 1
+    assert trend["sampled_chains"] == 1
+    assert trend["direction"] == "declining"
 
 
 def test_process_payload_passes_attached_knowledge_context_to_decision():

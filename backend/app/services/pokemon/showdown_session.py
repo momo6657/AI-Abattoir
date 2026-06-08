@@ -103,6 +103,79 @@ class ShowdownSessionState:
     def _pending_command_count(self) -> int:
         return max(0, len(self.command_log) - len(self.sent_log))
 
+    def _training_chain_trend(self) -> dict[str, Any]:
+        history = [dict(item) for item in self.training_chain_history]
+        if not history:
+            return {
+                "chain_count": 0,
+                "direction": "none",
+                "mastery_score_delta": 0.0,
+                "battle_delta": 0,
+                "improved_chains": 0,
+                "declined_chains": 0,
+                "sampled_chains": 0,
+                "recommendation": "Run a training chain to start collecting progress trend data.",
+            }
+
+        def chain_score(chain: dict[str, Any], fallback: float) -> float:
+            value = chain.get("mastery_score")
+            return float(value) if value is not None else fallback
+
+        first_score = chain_score(history[0], 0.0)
+        last_score = chain_score(history[-1], first_score)
+        total_delta = round(last_score - first_score, 2)
+        improved_chains = 0
+        declined_chains = 0
+        sampled_chains = 0
+        battle_delta = 0
+
+        previous_score = first_score
+        for chain in history:
+            progress = chain.get("progress") if isinstance(chain.get("progress"), dict) else {}
+            direction = str(progress.get("direction") or "")
+            if direction == "improved":
+                improved_chains += 1
+            elif direction == "declined":
+                declined_chains += 1
+            elif direction == "sampled":
+                sampled_chains += 1
+            else:
+                current_score = chain_score(chain, previous_score)
+                if current_score > previous_score:
+                    improved_chains += 1
+                elif current_score < previous_score:
+                    declined_chains += 1
+            battle_delta += int(progress.get("battle_delta") or 0)
+            previous_score = chain_score(chain, previous_score)
+
+        if total_delta > 0 and improved_chains >= declined_chains:
+            direction = "improving"
+            recommendation = "Keep extending this training routine while recent chains are trending upward."
+        elif total_delta < 0 or declined_chains > improved_chains:
+            direction = "declining"
+            recommendation = "Review recent losing or low-reward chains before adding more ladder volume."
+        elif battle_delta > 0 or sampled_chains > 0:
+            direction = "collecting_samples"
+            recommendation = "More samples were collected, but mastery has not moved yet."
+        else:
+            direction = "flat"
+            recommendation = "Run more completed battles before trusting the trend."
+
+        return {
+            "chain_count": len(history),
+            "first_chain_number": history[0].get("chain_number"),
+            "last_chain_number": history[-1].get("chain_number"),
+            "first_mastery_score": round(first_score, 2),
+            "last_mastery_score": round(last_score, 2),
+            "mastery_score_delta": total_delta,
+            "battle_delta": battle_delta,
+            "improved_chains": improved_chains,
+            "declined_chains": declined_chains,
+            "sampled_chains": sampled_chains,
+            "direction": direction,
+            "recommendation": recommendation,
+        }
+
     def _next_actions(self) -> list[dict[str, str]]:
         actions: list[dict[str, str]] = []
         connected = bool(self.connection_diagnostics.get("connected"))
@@ -216,6 +289,7 @@ class ShowdownSessionState:
             "last_training_chain_summary": dict(self.training_chain_history[-1]) if self.training_chain_history else None,
             "training_chain_history": [dict(item) for item in self.training_chain_history],
             "training_chain_history_count": len(self.training_chain_history),
+            "training_chain_trend": self._training_chain_trend(),
             "last_error": self.last_error,
             "next_actions": self._next_actions(),
         }

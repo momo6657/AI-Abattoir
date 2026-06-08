@@ -924,6 +924,8 @@ async def test_showdown_training_chain_runs_adaptive_planned_rounds(setup_db, db
     assert data["training_chain_summary"]["rounds"][-1]["planned_goal"] == "learn"
     assert data["final_session"]["last_training_chain_summary"]["completed_rounds"] == 2
     assert data["final_session"]["training_chain_history_count"] == 1
+    assert data["final_session"]["training_chain_trend"]["chain_count"] == 1
+    assert data["final_session"]["training_chain_trend"]["direction"] in {"flat", "improving"}
 
     for round_item in data["rounds"]:
         await client.delete(f"/api/pokemon/showdown/sessions/{round_item['session_id']}")
