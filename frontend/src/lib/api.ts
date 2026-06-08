@@ -194,6 +194,7 @@ export const pokemonApi = {
   researchShowdownSessionTeam: (sessionId: string, maxResults = 3) =>
     api.post(`/pokemon/showdown/sessions/${sessionId}/knowledge`, null, { params: { max_results: maxResults } }),
   analyzeShowdownSession: (sessionId: string) => api.get(`/pokemon/showdown/sessions/${sessionId}/analysis`),
+  getShowdownSessionReadiness: (sessionId: string) => api.get(`/pokemon/showdown/sessions/${sessionId}/readiness`),
   runShowdownSessionOnce: (sessionId: string, data: Record<string, unknown>) =>
     api.post(`/pokemon/showdown/sessions/${sessionId}/run-once`, data),
   runShowdownSessionUntil: (sessionId: string, data: Record<string, unknown>) =>

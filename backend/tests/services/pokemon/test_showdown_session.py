@@ -124,6 +124,39 @@ def test_create_session_exposes_next_actions_for_autonomous_start():
     assert actions[1]["priority"] == "normal"
 
 
+def test_live_readiness_blocks_missing_trainer_name():
+    service = PokemonShowdownSessionService()
+
+    session = service.create_session(username="", team=None)
+    readiness = session.to_dict()["live_readiness"]
+
+    assert readiness["status"] == "blocked"
+    assert readiness["ready_for_ladder"] is False
+    assert readiness["blocked_count"] == 1
+    assert readiness["checks"][0]["id"] == "username"
+
+
+@pytest.mark.asyncio
+async def test_live_readiness_marks_connected_random_session_ready():
+    service = PokemonShowdownSessionService()
+    connector = FakeShowdownConnector()
+    session = service.create_session(
+        username="Bot",
+        team=None,
+        battle_format="random",
+        auto_search=True,
+        connector=connector,
+    )
+
+    await service.connect_session(session.session_id)
+    readiness = session.to_dict()["live_readiness"]
+
+    assert readiness["status"] == "ready"
+    assert readiness["ready_for_ladder"] is True
+    assert readiness["score"] == 100
+    assert readiness["recommended_actions"] == []
+
+
 def test_create_session_applies_learning_profile_to_auto_team():
     service = PokemonShowdownSessionService()
 

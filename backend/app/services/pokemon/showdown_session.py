@@ -176,6 +176,138 @@ class ShowdownSessionState:
             "recommendation": recommendation,
         }
 
+    def _live_readiness(self) -> dict[str, Any]:
+        checks: list[dict[str, Any]] = []
+
+        def add_check(
+            check_id: str,
+            label: str,
+            status: str,
+            detail: str,
+            *,
+            action: str | None = None,
+            priority: str = "normal",
+        ) -> None:
+            checks.append({
+                "id": check_id,
+                "label": label,
+                "status": status,
+                "detail": detail,
+                "action": action,
+                "priority": priority,
+            })
+
+        connected = bool(self.connection_diagnostics.get("connected"))
+        diagnostic_stage = str(self.connection_diagnostics.get("stage") or "")
+        pending_count = self._pending_command_count()
+        challenge_count = len((self.challenges or {}).get("challengesFrom") or {})
+        search_active = bool((self.search or {}).get("searching"))
+        has_search_command = any(str(command).startswith("|/search ") for command in self.command_log)
+
+        add_check(
+            "username",
+            "Trainer name",
+            "ready" if bool(self.username) else "blocked",
+            f"Using trainer name {self.username}." if self.username else "A Showdown trainer name is required.",
+            priority="high",
+        )
+        add_check(
+            "team",
+            "Team",
+            "ready" if (self.team is not None or not self.requires_team) else "blocked",
+            "The current format supplies teams." if not self.requires_team else (
+                f"{len(self.team_species) or len(self._team_preview())} Pokemon are ready."
+                if self.team is not None
+                else "A legal Showdown team must be generated or provided before ladder search."
+            ),
+            action=None if (self.team is not None or not self.requires_team) else "new_session",
+            priority="high",
+        )
+        add_check(
+            "login",
+            "Login",
+            "ready" if (self.auto_login or self.login_assertion) else "action_required",
+            "Auto login will request an assertion on challstr." if self.auto_login else (
+                "A login assertion is already available."
+                if self.login_assertion
+                else "Enable auto login or provide an assertion before live play."
+            ),
+            action=None if (self.auto_login or self.login_assertion) else "connect",
+            priority="high",
+        )
+        add_check(
+            "knowledge",
+            "Team knowledge",
+            "ready" if (not self.team_species or bool(self.knowledge_context)) else "action_required",
+            "Team matchup knowledge is attached." if self.knowledge_context else (
+                "No team species require research." if not self.team_species else "Research this generated team before serious ladder runs."
+            ),
+            action=None if (not self.team_species or bool(self.knowledge_context)) else "research_team",
+        )
+        add_check(
+            "connection",
+            "Websocket",
+            "ready" if connected else "action_required",
+            "Showdown websocket is connected." if connected else "Connect to Pokemon Showdown before sending queued commands.",
+            action=None if connected else "connect",
+            priority="high",
+        )
+        add_check(
+            "commands",
+            "Queued commands",
+            "ready" if pending_count == 0 else "action_required",
+            "No pending command is waiting to be sent." if pending_count == 0 else f"{pending_count} command(s) are queued for Showdown.",
+            action=None if pending_count == 0 else "flush_pending",
+            priority="high" if pending_count else "normal",
+        )
+        add_check(
+            "ladder",
+            "Ladder search",
+            "ready" if (search_active or has_search_command or challenge_count > 0 or self.status in {"battling", "choosing", "responded", "finished"}) else "action_required",
+            "A search, challenge, or battle path is already active." if (search_active or has_search_command or challenge_count > 0 or self.status in {"battling", "choosing", "responded", "finished"}) else "Queue ladder search or accept a challenge to start live play.",
+            action=None if (search_active or has_search_command or challenge_count > 0 or self.status in {"battling", "choosing", "responded", "finished"}) else "start_search",
+        )
+        if diagnostic_stage.endswith("_error") or self.status == "error":
+            add_check(
+                "diagnostics",
+                "Diagnostics",
+                "blocked",
+                self.last_error or str(self.connection_diagnostics.get("last_error") or "The current session has a Showdown connection error."),
+                action="connect",
+                priority="high",
+            )
+
+        blocked = [item for item in checks if item["status"] == "blocked"]
+        action_required = [item for item in checks if item["status"] == "action_required"]
+        ready_checks = [item for item in checks if item["status"] == "ready"]
+        score = round((len(ready_checks) / len(checks)) * 100) if checks else 0
+        if blocked:
+            status = "blocked"
+            recommendation = "Fix blocking live-play checks before connecting or searching."
+        elif action_required:
+            status = "action_required"
+            recommendation = "Run the recommended actions before trusting an autonomous ladder session."
+        else:
+            status = "ready"
+            recommendation = "The session is ready for bounded live Showdown automation."
+
+        recommended_actions: list[str] = []
+        for check in checks:
+            action = check.get("action")
+            if action and action not in recommended_actions:
+                recommended_actions.append(str(action))
+
+        return {
+            "status": status,
+            "ready_for_ladder": status == "ready",
+            "score": score,
+            "blocked_count": len(blocked),
+            "action_required_count": len(action_required),
+            "recommended_actions": recommended_actions,
+            "recommendation": recommendation,
+            "checks": checks,
+        }
+
     def _next_actions(self) -> list[dict[str, str]]:
         actions: list[dict[str, str]] = []
         connected = bool(self.connection_diagnostics.get("connected"))
@@ -290,6 +422,7 @@ class ShowdownSessionState:
             "training_chain_history": [dict(item) for item in self.training_chain_history],
             "training_chain_history_count": len(self.training_chain_history),
             "training_chain_trend": self._training_chain_trend(),
+            "live_readiness": self._live_readiness(),
             "last_error": self.last_error,
             "next_actions": self._next_actions(),
         }

@@ -382,6 +382,29 @@ async def test_showdown_session_processes_payload_and_returns_commands(setup_db,
 
 
 @pytest.mark.asyncio
+async def test_showdown_session_readiness_endpoint_returns_live_audit(setup_db, client):
+    created = await client.post(
+        "/api/pokemon/showdown/sessions",
+        json={"username": "Bot", "team": None, "battle_format": "gen9vgc2024regg"},
+    )
+    assert created.status_code == 200
+    session_id = created.json()["session_id"]
+
+    response = await client.get(f"/api/pokemon/showdown/sessions/{session_id}/readiness")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["session_id"] == session_id
+    assert data["live_readiness"]["status"] == "action_required"
+    assert data["live_readiness"]["ready_for_ladder"] is False
+    assert "connect" in data["live_readiness"]["recommended_actions"]
+    assert any(check["id"] == "team" and check["status"] == "ready" for check in data["live_readiness"]["checks"])
+
+    deleted = await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
+    assert deleted.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_showdown_session_auto_mode_uses_learning_recommendation(setup_db, db, client):
     await pokemon_showdown_learning_store.record_session(
         db,

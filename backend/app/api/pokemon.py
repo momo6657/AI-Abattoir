@@ -1171,6 +1171,23 @@ async def get_showdown_session(session_id: str):
     return session.to_dict()
 
 
+@router.get("/showdown/sessions/{session_id}/readiness")
+async def get_showdown_session_readiness(session_id: str):
+    """Get the live-play readiness audit for a Pokemon Showdown automation session."""
+    session = pokemon_showdown_session_service.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Pokemon Showdown session not found")
+    snapshot = session.to_dict()
+    return {
+        "session_id": session.session_id,
+        "username": session.username,
+        "battle_format": session.battle_format,
+        "showdown_format": session.showdown_format,
+        "live_readiness": snapshot["live_readiness"],
+        "next_actions": snapshot["next_actions"],
+    }
+
+
 @router.post("/showdown/sessions/{session_id}/search")
 async def start_showdown_ladder_search(session_id: str):
     """Build and record ladder search commands for an existing session."""

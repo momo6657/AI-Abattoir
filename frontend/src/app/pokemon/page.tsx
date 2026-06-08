@@ -126,6 +126,7 @@ export default function PokemonBattlePage() {
     null;
   const activeShowdownTrainingChain = showdownTrainingChain || showdownSession?.last_training_chain_summary || null;
   const activeTrainingChainTrend = showdownSession?.training_chain_trend || showdownTrainingChain?.final_session?.training_chain_trend || null;
+  const activeLiveReadiness = showdownSession?.live_readiness || null;
 
   useEffect(() => {
     refreshOverview();
@@ -661,6 +662,21 @@ export default function PokemonBattlePage() {
     }
   }
 
+  async function refreshShowdownReadiness() {
+    if (!showdownSession?.session_id) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const readiness = (await pokemonApi.getShowdownSessionReadiness(showdownSession.session_id)).data;
+      setShowdownSession((current: any) => current ? { ...current, live_readiness: readiness.live_readiness, next_actions: readiness.next_actions } : current);
+      addMessage(`Live readiness ${readiness.live_readiness?.status || 'unknown'}: ${readiness.live_readiness?.score ?? 0}/100.`);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '检查 Showdown 实战就绪失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function executeShowdownNextAction(actionName: string) {
     if (!showdownSession?.session_id) return;
     setBusy(true);
@@ -765,6 +781,7 @@ export default function PokemonBattlePage() {
     ['Phase 38', '会话快照保存训练链历史，刷新后仍能复盘多轮训练表现'],
     ['Phase 39', '训练链输出 Mastery 前后变化、样本增量和趋势建议，判断是否真的变强'],
     ['Phase 40', '会话快照汇总训练链长期趋势，展示持续进步、下降和样本积累情况'],
+    ['Phase 41', '实战就绪审计检查登录、队伍、知识、连接、待发命令和天梯路径'],
   ];
 
   return (
@@ -1093,6 +1110,9 @@ export default function PokemonBattlePage() {
               <button onClick={connectShowdownSession} disabled={busy} className="btn-secondary disabled:opacity-50">
                 连接 PS
               </button>
+              <button onClick={refreshShowdownReadiness} disabled={busy || !showdownSession?.session_id} className="btn-secondary disabled:opacity-50">
+                检查就绪
+              </button>
               <button onClick={runLiveShowdownOnce} disabled={busy || !showdownSession?.session_id} className="btn-secondary disabled:opacity-50">
                 跑一步
               </button>
@@ -1131,6 +1151,47 @@ export default function PokemonBattlePage() {
                 重置
               </button>
             </div>
+
+            {activeLiveReadiness ? (
+              <div className="mt-3 rounded-md border border-sky-500/25 bg-sky-500/10 p-3 text-xs leading-5 text-gray-300">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[10px] font-semibold uppercase text-sky-200">Live readiness</span>
+                  <span className={`rounded px-2 py-0.5 text-[10px] ${
+                    activeLiveReadiness.status === 'ready'
+                      ? 'bg-emerald-500/20 text-emerald-100'
+                      : activeLiveReadiness.status === 'blocked'
+                        ? 'bg-red-500/20 text-red-100'
+                        : 'bg-amber-500/20 text-amber-100'
+                  }`}>
+                    {activeLiveReadiness.status} · {activeLiveReadiness.score ?? 0}/100
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <Metric label="Blocked" value={activeLiveReadiness.blocked_count || 0} compact />
+                  <Metric label="Actions" value={activeLiveReadiness.action_required_count || 0} compact />
+                  <Metric label="Ready" value={activeLiveReadiness.ready_for_ladder ? 'yes' : 'no'} compact />
+                </div>
+                {activeLiveReadiness.recommendation ? (
+                  <div className="mt-2 break-words rounded border border-border bg-black/20 p-2 text-[10px] leading-4 text-gray-300">
+                    {activeLiveReadiness.recommendation}
+                  </div>
+                ) : null}
+                {activeLiveReadiness.checks?.length ? (
+                  <div className="mt-2 space-y-1.5">
+                    {activeLiveReadiness.checks.slice(0, 6).map((check: any) => (
+                      <div key={check.id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-border bg-black/20 px-2 py-1">
+                        <span className="text-gray-200">{check.label}</span>
+                        <span className={`text-[10px] ${
+                          check.status === 'ready' ? 'text-emerald-200' : check.status === 'blocked' ? 'text-red-200' : 'text-amber-200'
+                        }`}>
+                          {check.status}{check.action ? ` · ${check.action}` : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             {showdownMissionPlan ? (
               <div className="mt-3 rounded-md border border-accent/30 bg-accent/10 p-3 text-xs leading-5 text-gray-300">
