@@ -85,6 +85,55 @@ async def test_showdown_format_capabilities_endpoint_summarizes_multi_format_sup
 
 
 @pytest.mark.asyncio
+async def test_showdown_tactical_briefing_combines_team_learning_and_plan(setup_db, db, client):
+    await pokemon_showdown_learning_store.record_session(
+        db,
+        session_id="briefing-vgc-loss",
+        username="BriefingBot",
+        battle_format="vgc2024",
+        showdown_format="gen9vgc2024regg",
+        mode="defensive",
+        analysis={"status": "loss", "reward": 20, "turns": 6, "faints_for": 1, "faints_against": 4},
+        decisions=[{"decision_type": "move", "reward": -15}],
+    )
+
+    response = await client.get(
+        "/api/pokemon/showdown/tactical-briefing",
+        params={"username": "BriefingBot", "battle_format": "vgc2024", "mode": "auto"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["battle_format"] == "vgc2024"
+    assert data["showdown_format"] == "gen9vgc2024regg"
+    assert data["mode"] == "defensive"
+    assert data["team"]["requires_team"] is True
+    assert data["team"]["species"]
+    assert data["team"]["preview"][0]["moves"]
+    assert data["learning_profile"]["battles"] == 1
+    assert data["mission_recommendation"]["mission_goal"] == "prepare"
+    assert "avoid_free_knockouts" in data["tactical_plan"]["priorities"]
+    assert "research_team_before_ladder" in data["tactical_plan"]["risk_controls"]
+    assert data["next_session_request"]["mission_goal"] == "prepare"
+
+
+@pytest.mark.asyncio
+async def test_showdown_tactical_briefing_handles_random_battle_without_team(setup_db, client):
+    response = await client.get(
+        "/api/pokemon/showdown/tactical-briefing",
+        params={"username": "BriefingBot", "battle_format": "gen9randombattle", "mode": "balanced"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["team"]["requires_team"] is False
+    assert data["team"]["source"] == "not_required"
+    assert data["team"]["species"] == []
+    assert data["tactical_plan"]["battle_type"] == "single"
+    assert data["tactical_plan"]["target_policy"].startswith("No target")
+
+
+@pytest.mark.asyncio
 async def test_showdown_commands_reject_invalid_choose_slot(client):
     response = await client.post(
         "/api/pokemon/showdown/commands",

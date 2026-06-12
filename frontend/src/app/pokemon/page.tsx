@@ -93,6 +93,7 @@ export default function PokemonBattlePage() {
   const [showdownMode, setShowdownMode] = useState<'auto' | 'balanced' | 'aggressive' | 'defensive'>('auto');
   const [showdownMissionGoal, setShowdownMissionGoal] = useState<'auto' | 'prepare' | 'queue' | 'ladder' | 'learn'>('auto');
   const [showdownMissionPlan, setShowdownMissionPlan] = useState<any>(null);
+  const [showdownTacticalBriefing, setShowdownTacticalBriefing] = useState<any>(null);
   const [showdownTrainingChain, setShowdownTrainingChain] = useState<any>(null);
   const [showdownPlan, setShowdownPlan] = useState<any>(null);
   const [showdownSession, setShowdownSession] = useState<any>(null);
@@ -157,6 +158,7 @@ export default function PokemonBattlePage() {
     setShowdownLearning(null);
     setShowdownPlan(null);
     setShowdownMissionPlan(null);
+    setShowdownTacticalBriefing(null);
     setShowdownTrainingChain(null);
     setShowdownRunSummary(null);
     setShowdownTeamKnowledge([]);
@@ -417,6 +419,31 @@ export default function PokemonBattlePage() {
       addMessage(`Mission plan ${plan.mission_goal}: ${plan.mission_goal_source || 'preset'} · ${(plan.executable_plan_actions || plan.allowed_actions || []).length} executable action(s).`);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '生成 Showdown 任务计划失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function previewShowdownTacticalBriefing() {
+    setBusy(true);
+    setError(null);
+    try {
+      const briefing = (await pokemonApi.getShowdownTacticalBriefing(
+        showdownUsername || 'PokemonBot',
+        selectedFormatInfo?.id || selectedFormat,
+        showdownMode,
+        showdownAutoResearch,
+        3
+      )).data;
+      setShowdownTacticalBriefing(briefing);
+      setShowdownLearning(briefing.learning_profile || showdownLearning);
+      if (briefing.knowledge_context?.members?.length) {
+        setShowdownTeamKnowledge(briefing.knowledge_context.members);
+        setShowdownTeamKnowledgeSummary(briefing.knowledge_context);
+      }
+      addMessage(`Tactical briefing ${briefing.mode}: ${briefing.mission_recommendation?.mission_goal || 'ready'} · ${briefing.tactical_plan?.confidence || 'low'} confidence.`);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '生成 Showdown 战术简报失败');
     } finally {
       setBusy(false);
     }
@@ -790,6 +817,7 @@ export default function PokemonBattlePage() {
     ['Phase 40', '会话快照汇总训练链长期趋势，展示持续进步、下降和样本积累情况'],
     ['Phase 41', '实战就绪审计检查登录、队伍、知识、连接、待发命令和天梯路径'],
     ['Phase 42', '多格式能力矩阵展示每个 Showdown 格式的队伍、策略、学习和自动化覆盖'],
+    ['Phase 43', '战术简报整合格式、队伍、学习档案和知识检索，给出下一局开局计划'],
   ];
 
   return (
@@ -1143,6 +1171,9 @@ export default function PokemonBattlePage() {
               <button onClick={previewShowdownMissionPlan} disabled={busy} className="btn-secondary disabled:opacity-50">
                 预览计划
               </button>
+              <button onClick={previewShowdownTacticalBriefing} disabled={busy} className="btn-secondary disabled:opacity-50">
+                战术简报
+              </button>
               <button
                 onClick={() => startShowdownMission(showdownMissionPlan?.mission_request || {})}
                 disabled={busy || !showdownMissionPlan?.mission_request}
@@ -1238,6 +1269,60 @@ export default function PokemonBattlePage() {
                       </div>
                     ))}
                   </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {showdownTacticalBriefing ? (
+              <div className="mt-3 rounded-md border border-violet-500/25 bg-violet-500/10 p-3 text-xs leading-5 text-gray-300">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[10px] font-semibold uppercase text-violet-200">Tactical briefing</span>
+                  <span className="rounded bg-black/30 px-2 py-0.5 text-[10px] text-gray-100">
+                    {showdownTacticalBriefing.mode} · {showdownTacticalBriefing.tactical_plan?.confidence || 'low'} · {showdownTacticalBriefing.mission_recommendation?.mission_goal || 'queue'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Metric label="Mastery" value={showdownTacticalBriefing.mastery_score != null ? Number(showdownTacticalBriefing.mastery_score).toFixed(0) : '-'} compact />
+                  <Metric label="Samples" value={showdownTacticalBriefing.learning_profile?.battles || 0} compact />
+                  <Metric label="Team" value={showdownTacticalBriefing.team?.source || '-'} compact />
+                  <Metric label="Knowledge" value={showdownTacticalBriefing.knowledge_context?.result_count || 0} compact />
+                </div>
+                {showdownTacticalBriefing.tactical_plan?.opening_plan ? (
+                  <div className="mt-2 break-words rounded border border-violet-500/20 bg-black/20 p-2 text-[10px] leading-4 text-violet-100">
+                    {showdownTacticalBriefing.tactical_plan.opening_plan}
+                  </div>
+                ) : null}
+                {showdownTacticalBriefing.tactical_plan?.recommended_leads?.length ? (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {showdownTacticalBriefing.tactical_plan.recommended_leads.map((species: string) => (
+                      <span key={`lead-${species}`} className="rounded border border-violet-500/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-violet-100">
+                        lead {species}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {showdownTacticalBriefing.tactical_plan?.priorities?.length ? (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {showdownTacticalBriefing.tactical_plan.priorities.slice(0, 5).map((priority: string) => (
+                      <span key={`priority-${priority}`} className="rounded border border-border bg-black/20 px-1.5 py-0.5 text-[10px] text-gray-300">
+                        {priority}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {showdownTacticalBriefing.tactical_plan?.risk_controls?.length ? (
+                  <div className="mt-2 break-words rounded border border-border bg-black/20 p-2 text-[10px] leading-4 text-gray-400">
+                    Risk: {showdownTacticalBriefing.tactical_plan.risk_controls.slice(0, 4).join(' / ')}
+                  </div>
+                ) : null}
+                {showdownTacticalBriefing.next_session_request ? (
+                  <button
+                    onClick={() => startShowdownMission(showdownTacticalBriefing.next_session_request)}
+                    disabled={busy}
+                    className="mt-2 w-full rounded border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-xs text-violet-100 transition hover:bg-violet-500/20 disabled:opacity-50"
+                  >
+                    按简报启动
+                  </button>
                 ) : null}
               </div>
             ) : null}

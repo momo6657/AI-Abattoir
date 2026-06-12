@@ -180,6 +180,22 @@ export const pokemonApi = {
     api.get("/pokemon/showdown/formats/capabilities", {
       params: { username, include_learning: includeLearning },
     }),
+  getShowdownTacticalBriefing: (
+    username = "PokemonBot",
+    battleFormat = "vgc2024",
+    mode = "auto",
+    includeKnowledge = false,
+    maxResults = 3
+  ) =>
+    api.get("/pokemon/showdown/tactical-briefing", {
+      params: {
+        username,
+        battle_format: battleFormat,
+        mode,
+        include_knowledge: includeKnowledge,
+        max_results: maxResults,
+      },
+    }),
   createShowdownSession: (data: Record<string, unknown>) => api.post("/pokemon/showdown/sessions", data),
   planShowdownMission: (data: Record<string, unknown>) => api.post("/pokemon/showdown/mission/plan", data),
   startShowdownMission: (data: Record<string, unknown>) => api.post("/pokemon/showdown/mission", data),

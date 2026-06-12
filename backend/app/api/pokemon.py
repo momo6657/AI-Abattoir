@@ -5,7 +5,7 @@ Pokemon Battle API Routes
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from typing import List
+from typing import Any, List
 from uuid import UUID
 
 from app.core.database import get_db
@@ -942,6 +942,183 @@ def _build_showdown_format_capability(format_info, learning_profile: dict | None
     }
 
 
+async def _build_showdown_tactical_briefing(
+    db: AsyncSession,
+    *,
+    username: str,
+    battle_format: str,
+    mode: str,
+    include_knowledge: bool,
+    max_results: int,
+) -> dict:
+    resolved_mode, mode_source, mode_recommendation, learning_profile = await _resolve_showdown_mode(
+        db,
+        username=username,
+        battle_format=battle_format,
+        requested_mode=mode,
+    )
+    format_info = pokemon_format_catalog.get(battle_format)
+    capability = _build_showdown_format_capability(format_info, learning_profile)
+    generated = None
+    team_members: list[dict[str, Any]] = []
+    team_species: list[str] = []
+    team_adjustments: list[dict[str, str]] = []
+    if format_info.requires_team:
+        generated = pokemon_showdown_team_factory.generate(
+            format_info.id,
+            mode=resolved_mode,
+            learning_profile=learning_profile,
+        )
+        if generated:
+            team_members = generated.team
+            team_species = generated.species()
+            team_adjustments = generated.adjustments
+    else:
+        team_species = []
+
+    knowledge_context = None
+    if include_knowledge and team_species:
+        knowledge_context = await pokemon_knowledge_service.search_team(
+            db,
+            team_species,
+            query_type="species_usage",
+            max_results=max_results,
+        )
+
+    mission_recommendation = _recommend_showdown_mission_goal({
+        "learning_profile": learning_profile,
+        "has_knowledge_context": bool(knowledge_context),
+        "team_species": team_species,
+    })
+    training_plan = learning_profile.get("training_plan") or {}
+    mastery_score = pokemon_showdown_learning_store.score_profile(learning_profile)
+    tactical_plan = _build_showdown_tactical_plan(
+        format_info=format_info,
+        mode=resolved_mode,
+        learning_profile=learning_profile,
+        team_species=team_species,
+        knowledge_context=knowledge_context,
+        mission_recommendation=mission_recommendation,
+    )
+
+    return {
+        "username": username,
+        "battle_format": format_info.id,
+        "showdown_format": format_info.showdown_format,
+        "mode": resolved_mode,
+        "requested_mode": mode,
+        "mode_source": mode_source,
+        "mode_recommendation": mode_recommendation,
+        "format_capability": capability,
+        "learning_profile": learning_profile,
+        "mastery_score": mastery_score,
+        "training_plan": training_plan,
+        "mission_recommendation": mission_recommendation,
+        "team": {
+            "requires_team": format_info.requires_team,
+            "source": generated.source if generated else capability["team"]["source"],
+            "reason": generated.reason if generated else capability["team"]["reason"],
+            "species": team_species,
+            "adjustments": team_adjustments,
+            "preview": [
+                {
+                    "slot": index + 1,
+                    "species": str(member.get("species") or member.get("name") or "Unknown"),
+                    "item": member.get("item"),
+                    "ability": member.get("ability"),
+                    "tera_type": member.get("tera_type"),
+                    "moves": [str(move.get("name") if isinstance(move, dict) else move) for move in member.get("moves") or []],
+                }
+                for index, member in enumerate(team_members)
+            ],
+        },
+        "knowledge_context": knowledge_context,
+        "tactical_plan": tactical_plan,
+        "next_session_request": {
+            "username": username,
+            "battle_format": format_info.id,
+            "mode": mode,
+            "auto_login": True,
+            "auto_research_team": include_knowledge,
+            "auto_search": mission_recommendation["mission_goal"] in {"queue", "ladder", "learn"},
+            "mission_goal": mission_recommendation["mission_goal"],
+            "max_actions": 5,
+        },
+    }
+
+
+def _build_showdown_tactical_plan(
+    *,
+    format_info,
+    mode: str,
+    learning_profile: dict,
+    team_species: list[str],
+    knowledge_context: dict | None,
+    mission_recommendation: dict,
+) -> dict:
+    battles = int(learning_profile.get("battles") or 0)
+    win_rate = float(learning_profile.get("win_rate") or 0.0)
+    average_reward = float(learning_profile.get("average_reward") or 0.0)
+    faints_for = int(learning_profile.get("faints_for") or 0)
+    faints_against = int(learning_profile.get("faints_against") or 0)
+    needs_safety = battles == 0 or win_rate < 0.5 or average_reward < 50 or faints_against > faints_for
+    battle_type = format_info.battle_type
+    lead_count = min(format_info.active_pokemon, len(team_species)) if team_species else 0
+    recommended_leads = team_species[:lead_count]
+    bench_plan = team_species[lead_count:format_info.team_size] if team_species else []
+
+    if battle_type == "double":
+        opening = "Open with speed or Fake Out control, then protect vulnerable attackers while setting board position."
+        target_policy = "Prioritize the opponent slot that threatens the fastest knockout or blocks speed control."
+    else:
+        opening = "Preserve defensive pivots early, remove hazards when possible, and keep the main cleaner healthy."
+        target_policy = "No target selection is required; choose the highest-value move or switch for the active Pokemon."
+
+    priorities = []
+    if mode == "aggressive":
+        priorities.append("take_fast_damage_trades")
+    elif mode == "defensive":
+        priorities.append("preserve_position")
+    else:
+        priorities.append("balance_damage_and_position")
+    if needs_safety:
+        priorities.extend(["avoid_free_knockouts", "favor_protect_or_switch_when_low_confidence"])
+    else:
+        priorities.extend(["push_advantage", "extend_successful_lines"])
+    if knowledge_context and int(knowledge_context.get("result_count") or 0) > 0:
+        priorities.append("use_web_usage_context")
+
+    risk_controls = []
+    if battles < 3:
+        risk_controls.append("collect_baseline_samples_before_long_runs")
+    if win_rate < 0.45 and battles:
+        risk_controls.append("stop_after_loss_for_review")
+    if faints_against > faints_for:
+        risk_controls.append("reduce_high_risk_item_or_move_choices")
+    if not knowledge_context and team_species:
+        risk_controls.append("research_team_before_ladder")
+
+    next_actions = []
+    if team_species and not knowledge_context:
+        next_actions.append("research_team")
+    next_actions.append(mission_recommendation["mission_goal"])
+    if mission_recommendation["mission_goal"] in {"queue", "ladder", "learn"}:
+        next_actions.extend(["connect", "start_search", "autopilot"])
+
+    return {
+        "battle_type": battle_type,
+        "opening_plan": opening,
+        "target_policy": target_policy,
+        "recommended_leads": recommended_leads,
+        "bench_plan": bench_plan,
+        "priorities": list(dict.fromkeys(priorities)),
+        "risk_controls": list(dict.fromkeys(risk_controls)),
+        "next_actions": list(dict.fromkeys(next_actions)),
+        "confidence": "low" if battles < 3 else "medium" if needs_safety else "high",
+        "reason": mission_recommendation["reason"],
+    }
+
+
 def _build_showdown_mission_plan_snapshot(
     payload: ShowdownSessionMissionRequest,
     *,
@@ -1213,6 +1390,31 @@ async def list_showdown_format_capabilities(
         "coverage_score": round((ready_count / len(capabilities)) * 100) if capabilities else 0,
         "formats": capabilities,
     }
+
+
+@router.get("/showdown/tactical-briefing")
+async def get_showdown_tactical_briefing(
+    username: str = "PokemonBot",
+    battle_format: str = "vgc2024",
+    mode: str = "auto",
+    include_knowledge: bool = False,
+    max_results: int = 3,
+    db: AsyncSession = Depends(get_db),
+):
+    """Build a pre-battle tactical briefing from format, team, learning, and knowledge signals."""
+    if max_results < 1 or max_results > 10:
+        raise HTTPException(status_code=400, detail="max_results must be between 1 and 10.")
+    try:
+        return await _build_showdown_tactical_briefing(
+            db,
+            username=username,
+            battle_format=battle_format,
+            mode=mode,
+            include_knowledge=include_knowledge,
+            max_results=max_results,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404 if "Unsupported Pokemon battle format" in str(exc) else 400, detail=str(exc)) from exc
 
 
 @router.get("/showdown/sessions")
