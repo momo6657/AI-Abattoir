@@ -54,6 +54,37 @@ async def test_pokemon_format_detail_resolves_alias(client):
 
 
 @pytest.mark.asyncio
+async def test_showdown_format_capabilities_endpoint_summarizes_multi_format_support(setup_db, db, client):
+    await pokemon_showdown_learning_store.record_session(
+        db,
+        session_id="format-cap-ou",
+        username="MatrixBot",
+        battle_format="gen9ou",
+        showdown_format="gen9ou",
+        mode="balanced",
+        analysis={"status": "win", "reward": 140, "turns": 8, "faints_for": 3, "faints_against": 1},
+        decisions=[{"decision_type": "move", "reward": 20}],
+    )
+
+    response = await client.get(
+        "/api/pokemon/showdown/formats/capabilities",
+        params={"username": "MatrixBot"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    formats = {item["format"]["id"]: item for item in data["formats"]}
+    assert data["format_count"] >= 4
+    assert data["ready_count"] == data["format_count"]
+    assert formats["gen9randombattle"]["team"]["requires_team"] is False
+    assert formats["gen9randombattle"]["team"]["source"] == "not_required"
+    assert formats["gen9ou"]["team"]["can_build"] is True
+    assert formats["gen9ou"]["battle_policy"]["target_policy"] == "no_target"
+    assert formats["gen9ou"]["learning"]["battles"] == 1
+    assert "research_team" in formats["gen9ou"]["recommended_actions"]
+
+
+@pytest.mark.asyncio
 async def test_showdown_commands_reject_invalid_choose_slot(client):
     response = await client.post(
         "/api/pokemon/showdown/commands",

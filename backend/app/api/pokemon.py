@@ -47,6 +47,7 @@ from app.services.pokemon.showdown_connector import ShowdownConnectionError, pok
 from app.services.pokemon.showdown_battle_agent import pokemon_showdown_battle_agent
 from app.services.pokemon.showdown_session import pokemon_showdown_session_service
 from app.services.pokemon.showdown_learning_store import pokemon_showdown_learning_store
+from app.services.pokemon.showdown_team_factory import pokemon_showdown_team_factory
 
 router = APIRouter(prefix="/pokemon", tags=["pokemon"])
 
@@ -873,6 +874,74 @@ def _build_showdown_training_chain_progress(
     }
 
 
+def _build_showdown_format_capability(format_info, learning_profile: dict | None = None) -> dict:
+    team_source = "not_required"
+    team_reason = f"{format_info.name} supplies teams on Pokemon Showdown."
+    generated_species: list[str] = []
+    can_build_team = True
+    if format_info.requires_team:
+        generated = pokemon_showdown_team_factory.generate(
+            format_info.id,
+            mode=(learning_profile or {}).get("recommended_mode") or "balanced",
+            learning_profile=learning_profile,
+        )
+        can_build_team = generated is not None
+        team_source = generated.source if generated else "unavailable"
+        team_reason = generated.reason if generated else f"No autonomous team builder is available for {format_info.name}."
+        generated_species = generated.species() if generated else []
+
+    learning_profile = learning_profile or {}
+    battles = int(learning_profile.get("battles") or 0)
+    training_plan = learning_profile.get("training_plan") or {}
+    blockers: list[str] = []
+    if format_info.requires_team and not can_build_team:
+        blockers.append("team_builder")
+    if format_info.active_pokemon not in {1, 2}:
+        blockers.append("target_policy")
+
+    action_items: list[str] = []
+    if blockers:
+        action_items.append("prepare_format_support")
+    if battles == 0:
+        action_items.append("collect_samples")
+    if format_info.requires_team and can_build_team and generated_species:
+        action_items.append("research_team")
+    action_items.append(training_plan.get("next_mission_goal") or "ladder")
+
+    readiness = "blocked" if blockers else "ready"
+    target_policy = "targeted" if format_info.active_pokemon > 1 else "no_target"
+    return {
+        "format": format_info.to_dict(),
+        "automation_readiness": readiness,
+        "blockers": blockers,
+        "team": {
+            "requires_team": format_info.requires_team,
+            "can_build": can_build_team,
+            "source": team_source,
+            "reason": team_reason,
+            "species": generated_species,
+        },
+        "battle_policy": {
+            "battle_type": format_info.battle_type,
+            "active_pokemon": format_info.active_pokemon,
+            "team_size": format_info.team_size,
+            "target_policy": target_policy,
+            "supports_team_preview": format_info.requires_team,
+            "supports_autopilot": not blockers,
+        },
+        "learning": {
+            "battles": battles,
+            "wins": int(learning_profile.get("wins") or 0),
+            "win_rate": float(learning_profile.get("win_rate") or 0.0),
+            "mastery_score": pokemon_showdown_learning_store.score_profile(learning_profile) if learning_profile else 0.0,
+            "training_stage": training_plan.get("stage") or "collect_data",
+            "next_mission_goal": training_plan.get("next_mission_goal") or "queue",
+            "recommended_mode": learning_profile.get("recommended_mode") or training_plan.get("recommended_mode") or "balanced",
+        },
+        "recommended_actions": list(dict.fromkeys(action_items)),
+    }
+
+
 def _build_showdown_mission_plan_snapshot(
     payload: ShowdownSessionMissionRequest,
     *,
@@ -1117,6 +1186,33 @@ async def list_showdown_mastery_ranking(
         battle_format=normalized_format,
         limit=limit,
     )
+
+
+@router.get("/showdown/formats/capabilities")
+async def list_showdown_format_capabilities(
+    username: str = "PokemonBot",
+    include_learning: bool = True,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return autonomous Showdown capability coverage for every supported format."""
+    capabilities = []
+    for format_info in pokemon_format_catalog.list_formats():
+        learning_profile = None
+        if include_learning:
+            learning_profile = await pokemon_showdown_learning_store.profile(
+                db,
+                username=username,
+                battle_format=format_info.id,
+            )
+        capabilities.append(_build_showdown_format_capability(format_info, learning_profile))
+    ready_count = sum(1 for item in capabilities if item["automation_readiness"] == "ready")
+    return {
+        "username": username,
+        "format_count": len(capabilities),
+        "ready_count": ready_count,
+        "coverage_score": round((ready_count / len(capabilities)) * 100) if capabilities else 0,
+        "formats": capabilities,
+    }
 
 
 @router.get("/showdown/sessions")

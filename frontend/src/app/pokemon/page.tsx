@@ -75,6 +75,7 @@ export default function PokemonBattlePage() {
   const [moveCount, setMoveCount] = useState(0);
   const [history, setHistory] = useState<any[]>([]);
   const [formats, setFormats] = useState<PokemonFormat[]>([]);
+  const [formatCapabilities, setFormatCapabilities] = useState<any>(null);
   const [selectedFormat, setSelectedFormat] = useState('vgc2024');
   const [analysis, setAnalysis] = useState<any>(null);
   const [knowledgeQuery, setKnowledgeQuery] = useState('Incineroar');
@@ -110,6 +111,10 @@ export default function PokemonBattlePage() {
   const selectedFormatInfo = useMemo(
     () => formats.find((format) => format.id === selectedFormat) || formats[0],
     [formats, selectedFormat]
+  );
+  const activeFormatCapability = useMemo(
+    () => (formatCapabilities?.formats || []).find((item: any) => item.format?.id === selectedFormat),
+    [formatCapabilities, selectedFormat]
   );
   const showdownTargetPolicy = selectedFormatInfo?.active_pokemon === 1 ? 'no target' : 'targeted';
   const showdownChallengeUsers = Object.keys(showdownSession?.challenges?.challengesFrom || {});
@@ -160,17 +165,19 @@ export default function PokemonBattlePage() {
 
   async function refreshOverview() {
     try {
-      const [speciesRes, movesRes, historyRes, formatsRes, masteryRes] = await Promise.all([
+      const [speciesRes, movesRes, historyRes, formatsRes, masteryRes, capabilitiesRes] = await Promise.all([
         pokemonApi.listSpecies(),
         pokemonApi.listMoves(),
         pokemonApi.getHistory(8),
         pokemonApi.listFormats(),
         pokemonApi.listShowdownMastery(selectedFormat, 5),
+        pokemonApi.listShowdownFormatCapabilities(showdownUsername || 'PokemonBot'),
       ]);
       setSpeciesCount(speciesRes.data.length || 0);
       setMoveCount(movesRes.data.length || 0);
       setHistory(historyRes.data || []);
       setShowdownMastery(masteryRes.data || []);
+      setFormatCapabilities(capabilitiesRes.data || null);
       const nextFormats = formatsRes.data || [];
       setFormats(nextFormats);
       if (nextFormats.length && !nextFormats.some((format: PokemonFormat) => format.id === selectedFormat)) {
@@ -782,6 +789,7 @@ export default function PokemonBattlePage() {
     ['Phase 39', '训练链输出 Mastery 前后变化、样本增量和趋势建议，判断是否真的变强'],
     ['Phase 40', '会话快照汇总训练链长期趋势，展示持续进步、下降和样本积累情况'],
     ['Phase 41', '实战就绪审计检查登录、队伍、知识、连接、待发命令和天梯路径'],
+    ['Phase 42', '多格式能力矩阵展示每个 Showdown 格式的队伍、策略、学习和自动化覆盖'],
   ];
 
   return (
@@ -850,6 +858,47 @@ export default function PokemonBattlePage() {
             )}
           </div>
         )}
+        {formatCapabilities ? (
+          <div className="mt-3 rounded-md border border-border bg-black/20 p-3 text-xs text-gray-300">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[10px] font-semibold uppercase text-gray-500">Format coverage</span>
+              <span className="rounded bg-black/30 px-2 py-0.5 text-[10px] text-gray-100">
+                {formatCapabilities.ready_count || 0}/{formatCapabilities.format_count || 0} ready · {formatCapabilities.coverage_score || 0}%
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+              {(formatCapabilities.formats || []).map((item: any) => {
+                const active = item.format?.id === selectedFormat;
+                return (
+                  <button
+                    key={item.format?.id}
+                    onClick={() => {
+                      setSelectedFormat(item.format.id);
+                      resetShowdownState();
+                    }}
+                    className={`rounded border px-2 py-2 text-left transition ${
+                      active ? 'border-accent bg-accent/10 text-white' : 'border-border bg-black/20 text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    <div className="truncate text-[11px] font-semibold">{item.format?.name_zh || item.format?.name}</div>
+                    <div className="mt-1 flex flex-wrap gap-1 text-[10px]">
+                      <span>{item.automation_readiness}</span>
+                      <span>{item.battle_policy?.target_policy}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            {activeFormatCapability ? (
+              <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">
+                <Metric label="Team Source" value={activeFormatCapability.team?.source || '-'} compact />
+                <Metric label="Autopilot" value={activeFormatCapability.battle_policy?.supports_autopilot ? 'yes' : 'no'} compact />
+                <Metric label="Samples" value={activeFormatCapability.learning?.battles || 0} compact />
+                <Metric label="Next" value={activeFormatCapability.learning?.next_mission_goal || '-'} compact />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </section>
 
       {error && (

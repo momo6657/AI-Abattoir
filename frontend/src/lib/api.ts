@@ -176,6 +176,10 @@ export const pokemonApi = {
     api.get("/pokemon/showdown/learning/mastery", {
       params: battleFormat ? { battle_format: battleFormat, limit } : { limit },
     }),
+  listShowdownFormatCapabilities: (username = "PokemonBot", includeLearning = true) =>
+    api.get("/pokemon/showdown/formats/capabilities", {
+      params: { username, include_learning: includeLearning },
+    }),
   createShowdownSession: (data: Record<string, unknown>) => api.post("/pokemon/showdown/sessions", data),
   planShowdownMission: (data: Record<string, unknown>) => api.post("/pokemon/showdown/mission/plan", data),
   startShowdownMission: (data: Record<string, unknown>) => api.post("/pokemon/showdown/mission", data),
