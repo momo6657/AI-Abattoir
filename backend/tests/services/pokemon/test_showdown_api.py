@@ -134,6 +134,63 @@ async def test_showdown_tactical_briefing_handles_random_battle_without_team(set
 
 
 @pytest.mark.asyncio
+async def test_showdown_session_matchup_briefing_reads_room_preview(setup_db, client):
+    session_response = await client.post(
+        "/api/pokemon/showdown/sessions",
+        json={"username": "MatchupBot", "battle_format": "vgc2024", "mode": "balanced"},
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["session_id"]
+    payload = "\n".join([
+        ">battle-gen9vgc2024regg-1",
+        "|player|p1|MatchupBot|",
+        "|player|p2|PreviewBoss|",
+        "|poke|p1|Incineroar, L50|",
+        "|poke|p1|Flutter Mane, L50|",
+        "|poke|p2|Tornadus, L50|",
+        "|poke|p2|Amoonguss, L50|",
+        "|poke|p2|Flutter Mane, L50|",
+    ])
+    message_response = await client.post(
+        f"/api/pokemon/showdown/sessions/{session_id}/message",
+        json={"payload": payload, "auto_respond": False},
+    )
+    assert message_response.status_code == 200
+
+    briefing_response = await client.get(
+        f"/api/pokemon/showdown/sessions/{session_id}/matchup-briefing",
+        params={"include_knowledge": False},
+    )
+
+    assert briefing_response.status_code == 200
+    data = briefing_response.json()
+    threat_ids = {threat["id"] for threat in data["threats"]}
+    assert data["room_id"] == "battle-gen9vgc2024regg-1"
+    assert data["sides"]["opponent_username"] == "PreviewBoss"
+    assert data["opponent"]["species"] == ["Tornadus", "Amoonguss", "Flutter Mane"]
+    assert "speed_control" in threat_ids
+    assert "redirection" in threat_ids
+    assert "deny_or_match_speed_control" in data["matchup_plan"]["target_priority"]
+    assert "protect_key_attacker_from_fake_out_turn" not in data["matchup_plan"]["risk_controls"]
+    assert data["matchup_plan"]["confidence"] == "medium"
+
+
+@pytest.mark.asyncio
+async def test_showdown_session_matchup_briefing_requires_room_data(setup_db, client):
+    session_response = await client.post(
+        "/api/pokemon/showdown/sessions",
+        json={"username": "MatchupBot", "battle_format": "gen9randombattle", "mode": "balanced"},
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["session_id"]
+
+    response = await client.get(f"/api/pokemon/showdown/sessions/{session_id}/matchup-briefing")
+
+    assert response.status_code == 400
+    assert "No Showdown battle room" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_showdown_commands_reject_invalid_choose_slot(client):
     response = await client.post(
         "/api/pokemon/showdown/commands",

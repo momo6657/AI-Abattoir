@@ -1119,6 +1119,212 @@ def _build_showdown_tactical_plan(
     }
 
 
+async def _build_showdown_matchup_briefing(
+    db: AsyncSession,
+    *,
+    session: dict,
+    room_id: str | None,
+    include_knowledge: bool,
+    max_results: int,
+) -> dict:
+    room = _select_showdown_matchup_room(session, room_id)
+    if room is None:
+        raise ValueError("No Showdown battle room with preview or battlefield data is available.")
+
+    preview = room.get("preview") or {}
+    agent_side = room.get("agent_side")
+    opponent_side = room.get("opponent_side")
+    if not opponent_side and agent_side:
+        opponent_side = "p2" if agent_side == "p1" else "p1"
+    if not agent_side:
+        agent_side = _first_preview_side(preview)
+    if not opponent_side:
+        opponent_side = _first_preview_side(preview, exclude=agent_side)
+
+    own_species = _unique_species(
+        session.get("team_species")
+        or [member.get("species") for member in session.get("team_preview") or []]
+        or [member.get("species") for member in preview.get(agent_side or "") or []]
+    )
+    opponent_preview = list(preview.get(opponent_side or "") or [])
+    opponent_species = _unique_species([member.get("species") for member in opponent_preview])
+    battlefield = room.get("battlefield") or {}
+    sides = battlefield.get("sides") or {}
+    opponent_active = _battlefield_active_species(sides.get(opponent_side or "") or {})
+    if opponent_active:
+        opponent_species = _unique_species(opponent_active + opponent_species)
+
+    knowledge_context = None
+    if include_knowledge and opponent_species:
+        knowledge_context = await pokemon_knowledge_service.search_team(
+            db,
+            opponent_species,
+            query_type="matchup",
+            max_results=max_results,
+        )
+
+    battle_type = session.get("battle_type") or "double"
+    threats = _classify_showdown_matchup_threats(opponent_species, battle_type)
+    plan = _build_showdown_matchup_plan(
+        battle_type=battle_type,
+        own_species=own_species,
+        opponent_species=opponent_species,
+        opponent_active=opponent_active,
+        threats=threats,
+        knowledge_context=knowledge_context,
+    )
+
+    return {
+        "session_id": session.get("session_id"),
+        "room_id": room.get("room_id"),
+        "battle_format": session.get("battle_format"),
+        "showdown_format": session.get("showdown_format"),
+        "battle_type": battle_type,
+        "sides": {
+            "agent_side": agent_side,
+            "opponent_side": opponent_side,
+            "opponent_username": room.get("opponent_username"),
+        },
+        "team": {
+            "species": own_species,
+            "preview": session.get("team_preview") or [],
+        },
+        "opponent": {
+            "species": opponent_species,
+            "active": opponent_active,
+            "preview": opponent_preview,
+        },
+        "knowledge_context": knowledge_context,
+        "threats": threats,
+        "matchup_plan": plan,
+    }
+
+
+def _select_showdown_matchup_room(session: dict, room_id: str | None) -> dict | None:
+    rooms = session.get("room_details") or {}
+    if room_id:
+        room = rooms.get(room_id)
+        if not room:
+            raise ValueError(f"Showdown room not found: {room_id}")
+        return room
+    for room in rooms.values():
+        if room.get("preview") or room.get("battlefield"):
+            return room
+    return None
+
+
+def _first_preview_side(preview: dict, exclude: str | None = None) -> str | None:
+    for side, members in preview.items():
+        if side and side != exclude and members:
+            return str(side)
+    return None
+
+
+def _unique_species(values: list[Any]) -> list[str]:
+    species: list[str] = []
+    seen = set()
+    for value in values:
+        name = str(value or "").strip()
+        if not name or name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        species.append(name)
+    return species
+
+
+def _battlefield_active_species(side: dict) -> list[str]:
+    active = side.get("active") or {}
+    return _unique_species([
+        slot.get("pokemon")
+        for _, slot in sorted(active.items())
+        if isinstance(slot, dict) and slot.get("pokemon")
+    ])
+
+
+def _classify_showdown_matchup_threats(opponent_species: list[str], battle_type: str) -> list[dict[str, str]]:
+    threat_map = [
+        ("speed_control", {"tornadus", "whimsicott", "pelipper", "talonflame", "farigiraf"}),
+        ("fake_out", {"incineroar", "rillaboom", "iron hands", "hitmontop"}),
+        ("redirection", {"amoonguss", "indeedee", "ogerpon-wellspring", "clefairy"}),
+        ("spread_damage", {"flutter mane", "gholdengo", "landorus", "ursaluna-bloodmoon", "chi-yu"}),
+        ("priority", {"rillaboom", "dragonite", "kingambit", "chien-pao"}),
+        ("setup_sweeper", {"kingambit", "gholdengo", "dragonite", "gouging fire", "volcarona"}),
+    ]
+    threats: list[dict[str, str]] = []
+    lower_species = {species.lower(): species for species in opponent_species}
+    for threat_id, names in threat_map:
+        matched = [display for key, display in lower_species.items() if key in names]
+        if not matched:
+            continue
+        threats.append({
+            "id": threat_id,
+            "label": threat_id.replace("_", " ").title(),
+            "species": ", ".join(matched),
+            "priority": "high" if threat_id in {"speed_control", "fake_out", "spread_damage"} and battle_type == "double" else "normal",
+        })
+    if not threats and opponent_species:
+        threats.append({
+            "id": "unknown_core",
+            "label": "Unknown Core",
+            "species": ", ".join(opponent_species[:3]),
+            "priority": "normal",
+        })
+    return threats
+
+
+def _build_showdown_matchup_plan(
+    *,
+    battle_type: str,
+    own_species: list[str],
+    opponent_species: list[str],
+    opponent_active: list[str],
+    threats: list[dict[str, str]],
+    knowledge_context: dict | None,
+) -> dict:
+    threat_ids = {threat["id"] for threat in threats}
+    target_priority: list[str] = []
+    lead_adjustments: list[str] = []
+    risk_controls = ["respect_unknown_items_and_tera"]
+
+    if battle_type == "double":
+        if "speed_control" in threat_ids:
+            target_priority.append("deny_or_match_speed_control")
+            lead_adjustments.append("lead_fake_out_or_tailwind_answer")
+        if "fake_out" in threat_ids:
+            risk_controls.append("protect_key_attacker_from_fake_out_turn")
+        if "redirection" in threat_ids:
+            target_priority.append("remove_redirection_before_single_target_damage")
+        if "spread_damage" in threat_ids:
+            risk_controls.append("avoid_grouping_low_hp_pokemon_into_spread_damage")
+        if opponent_active:
+            target_priority.append(f"pressure_active_{opponent_active[0]}")
+        opening_plan = "Use preview threats to choose a stable lead, protect the key attacker on uncertain turns, and target control pieces first."
+    else:
+        if "setup_sweeper" in threat_ids:
+            target_priority.append("preserve_revenge_killer_for_setup_sweeper")
+        if "priority" in threat_ids:
+            risk_controls.append("avoid_leaving_cleaner_in_priority_range")
+        opening_plan = "Scout the opponent core, keep pivots healthy, and save the cleaner until priority and setup threats are controlled."
+
+    if not target_priority and opponent_species:
+        target_priority.append(f"identify_primary_win_condition_against_{opponent_species[0]}")
+    if own_species:
+        lead_adjustments.append(f"start_from_own_core_{own_species[0]}")
+    if knowledge_context and int(knowledge_context.get("result_count") or 0) > 0:
+        risk_controls.append("cross_check_web_usage_before_committing")
+    else:
+        risk_controls.append("request_matchup_knowledge_when_preview_is_available")
+
+    return {
+        "opening_plan": opening_plan,
+        "target_priority": list(dict.fromkeys(target_priority)),
+        "lead_adjustments": list(dict.fromkeys(lead_adjustments)),
+        "risk_controls": list(dict.fromkeys(risk_controls)),
+        "confidence": "medium" if opponent_species else "low",
+        "next_actions": ["review_preview", "choose_team" if battle_type == "double" else "choose_move", "autopilot"],
+    }
+
+
 def _build_showdown_mission_plan_snapshot(
     payload: ShowdownSessionMissionRequest,
     *,
@@ -1484,6 +1690,32 @@ async def get_showdown_session_readiness(session_id: str):
         "live_readiness": snapshot["live_readiness"],
         "next_actions": snapshot["next_actions"],
     }
+
+
+@router.get("/showdown/sessions/{session_id}/matchup-briefing")
+async def get_showdown_session_matchup_briefing(
+    session_id: str,
+    room_id: str | None = None,
+    include_knowledge: bool = False,
+    max_results: int = 3,
+    db: AsyncSession = Depends(get_db),
+):
+    """Build a matchup briefing from synced Showdown room preview and battlefield state."""
+    if max_results < 1 or max_results > 10:
+        raise HTTPException(status_code=400, detail="max_results must be between 1 and 10.")
+    session = pokemon_showdown_session_service.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Pokemon Showdown session not found")
+    try:
+        return await _build_showdown_matchup_briefing(
+            db,
+            session=session.to_dict(),
+            room_id=room_id,
+            include_knowledge=include_knowledge,
+            max_results=max_results,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/showdown/sessions/{session_id}/search")

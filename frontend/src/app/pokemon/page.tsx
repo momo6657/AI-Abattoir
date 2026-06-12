@@ -94,6 +94,7 @@ export default function PokemonBattlePage() {
   const [showdownMissionGoal, setShowdownMissionGoal] = useState<'auto' | 'prepare' | 'queue' | 'ladder' | 'learn'>('auto');
   const [showdownMissionPlan, setShowdownMissionPlan] = useState<any>(null);
   const [showdownTacticalBriefing, setShowdownTacticalBriefing] = useState<any>(null);
+  const [showdownMatchupBriefing, setShowdownMatchupBriefing] = useState<any>(null);
   const [showdownTrainingChain, setShowdownTrainingChain] = useState<any>(null);
   const [showdownPlan, setShowdownPlan] = useState<any>(null);
   const [showdownSession, setShowdownSession] = useState<any>(null);
@@ -159,6 +160,7 @@ export default function PokemonBattlePage() {
     setShowdownPlan(null);
     setShowdownMissionPlan(null);
     setShowdownTacticalBriefing(null);
+    setShowdownMatchupBriefing(null);
     setShowdownTrainingChain(null);
     setShowdownRunSummary(null);
     setShowdownTeamKnowledge([]);
@@ -711,6 +713,31 @@ export default function PokemonBattlePage() {
     }
   }
 
+  async function refreshShowdownMatchupBriefing() {
+    if (!showdownSession?.session_id) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const activeRoom = showdownRooms.find((room) => room.preview || room.battlefield) || showdownRooms[0];
+      const briefing = (await pokemonApi.getShowdownSessionMatchupBriefing(
+        showdownSession.session_id,
+        activeRoom?.room_id,
+        showdownAutoResearch,
+        3
+      )).data;
+      setShowdownMatchupBriefing(briefing);
+      if (briefing.knowledge_context?.members?.length) {
+        setShowdownTeamKnowledge(briefing.knowledge_context.members);
+        setShowdownTeamKnowledgeSummary(briefing.knowledge_context);
+      }
+      addMessage(`Matchup briefing: ${(briefing.opponent?.species || []).slice(0, 3).join(' / ') || 'waiting'} · ${briefing.matchup_plan?.confidence || 'low'} confidence.`);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '生成 Showdown 对局简报失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function executeShowdownNextAction(actionName: string) {
     if (!showdownSession?.session_id) return;
     setBusy(true);
@@ -818,6 +845,7 @@ export default function PokemonBattlePage() {
     ['Phase 41', '实战就绪审计检查登录、队伍、知识、连接、待发命令和天梯路径'],
     ['Phase 42', '多格式能力矩阵展示每个 Showdown 格式的队伍、策略、学习和自动化覆盖'],
     ['Phase 43', '战术简报整合格式、队伍、学习档案和知识检索，给出下一局开局计划'],
+    ['Phase 44', '对手预览 Matchup 简报识别威胁、目标优先级、首发调整和风险控制'],
   ];
 
   return (
@@ -1193,6 +1221,9 @@ export default function PokemonBattlePage() {
               <button onClick={refreshShowdownReadiness} disabled={busy || !showdownSession?.session_id} className="btn-secondary disabled:opacity-50">
                 检查就绪
               </button>
+              <button onClick={refreshShowdownMatchupBriefing} disabled={busy || !showdownSession?.session_id} className="btn-secondary disabled:opacity-50">
+                对局简报
+              </button>
               <button onClick={runLiveShowdownOnce} disabled={busy || !showdownSession?.session_id} className="btn-secondary disabled:opacity-50">
                 跑一步
               </button>
@@ -1323,6 +1354,63 @@ export default function PokemonBattlePage() {
                   >
                     按简报启动
                   </button>
+                ) : null}
+              </div>
+            ) : null}
+
+            {showdownMatchupBriefing ? (
+              <div className="mt-3 rounded-md border border-rose-500/25 bg-rose-500/10 p-3 text-xs leading-5 text-gray-300">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[10px] font-semibold uppercase text-rose-200">Matchup briefing</span>
+                  <span className="rounded bg-black/30 px-2 py-0.5 text-[10px] text-gray-100">
+                    {showdownMatchupBriefing.battle_type || '-'} · {showdownMatchupBriefing.matchup_plan?.confidence || 'low'} · {showdownMatchupBriefing.sides?.opponent_username || 'opponent'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Metric label="Opponent" value={(showdownMatchupBriefing.opponent?.species || []).length} compact />
+                  <Metric label="Threats" value={(showdownMatchupBriefing.threats || []).length} compact />
+                  <Metric label="Active" value={(showdownMatchupBriefing.opponent?.active || []).length} compact />
+                  <Metric label="Knowledge" value={showdownMatchupBriefing.knowledge_context?.result_count || 0} compact />
+                </div>
+                {showdownMatchupBriefing.matchup_plan?.opening_plan ? (
+                  <div className="mt-2 break-words rounded border border-rose-500/20 bg-black/20 p-2 text-[10px] leading-4 text-rose-100">
+                    {showdownMatchupBriefing.matchup_plan.opening_plan}
+                  </div>
+                ) : null}
+                {showdownMatchupBriefing.opponent?.species?.length ? (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {showdownMatchupBriefing.opponent.species.slice(0, 6).map((species: string) => (
+                      <span key={`opp-${species}`} className="rounded border border-rose-500/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-rose-100">
+                        {species}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {showdownMatchupBriefing.threats?.length ? (
+                  <div className="mt-2 space-y-1.5">
+                    {showdownMatchupBriefing.threats.slice(0, 4).map((threat: any) => (
+                      <div key={threat.id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-border bg-black/20 px-2 py-1">
+                        <span className="text-gray-200">{threat.label}</span>
+                        <span className={threat.priority === 'high' ? 'text-[10px] text-rose-100' : 'text-[10px] text-gray-500'}>
+                          {threat.priority} · {threat.species}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {showdownMatchupBriefing.matchup_plan?.target_priority?.length ? (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {showdownMatchupBriefing.matchup_plan.target_priority.slice(0, 5).map((priority: string) => (
+                      <span key={`matchup-priority-${priority}`} className="rounded border border-border bg-black/20 px-1.5 py-0.5 text-[10px] text-gray-300">
+                        {priority}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {showdownMatchupBriefing.matchup_plan?.risk_controls?.length ? (
+                  <div className="mt-2 break-words rounded border border-border bg-black/20 p-2 text-[10px] leading-4 text-gray-400">
+                    Risk: {showdownMatchupBriefing.matchup_plan.risk_controls.slice(0, 4).join(' / ')}
+                  </div>
                 ) : null}
               </div>
             ) : null}
