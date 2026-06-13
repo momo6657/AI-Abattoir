@@ -198,6 +198,10 @@ class ShowdownSessionRunRequest(BaseModel):
 class ShowdownSessionAutopilotRequest(ShowdownSessionRunRequest):
     auto_search: bool = True
     close_on_finish: bool = False
+    require_live_readiness: bool = Field(
+        False,
+        description="When true, block live command sending unless the session passes the Showdown readiness gate.",
+    )
 
 
 class ShowdownSessionNextActionRequest(BaseModel):
@@ -211,6 +215,10 @@ class ShowdownSessionNextActionRequest(BaseModel):
     stop_on_finished: bool = True
     stop_on_error: bool = True
     max_results: int = 3
+    require_live_readiness: bool = Field(
+        False,
+        description="When true, autopilot actions enforce the Showdown readiness gate before sending live commands.",
+    )
 
 
 class ShowdownSessionSupervisorRequest(ShowdownSessionNextActionRequest):

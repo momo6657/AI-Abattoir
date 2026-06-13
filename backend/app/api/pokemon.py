@@ -1881,6 +1881,7 @@ async def autopilot_showdown_session(
             auto_search=payload.auto_search,
             close_on_finish=payload.close_on_finish,
             stop_on_error=payload.stop_on_error,
+            require_live_readiness=payload.require_live_readiness,
         )
         result["learning_profile"] = await _persist_showdown_learning(db, result)
         return result
@@ -2119,9 +2120,20 @@ async def _execute_showdown_action(
             send_commands=payload.send_commands,
             stop_on_finished=payload.stop_on_finished,
             stop_on_error=payload.stop_on_error,
+            require_live_readiness=payload.require_live_readiness,
         )
         result["learning_profile"] = await _persist_showdown_learning(db, result)
         return result
+    if action == "review_readiness":
+        session = pokemon_showdown_session_service.get_session(session_id)
+        if not session:
+            raise KeyError(f"Pokemon Showdown session not found: {session_id}")
+        return {
+            "session": session.to_dict(),
+            "live_readiness": session.to_dict().get("live_readiness"),
+            "skipped": True,
+            "reason": "Live readiness must be fixed before sending Showdown commands.",
+        }
     if action == "start_search":
         commands = pokemon_showdown_session_service.start_ladder_search(session_id)
         session = pokemon_showdown_session_service.get_session(session_id)

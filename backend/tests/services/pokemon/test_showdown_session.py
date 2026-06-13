@@ -1204,6 +1204,56 @@ async def test_autopilot_connects_searches_responds_and_stops_on_result():
 
 
 @pytest.mark.asyncio
+async def test_autopilot_live_readiness_gate_blocks_before_sending_commands():
+    connector = FakeShowdownConnector([])
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="", team=None, connector=connector)
+
+    result = await service.autopilot(
+        session.session_id,
+        max_messages=5,
+        auto_search=True,
+        require_live_readiness=True,
+    )
+
+    assert result["actions"] == ["connected"]
+    assert result["sent"] == []
+    assert result["steps"] == []
+    assert result["readiness_gate"]["status"] == "blocked"
+    assert result["readiness_gate"]["blocked_count"] == 1
+    assert result["readiness_gate"]["blocked_checks"][0]["id"] == "username"
+    assert result["session"]["status"] == "readiness_blocked"
+    assert result["session"]["pending_command_count"] == 0
+    assert result["session"]["connection_diagnostics"]["stage"] == "live_readiness_blocked"
+    assert result["run_summary"]["stopped_reason"] == "live_readiness_blocked"
+    assert result["run_summary"]["readiness_gate_status"] == "blocked"
+    assert connector.sent == []
+
+
+@pytest.mark.asyncio
+async def test_autopilot_live_readiness_gate_allows_ready_ladder_execution():
+    connector = FakeShowdownConnector([">battle-gen9vgc-12\n|win|Bot"])
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None, connector=connector)
+
+    result = await service.autopilot(
+        session.session_id,
+        max_messages=5,
+        auto_search=True,
+        require_live_readiness=True,
+    )
+
+    assert result["actions"] == ["connected", "search_queued"]
+    assert result["readiness_gate"]["allowed"] is True
+    assert result["readiness_gate"]["status"] == "warning"
+    assert result["run_summary"]["readiness_gate_status"] == "warning"
+    assert result["sent"][0].startswith("|/utm ")
+    assert result["sent"][1] == "|/search gen9vgc2024regg"
+    assert result["session"]["status"] == "finished"
+    assert result["session"]["result"] == {"type": "win", "winner": "Bot"}
+
+
+@pytest.mark.asyncio
 async def test_run_history_keeps_recent_summaries_only():
     service = PokemonShowdownSessionService()
     session = service.create_session(username="Bot", team=None, connector=FakeShowdownConnector([]))

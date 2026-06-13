@@ -335,6 +335,8 @@ class ShowdownSessionState:
             add("run_once", "Retry login", "Request a new assertion from the next challstr payload.", "high")
         elif stage == "decision_audit_blocked" or self.status == "choice_blocked":
             add("review_decision", "Review choice", "Inspect the blocked decision audit before sending any Showdown command.", "high")
+        elif stage == "live_readiness_blocked" or self.status == "readiness_blocked":
+            add("review_readiness", "Review readiness", "Fix the blocked live-readiness checks before sending Showdown commands.", "high")
 
         if pending_count:
             add("flush_pending", "Flush commands", f"Send {pending_count} queued Showdown command(s).", "high")
@@ -349,7 +351,7 @@ class ShowdownSessionState:
             add("research_team", "Research team", "Attach matchup and usage knowledge for the current team.", "normal")
         if not connected and self.status not in {"finished", "closed"}:
             add("connect", "Connect", "Open the Pokemon Showdown websocket for this session.", "normal")
-        if self.status in {"ready", "connected", "authenticated", "error"} and not (self.search or {}).get("searching"):
+        if self.status in {"ready", "connected", "authenticated", "error", "readiness_blocked"} and not (self.search or {}).get("searching"):
             add("start_search", "Queue search", f"Queue a ladder search for {self.showdown_format}.", "normal")
         if connected and self.status in {"searching", "battling", "choosing", "responded", "connected", "authenticated"}:
             add("autopilot", "Run autopilot", "Receive messages, make choices, and send commands until a stop condition.", "normal")
@@ -753,11 +755,13 @@ class PokemonShowdownSessionService:
         auto_search: bool = True,
         close_on_finish: bool = False,
         stop_on_error: bool = True,
+        require_live_readiness: bool = False,
     ) -> dict[str, Any]:
         state = self._require_session(session_id)
         connector = self.connectors[session_id]
         actions: list[str] = []
         initial_sent: list[str] = []
+        readiness_gate: dict[str, Any] | None = None
 
         if not connector.websocket:
             self._set_diagnostic(state, "connecting", connected=False, websocket_url=connector.server_url)
@@ -769,6 +773,48 @@ class PokemonShowdownSessionService:
             state.status = "connected"
             self._set_diagnostic(state, "connected", connected=True)
             actions.append("connected")
+
+        if require_live_readiness and (auto_search or send_commands):
+            readiness_gate = self._live_execution_gate(
+                state,
+                allow_missing_ladder=auto_search,
+                allow_pending_commands=send_commands,
+            )
+            if not readiness_gate["allowed"]:
+                state.status = "readiness_blocked"
+                state.last_error = readiness_gate["summary"]
+                self._set_diagnostic(state, "live_readiness_blocked", readiness_gate=readiness_gate)
+                state.touch()
+                run_summary = self._store_run_summary(
+                    state,
+                    {
+                        "status": state.status,
+                        "stopped_reason": "live_readiness_blocked",
+                        "step_count": 0,
+                        "max_messages": max_messages,
+                        "command_count": 0,
+                        "sent_count": 0,
+                        "total_sent_count": 0,
+                        "decision_count": 0,
+                        "actions": actions,
+                        "initial_sent_count": 0,
+                        "readiness_gate_status": readiness_gate["status"],
+                        "readiness_blocked_count": readiness_gate["blocked_count"],
+                        "readiness_warning_count": readiness_gate["warning_count"],
+                        "readiness_gate_summary": readiness_gate["summary"],
+                        "error": state.last_error,
+                        "result": state.result,
+                    },
+                )
+                return {
+                    "session": state.to_dict(),
+                    "steps": [],
+                    "sent": [],
+                    "actions": actions,
+                    "readiness_gate": readiness_gate,
+                    "run_summary": run_summary,
+                }
+            self._set_diagnostic(state, "live_readiness_ready", readiness_gate=readiness_gate)
 
         if auto_search and self._should_queue_ladder_search(state):
             self.start_ladder_search(session_id)
@@ -798,6 +844,11 @@ class PokemonShowdownSessionService:
         run_summary["actions"] = actions
         run_summary["initial_sent_count"] = len(initial_sent)
         run_summary["total_sent_count"] = int(run_summary.get("sent_count") or 0) + len(initial_sent)
+        if readiness_gate:
+            run_summary["readiness_gate_status"] = readiness_gate["status"]
+            run_summary["readiness_blocked_count"] = readiness_gate["blocked_count"]
+            run_summary["readiness_warning_count"] = readiness_gate["warning_count"]
+            run_summary["readiness_gate_summary"] = readiness_gate["summary"]
         state = self._require_session(session_id)
         run_summary = self._store_run_summary(state, run_summary, replace_last=True)
         session = state.to_dict()
@@ -806,6 +857,7 @@ class PokemonShowdownSessionService:
             "steps": run_result["steps"],
             "sent": initial_sent,
             "actions": actions,
+            "readiness_gate": readiness_gate,
             "run_summary": run_summary,
         }
 
@@ -836,6 +888,65 @@ class PokemonShowdownSessionService:
             return False
         search_command = f"|/search {state.showdown_format}"
         return search_command not in state.command_log
+
+    def _live_execution_gate(
+        self,
+        state: ShowdownSessionState,
+        *,
+        allow_missing_ladder: bool,
+        allow_pending_commands: bool,
+        require_knowledge: bool = False,
+    ) -> dict[str, Any]:
+        readiness = state._live_readiness()
+        hard_check_ids = {"username", "team", "login", "connection", "diagnostics"}
+        blocked_checks: list[dict[str, Any]] = []
+        warning_checks: list[dict[str, Any]] = []
+
+        for check in readiness.get("checks") or []:
+            check_id = str(check.get("id") or "")
+            status = check.get("status")
+            if status == "blocked":
+                blocked_checks.append(check)
+                continue
+            if status != "action_required":
+                continue
+            if check_id in hard_check_ids:
+                blocked_checks.append(check)
+            elif check_id == "ladder" and not allow_missing_ladder:
+                blocked_checks.append(check)
+            elif check_id == "commands" and not allow_pending_commands:
+                blocked_checks.append(check)
+            elif check_id == "knowledge" and require_knowledge:
+                blocked_checks.append(check)
+            else:
+                warning_checks.append(check)
+
+        if blocked_checks:
+            status = "blocked"
+            summary = "Live readiness gate blocked Showdown command sending: " + "; ".join(
+                str(check.get("detail") or check.get("label") or check.get("id")) for check in blocked_checks[:3]
+            )
+        elif warning_checks:
+            status = "warning"
+            summary = "Live readiness gate allowed execution with warnings: " + "; ".join(
+                str(check.get("detail") or check.get("label") or check.get("id")) for check in warning_checks[:3]
+            )
+        else:
+            status = "ready"
+            summary = "Live readiness gate passed."
+
+        return {
+            "allowed": not blocked_checks,
+            "status": status,
+            "summary": summary,
+            "readiness_status": readiness.get("status"),
+            "readiness_score": readiness.get("score"),
+            "blocked_count": len(blocked_checks),
+            "warning_count": len(warning_checks),
+            "blocked_checks": blocked_checks,
+            "warning_checks": warning_checks,
+            "recommended_actions": readiness.get("recommended_actions") or [],
+        }
 
     def _build_run_summary(
         self,

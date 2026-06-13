@@ -666,6 +666,7 @@ export default function PokemonBattlePage() {
         auto_respond: true,
         send_commands: true,
         auto_search: true,
+        require_live_readiness: true,
         max_messages: showdownRunLimit,
         stop_on_finished: true,
       })).data;
@@ -748,6 +749,7 @@ export default function PokemonBattlePage() {
         max_messages: showdownRunLimit,
         auto_search: true,
         send_commands: true,
+        require_live_readiness: true,
         stop_on_finished: true,
       })).data;
       const result = response.result || {};
@@ -780,6 +782,7 @@ export default function PokemonBattlePage() {
         max_messages: showdownRunLimit,
         auto_search: true,
         send_commands: true,
+        require_live_readiness: true,
         stop_on_finished: false,
         stop_on_error: true,
       })).data;
@@ -849,6 +852,7 @@ export default function PokemonBattlePage() {
     ['Phase 45', 'Matchup 信号反哺自动决策，出招候选展示 matchup_used 证据'],
     ['Phase 46', '自动选择输出决策安全审计，标记可发送状态、风险检查和兜底选择'],
     ['Phase 47', '自动驾驶执行前应用决策审计门控，阻断 blocked 命令并在运行摘要中展示原因'],
+    ['Phase 48', '一键自动驾驶启用实战就绪 gate，未通过登录、队伍、连接等检查时停止发送'],
   ];
 
   return (
@@ -1651,6 +1655,8 @@ export default function PokemonBattlePage() {
                   <Metric label="Decisions" value={showdownRunSummary.decision_count ?? 0} compact />
                   <Metric label="Audit" value={showdownRunSummary.decision_audit_status || '-'} compact />
                   <Metric label="Blocked" value={showdownRunSummary.audit_blocked_count ?? 0} compact />
+                  <Metric label="Gate" value={showdownRunSummary.readiness_gate_status || '-'} compact />
+                  <Metric label="Gate blocks" value={showdownRunSummary.readiness_blocked_count ?? 0} compact />
                 </div>
                 {showdownRunSummary.last_decision_type ? (
                   <div className="mt-2 rounded bg-black/30 p-2">
@@ -1664,6 +1670,11 @@ export default function PokemonBattlePage() {
                 {showdownRunSummary.stopped_reason === 'decision_audit_blocked' ? (
                   <div className="mt-2 break-words rounded border border-amber-500/30 bg-amber-500/10 p-2 text-amber-100">
                     Autopilot paused before sending because the latest decision audit was blocked.
+                  </div>
+                ) : null}
+                {showdownRunSummary.stopped_reason === 'live_readiness_blocked' ? (
+                  <div className="mt-2 break-words rounded border border-red-500/30 bg-red-500/10 p-2 text-red-100">
+                    {showdownRunSummary.readiness_gate_summary || 'Autopilot stopped before sending because live readiness checks failed.'}
                   </div>
                 ) : null}
                 {showdownRunSummary.actions?.length ? (
