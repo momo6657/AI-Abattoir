@@ -54,7 +54,8 @@ class ShowdownSessionState:
     team_source: str = "none"
     team_reason: str = ""
     team_species: list[str] = field(default_factory=list)
-    team_adjustments: list[dict[str, str]] = field(default_factory=list)
+    team_adjustments: list[dict[str, Any]] = field(default_factory=list)
+    team_audit: dict[str, Any] = field(default_factory=dict)
     command_log: list[str] = field(default_factory=list)
     sent_log: list[str] = field(default_factory=list)
     event_log: list[dict[str, Any]] = field(default_factory=list)
@@ -387,6 +388,7 @@ class ShowdownSessionState:
             "team_reason": self.team_reason,
             "team_species": self.team_species,
             "team_adjustments": self.team_adjustments,
+            "team_audit": self.team_audit,
             "team_preview": self._team_preview(),
             "has_team": self.team is not None,
             "auto_login": self.auto_login,
@@ -1200,6 +1202,7 @@ class PokemonShowdownSessionService:
         state.team_reason = generated.reason
         state.team_species = generated.species()
         state.team_adjustments = generated.adjustments
+        state.team_audit = generated.audit
 
     def _prepare_team(
         self,

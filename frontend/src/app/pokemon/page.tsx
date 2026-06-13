@@ -854,6 +854,7 @@ export default function PokemonBattlePage() {
     ['Phase 47', '自动驾驶执行前应用决策审计门控，阻断 blocked 命令并在运行摘要中展示原因'],
     ['Phase 48', '一键自动驾驶启用实战就绪 gate，未通过登录、队伍、连接等检查时停止发送'],
     ['Phase 49', '多格式策略画像反哺首发、换人和出招评分，区分双打、单打 OU 与随机战'],
+    ['Phase 50', '自动建队输出格式角色覆盖审计，暴露队伍分数、策略缺口和学习调整证据'],
   ];
 
   return (
@@ -961,6 +962,8 @@ export default function PokemonBattlePage() {
                 <Metric label="Next" value={activeFormatCapability.learning?.next_mission_goal || '-'} compact />
                 <Metric label="Style" value={activeFormatCapability.strategy_profile?.archetype || activeFormatCapability.battle_policy?.archetype || '-'} compact />
                 <Metric label="Priorities" value={(activeFormatCapability.strategy_profile?.priorities || []).length} compact />
+                <Metric label="Team Score" value={activeFormatCapability.team?.audit?.score ?? '-'} compact />
+                <Metric label="Audit" value={activeFormatCapability.team?.audit?.status || '-'} compact />
               </div>
             ) : null}
             {activeFormatCapability?.strategy_profile?.priorities?.length ? (
@@ -975,6 +978,18 @@ export default function PokemonBattlePage() {
             {activeFormatCapability?.strategy_profile?.opening_style ? (
               <div className="mt-2 break-words rounded border border-border bg-black/20 p-2 text-[10px] leading-4 text-gray-400">
                 {activeFormatCapability.strategy_profile.opening_style}
+              </div>
+            ) : null}
+            {activeFormatCapability?.team?.audit?.gaps?.length ? (
+              <div className="mt-2 rounded border border-amber-500/30 bg-amber-500/10 p-2">
+                <div className="text-[10px] font-semibold uppercase text-amber-200">Team gaps</div>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {activeFormatCapability.team.audit.gaps.slice(0, 5).map((gap: string) => (
+                    <span key={`format-team-gap-${gap}`} className="rounded bg-black/30 px-1.5 py-0.5 text-[10px] text-amber-100">
+                      {gap}
+                    </span>
+                  ))}
+                </div>
               </div>
             ) : null}
           </div>
@@ -1979,6 +1994,34 @@ export default function PokemonBattlePage() {
                       {showdownSession.team_reason}
                     </div>
                   )}
+                  {showdownSession.team_audit && Object.keys(showdownSession.team_audit).length ? (
+                    <div className="rounded-md border border-border bg-black/20 p-2">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-semibold uppercase text-gray-500">Team audit</span>
+                        <span className="rounded bg-black/30 px-2 py-0.5 text-[10px] text-gray-200">
+                          {showdownSession.team_audit.status || 'none'} · {showdownSession.team_audit.score ?? 0}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Metric label="Members" value={showdownSession.team_audit.member_count ?? 0} compact />
+                        <Metric label="Covered" value={(showdownSession.team_audit.covered_priorities || []).length} compact />
+                      </div>
+                      {showdownSession.team_audit.gaps?.length ? (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {showdownSession.team_audit.gaps.slice(0, 5).map((gap: string) => (
+                            <span key={`session-team-gap-${gap}`} className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-100">
+                              {gap}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                      {showdownSession.team_audit.recommendation ? (
+                        <div className="mt-2 break-words text-[10px] leading-4 text-gray-500">
+                          {showdownSession.team_audit.recommendation}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                   {showdownSession.team_adjustments?.length ? (
                     <div className="space-y-2">
                       <div className="text-[10px] font-semibold uppercase text-gray-500">Team adaptation</div>

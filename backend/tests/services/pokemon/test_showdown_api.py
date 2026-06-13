@@ -83,6 +83,8 @@ async def test_showdown_format_capabilities_endpoint_summarizes_multi_format_sup
     assert formats["gen9randombattle"]["team"]["source"] == "not_required"
     assert formats["gen9randombattle"]["strategy_profile"]["archetype"] == "random_single"
     assert formats["gen9ou"]["team"]["can_build"] is True
+    assert formats["gen9ou"]["team"]["audit"]["status"] in {"passed", "warning"}
+    assert "entry_hazards" in formats["gen9ou"]["team"]["audit"]["covered_priorities"]
     assert formats["gen9ou"]["battle_policy"]["target_policy"] == "no_target"
     assert formats["gen9ou"]["battle_policy"]["archetype"] == "structured_single"
     assert "entry_hazards" in formats["gen9ou"]["battle_policy"]["priorities"]
@@ -116,6 +118,8 @@ async def test_showdown_tactical_briefing_combines_team_learning_and_plan(setup_
     assert data["team"]["requires_team"] is True
     assert data["team"]["species"]
     assert data["team"]["preview"][0]["moves"]
+    assert data["team"]["audit"]["member_count"] == len(data["team"]["species"])
+    assert "fake_out_pressure" in data["team"]["audit"]["priorities"]
     assert data["learning_profile"]["battles"] == 1
     assert data["mission_recommendation"]["mission_goal"] == "prepare"
     assert "avoid_free_knockouts" in data["tactical_plan"]["priorities"]
@@ -487,6 +491,8 @@ async def test_showdown_session_processes_payload_and_returns_commands(setup_db,
     assert created_data["mode_source"] == "manual"
     assert created_data["team_source"] == "template"
     assert len(created_data["team_species"]) == 4
+    assert created_data["team_audit"]["member_count"] == 4
+    assert created_data["team_audit"]["status"] in {"passed", "warning"}
     request = {
         "rqid": 21,
         "active": [

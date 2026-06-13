@@ -25,6 +25,10 @@ def test_generate_singles_showdown_team_for_ou():
     packed = PokemonShowdownConnector().pack_team(generated.team)
     assert packed.startswith("Great Tusk||boosterenergy|protosynthesis|")
     assert "|50|" not in packed
+    assert generated.audit["status"] in {"passed", "warning"}
+    assert "entry_hazards" in generated.audit["covered_priorities"]
+    assert "hazard_removal" in generated.audit["covered_priorities"]
+    assert any(member["species"] == "Great Tusk" for member in generated.audit["member_roles"])
 
 
 def test_generate_doubles_showdown_team_for_doubles_ou():
@@ -35,6 +39,9 @@ def test_generate_doubles_showdown_team_for_doubles_ou():
     assert len(generated.team) == 6
     assert "Incineroar" in generated.species()
     assert all(member["level"] == 100 for member in generated.team)
+    assert generated.audit["score"] > 0
+    assert "fake_out_pressure" in generated.audit["covered_priorities"]
+    assert "speed_control" in generated.audit["covered_priorities"]
 
 
 def test_random_battle_does_not_generate_team():

@@ -14,7 +14,8 @@ class GeneratedShowdownTeam:
     team: list[dict[str, Any]]
     source: str
     reason: str
-    adjustments: list[dict[str, str]] = field(default_factory=list)
+    adjustments: list[dict[str, Any]] = field(default_factory=list)
+    audit: dict[str, Any] = field(default_factory=dict)
 
     def species(self) -> list[str]:
         return [str(member.get("species") or member.get("name") or "Unknown") for member in self.team]
@@ -35,26 +36,26 @@ class PokemonShowdownTeamFactory:
             return None
         if format_info.template_format:
             team = self._template_team(format_info.id, mode)
-            return self._with_learning_adjustments(
+            return self._finalize_team(
                 team=team[:format_info.team_size],
                 source="template",
                 reason=f"Selected a {mode} local template for {format_info.name}.",
-                battle_type=format_info.battle_type,
+                format_info=format_info,
                 learning_profile=learning_profile,
             )
         if format_info.battle_type == "double":
-            return self._with_learning_adjustments(
+            return self._finalize_team(
                 team=self._doubles_showdown_team(),
                 source="showdown_factory",
                 reason=f"Generated a stable doubles team for {format_info.name}.",
-                battle_type=format_info.battle_type,
+                format_info=format_info,
                 learning_profile=learning_profile,
             )
-        return self._with_learning_adjustments(
+        return self._finalize_team(
             team=self._singles_showdown_team(),
             source="showdown_factory",
             reason=f"Generated a stable singles team for {format_info.name}.",
-            battle_type=format_info.battle_type,
+            format_info=format_info,
             learning_profile=learning_profile,
         )
 
@@ -87,20 +88,27 @@ class PokemonShowdownTeamFactory:
                 return template
         return None
 
-    def _with_learning_adjustments(
+    def _finalize_team(
         self,
         *,
         team: list[dict[str, Any]],
         source: str,
         reason: str,
-        battle_type: str,
+        format_info: Any,
         learning_profile: dict[str, Any] | None,
     ) -> GeneratedShowdownTeam:
-        adjustments = self._learning_adjustments(team, battle_type, learning_profile)
+        adjustments = self._learning_adjustments(team, format_info.battle_type, learning_profile)
         if adjustments:
             source = f"learned_{source}"
             reason = f"{reason} Applied learned safety adjustments from the current Showdown profile."
-        return GeneratedShowdownTeam(team=team, source=source, reason=reason, adjustments=adjustments)
+        audit = self._build_team_audit(
+            team=team,
+            format_info=format_info,
+            source=source,
+            adjustments=adjustments,
+            learning_profile=learning_profile,
+        )
+        return GeneratedShowdownTeam(team=team, source=source, reason=reason, adjustments=adjustments, audit=audit)
 
     def _learning_adjustments(
         self,
@@ -139,6 +147,127 @@ class PokemonShowdownTeamFactory:
                     }
                 )
         return adjustments
+
+    def _build_team_audit(
+        self,
+        *,
+        team: list[dict[str, Any]],
+        format_info: Any,
+        source: str,
+        adjustments: list[dict[str, Any]],
+        learning_profile: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        strategy_profile = format_info.strategy_profile()
+        priorities = list(strategy_profile.get("priorities") or [])
+        member_roles = [self._member_audit(index + 1, member) for index, member in enumerate(team)]
+        present_roles = sorted({role for member in member_roles for role in member["roles"]})
+        covered_priorities = [priority for priority in priorities if priority in present_roles]
+        gaps = [priority for priority in priorities if priority not in present_roles]
+        checks: list[dict[str, Any]] = []
+
+        def add_check(check_id: str, status: str, detail: str) -> None:
+            checks.append({"id": check_id, "status": status, "detail": detail})
+
+        expected_size = int(format_info.team_size or len(team) or 0)
+        if not team:
+            add_check("team_present", "blocked", "No generated team is available for this format.")
+        else:
+            add_check("team_present", "passed", f"{len(team)} Pokemon are available for upload.")
+
+        if expected_size and len(team) < expected_size:
+            add_check("team_size", "blocked", f"Team has {len(team)} Pokemon but the format expects {expected_size}.")
+        else:
+            add_check("team_size", "passed", f"Team size matches the {format_info.name} requirement.")
+
+        if priorities and not covered_priorities:
+            add_check("format_roles", "blocked", "No generated member covers the format strategy priorities.")
+        elif gaps:
+            add_check("format_roles", "warning", f"Covered {len(covered_priorities)} priority role(s); gaps remain: {', '.join(gaps[:4])}.")
+        else:
+            add_check("format_roles", "passed", "Generated team covers the active format strategy priorities.")
+
+        if adjustments:
+            add_check("learning_adjustments", "passed", f"{len(adjustments)} learned adjustment(s) were applied.")
+        elif learning_profile and int(learning_profile.get("battles") or 0) > 0:
+            add_check("learning_adjustments", "warning", "Learning profile was available, but no team mutation was needed.")
+        else:
+            add_check("learning_adjustments", "warning", "No completed learning samples are available for team adaptation yet.")
+
+        blocked = sum(1 for check in checks if check["status"] == "blocked")
+        warnings = sum(1 for check in checks if check["status"] == "warning")
+        score = max(0, 100 - blocked * 45 - warnings * 12 - len(gaps) * 3)
+        if blocked:
+            status = "blocked"
+            recommendation = "Fix team generation before queueing this format."
+        elif gaps:
+            status = "warning"
+            recommendation = "The team is playable, but research or later learning should cover the remaining role gaps."
+        else:
+            status = "passed"
+            recommendation = "The generated team is aligned with the active format profile."
+
+        return {
+            "status": status,
+            "score": score,
+            "source": source,
+            "format_id": format_info.id,
+            "archetype": strategy_profile.get("archetype"),
+            "expected_team_size": expected_size,
+            "member_count": len(team),
+            "priorities": priorities,
+            "covered_priorities": covered_priorities,
+            "gaps": gaps,
+            "roles": present_roles,
+            "member_roles": member_roles,
+            "adjustment_count": len(adjustments),
+            "checks": checks,
+            "recommendation": recommendation,
+        }
+
+    def _member_audit(self, slot: int, member: dict[str, Any]) -> dict[str, Any]:
+        move_ids = {self._to_id(move) for move in member.get("moves") or []}
+        ability_id = self._to_id(member.get("ability"))
+        roles: set[str] = set()
+        if "fakeout" in move_ids:
+            roles.add("fake_out_pressure")
+        if move_ids & {"tailwind", "trickroom", "icywind", "thunderwave"}:
+            roles.add("speed_control")
+        if move_ids & {"followme", "ragepowder"}:
+            roles.add("redirection_support")
+        if move_ids & {"dazzlinggleam", "makeitrain", "heatwave", "earthquake", "rockslide", "bleakwindstorm"}:
+            roles.add("spread_damage")
+        if move_ids & {"protect", "detect", "spikyshield", "kingsshield"}:
+            roles.add("protect_positioning")
+        if ability_id == "intimidate":
+            roles.add("defensive_positioning")
+        if move_ids & {"stealthrock", "spikes", "toxicspikes", "stickyweb"}:
+            roles.add("entry_hazards")
+        if move_ids & {"rapidspin", "defog", "mortalspin", "tidyup"}:
+            roles.add("hazard_removal")
+        if move_ids & {"uturn", "voltswitch", "flipturn", "partingshot", "chillyreception"}:
+            roles.add("pivoting")
+        if move_ids & {"recover", "roost", "slackoff", "synthesis", "morningsun", "softboiled", "wish"}:
+            roles.add("recovery")
+        if move_ids & {"swordsdance", "nastyplot", "dragondance", "calmmind", "bulkup", "quiverdance"}:
+            roles.add("setup_cleaner")
+        if any(self._move_power_hint(move) >= 90 for move in member.get("moves") or []):
+            roles.add("immediate_damage")
+        return {
+            "slot": slot,
+            "species": str(member.get("species") or member.get("name") or "Unknown"),
+            "roles": sorted(roles),
+        }
+
+    def _to_id(self, value: Any) -> str:
+        return "".join(ch for ch in str(value or "").lower() if ch.isalnum())
+
+    def _move_power_hint(self, move: Any) -> int:
+        if not isinstance(move, dict):
+            return 0
+        try:
+            return int(move.get("basePower") or move.get("power") or 0)
+        except (TypeError, ValueError):
+            return 0
 
     def _add_protect_to_vulnerable_members(self, team: list[dict[str, Any]], *, limit: int) -> list[str]:
         core_moves = {"fake out", "tailwind", "trick room", "spore", "rage powder", "follow me", "protect"}

@@ -880,6 +880,7 @@ def _build_showdown_format_capability(format_info, learning_profile: dict | None
     team_source = "not_required"
     team_reason = f"{format_info.name} supplies teams on Pokemon Showdown."
     generated_species: list[str] = []
+    team_audit: dict[str, Any] = {}
     can_build_team = True
     if format_info.requires_team:
         generated = pokemon_showdown_team_factory.generate(
@@ -891,6 +892,7 @@ def _build_showdown_format_capability(format_info, learning_profile: dict | None
         team_source = generated.source if generated else "unavailable"
         team_reason = generated.reason if generated else f"No autonomous team builder is available for {format_info.name}."
         generated_species = generated.species() if generated else []
+        team_audit = generated.audit if generated else {}
 
     learning_profile = learning_profile or {}
     battles = int(learning_profile.get("battles") or 0)
@@ -924,6 +926,7 @@ def _build_showdown_format_capability(format_info, learning_profile: dict | None
             "source": team_source,
             "reason": team_reason,
             "species": generated_species,
+            "audit": team_audit,
         },
         "battle_policy": {
             "battle_type": format_info.battle_type,
@@ -969,7 +972,8 @@ async def _build_showdown_tactical_briefing(
     generated = None
     team_members: list[dict[str, Any]] = []
     team_species: list[str] = []
-    team_adjustments: list[dict[str, str]] = []
+    team_adjustments: list[dict[str, Any]] = []
+    team_audit: dict[str, Any] = {}
     if format_info.requires_team:
         generated = pokemon_showdown_team_factory.generate(
             format_info.id,
@@ -980,6 +984,7 @@ async def _build_showdown_tactical_briefing(
             team_members = generated.team
             team_species = generated.species()
             team_adjustments = generated.adjustments
+            team_audit = generated.audit
     else:
         team_species = []
 
@@ -1027,6 +1032,7 @@ async def _build_showdown_tactical_briefing(
             "reason": generated.reason if generated else capability["team"]["reason"],
             "species": team_species,
             "adjustments": team_adjustments,
+            "audit": team_audit if team_audit else capability["team"].get("audit", {}),
             "preview": [
                 {
                     "slot": index + 1,
