@@ -40,6 +40,36 @@ class PokemonBattleFormat:
             "template_format": self.template_format,
             "description": self.description,
             "tags": self.tags,
+            "strategy_profile": self.strategy_profile(),
+        }
+
+    def strategy_profile(self) -> dict[str, Any]:
+        """Return a compact policy profile for format-aware autonomous choices."""
+        target_policy = "targeted" if self.active_pokemon > 1 else "no_target"
+        if not self.requires_team:
+            archetype = "random_single"
+            opening_style = "Scout the generated set, preserve HP, and convert high-value setup or damage windows."
+            priorities = ["immediate_damage", "setup_when_safe", "recovery_above_chip", "avoid_blind_sacrifices"]
+            risk_controls = ["do_not_assume_team_preview", "avoid_low_value_status_when_behind"]
+        elif self.battle_type == "double":
+            archetype = "coordinated_double"
+            opening_style = "Build turn-one position with Fake Out, speed control, redirection, and spread pressure."
+            priorities = ["fake_out_pressure", "speed_control", "redirection_support", "spread_damage", "protect_positioning"]
+            risk_controls = ["avoid_double_targeting_into_protect", "protect_low_confidence_slots", "preserve_board_position"]
+        else:
+            archetype = "structured_single"
+            opening_style = "Create long-term value with hazards, pivots, removal, recovery, and cleaner preservation."
+            priorities = ["entry_hazards", "hazard_removal", "pivoting", "recovery", "setup_cleaner"]
+            risk_controls = ["avoid_unnecessary_tera", "preserve_defensive_pivots", "do_not_trade_cleaner_early"]
+
+        return {
+            "archetype": archetype,
+            "target_policy": target_policy,
+            "opening_style": opening_style,
+            "priorities": priorities,
+            "risk_controls": risk_controls,
+            "supports_team_preview": self.requires_team,
+            "supports_random_sets": not self.requires_team,
         }
 
 

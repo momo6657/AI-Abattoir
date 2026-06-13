@@ -531,6 +531,61 @@ def test_plan_moves_omits_target_for_singles_format():
     assert plan.choice_details[0]["target"] is None
 
 
+def test_plan_moves_uses_singles_format_policy_for_entry_hazards():
+    agent = PokemonShowdownBattleAgent()
+    payload = {
+        "rqid": 31,
+        "active": [
+            {
+                "moves": [
+                    {"id": "moonblast", "target": "normal", "basePower": 80, "pp": 15},
+                    {"id": "stealthrock", "target": "foeSide", "pp": 20},
+                    {"id": "recover", "target": "self", "pp": 8},
+                ],
+            }
+        ],
+    }
+
+    plan = agent.plan_from_raw_request(
+        payload,
+        "battle-gen9ou-2",
+        battle_format="gen9ou",
+    )
+
+    assert plan.command == "battle-gen9ou-2|/choose move 2|31"
+    assert plan.choice_details[0]["move"] == "stealthrock"
+    assert plan.choice_details[0]["format_policy_used"]
+    assert "format policy prioritizes entry hazards" in plan.choice_details[0]["reason"]
+    assert plan.choice_details[0]["legal_candidates"][0]["format_policy_used"]
+    assert "Format strategy profile adjusted" in plan.reason
+
+
+def test_plan_moves_uses_random_battle_policy_for_setup_windows():
+    agent = PokemonShowdownBattleAgent()
+    payload = {
+        "rqid": 32,
+        "active": [
+            {
+                "moves": [
+                    {"id": "slash", "target": "normal", "basePower": 70, "pp": 20},
+                    {"id": "swordsdance", "target": "self", "pp": 20},
+                ],
+            }
+        ],
+    }
+
+    plan = agent.plan_from_raw_request(
+        payload,
+        "battle-gen9randombattle-2",
+        battle_format="gen9randombattle",
+    )
+
+    assert plan.command == "battle-gen9randombattle-2|/choose move 2|32"
+    assert plan.choice_details[0]["move"] == "swordsdance"
+    assert plan.choice_details[0]["format_policy_used"]
+    assert "random-battle setup" in plan.choice_details[0]["reason"]
+
+
 def test_plan_wait_request_returns_no_command():
     agent = PokemonShowdownBattleAgent()
 

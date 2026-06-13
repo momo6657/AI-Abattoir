@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.services.pokemon.format_catalog import pokemon_format_catalog
 from app.services.pokemon.showdown_connector import (
     PokemonShowdownConnector,
     ShowdownBattleRequest,
@@ -131,6 +132,7 @@ class PokemonShowdownBattleAgent:
         mode: str = "balanced",
         team_size: int | None = None,
         active_pokemon: int | None = None,
+        battle_format: str | None = None,
         allow_tera: bool = True,
         knowledge_context: dict[str, Any] | None = None,
         learning_profile: dict[str, Any] | None = None,
@@ -144,6 +146,7 @@ class PokemonShowdownBattleAgent:
             mode=mode,
             team_size=team_size,
             active_pokemon=active_pokemon,
+            battle_format=battle_format,
             allow_tera=allow_tera,
             knowledge_context=knowledge_context,
             learning_profile=learning_profile,
@@ -159,6 +162,7 @@ class PokemonShowdownBattleAgent:
         mode: str = "balanced",
         team_size: int | None = None,
         active_pokemon: int | None = None,
+        battle_format: str | None = None,
         allow_tera: bool = True,
         knowledge_context: dict[str, Any] | None = None,
         learning_profile: dict[str, Any] | None = None,
@@ -179,6 +183,7 @@ class PokemonShowdownBattleAgent:
             mode=mode,
             team_size=team_size,
             active_pokemon=active_pokemon,
+            battle_format=battle_format,
             allow_tera=allow_tera,
             knowledge_context=knowledge_context,
             learning_profile=learning_profile,
@@ -193,12 +198,14 @@ class PokemonShowdownBattleAgent:
         mode: str = "balanced",
         team_size: int | None = None,
         active_pokemon: int | None = None,
+        battle_format: str | None = None,
         allow_tera: bool = True,
         knowledge_context: dict[str, Any] | None = None,
         learning_profile: dict[str, Any] | None = None,
         team_context: list[dict[str, Any]] | None = None,
         battlefield_context: dict[str, Any] | None = None,
     ) -> ShowdownChoicePlan:
+        format_policy = self._format_policy(battle_format, active_pokemon=active_pokemon)
         if request is None:
             return ShowdownChoicePlan(
                 room_id="",
@@ -220,6 +227,7 @@ class PokemonShowdownBattleAgent:
                 request,
                 team_size,
                 mode=mode,
+                format_policy=format_policy,
                 knowledge_context=knowledge_context,
                 learning_profile=learning_profile,
                 team_context=team_context,
@@ -229,6 +237,7 @@ class PokemonShowdownBattleAgent:
             return self._plan_force_switch(
                 request,
                 mode=mode,
+                format_policy=format_policy,
                 learning_profile=learning_profile,
                 team_context=team_context,
                 battlefield_context=battlefield_context,
@@ -238,6 +247,7 @@ class PokemonShowdownBattleAgent:
                 request,
                 mode=mode,
                 active_pokemon=active_pokemon,
+                format_policy=format_policy,
                 allow_tera=allow_tera,
                 knowledge_context=knowledge_context,
                 learning_profile=learning_profile,
@@ -261,6 +271,7 @@ class PokemonShowdownBattleAgent:
         team_size: int | None,
         *,
         mode: str,
+        format_policy: dict[str, Any],
         knowledge_context: dict[str, Any] | None,
         learning_profile: dict[str, Any] | None,
         team_context: list[dict[str, Any]] | None,
@@ -273,6 +284,7 @@ class PokemonShowdownBattleAgent:
                 index + 1,
                 member,
                 mode=mode,
+                format_policy=format_policy,
                 knowledge_context=knowledge_context,
                 learning_profile=learning_profile,
                 team_context=team_context,
@@ -300,6 +312,8 @@ class PokemonShowdownBattleAgent:
         reason = f"Selected {len(slots)} healthy team slots for preview."
         if any(detail.get("opponent_preview_used") for detail in details):
             reason = f"{reason} Lead order was scored from team roles, mode, opponent preview, knowledge, and learning profile."
+        elif any(detail.get("format_policy_used") for detail in details):
+            reason = f"{reason} Lead order was scored from the active format strategy profile."
         elif any(detail.get("strategy_used") for detail in details):
             reason = f"{reason} Lead order was scored from team roles, mode, knowledge, and learning profile."
         return ShowdownChoicePlan(
@@ -319,6 +333,7 @@ class PokemonShowdownBattleAgent:
         member: dict[str, Any],
         *,
         mode: str,
+        format_policy: dict[str, Any],
         knowledge_context: dict[str, Any] | None,
         learning_profile: dict[str, Any] | None,
         team_context: list[dict[str, Any]] | None,
@@ -330,6 +345,7 @@ class PokemonShowdownBattleAgent:
             pokemon_name,
             team_member,
             mode=mode,
+            format_policy=format_policy,
             knowledge_context=knowledge_context,
             learning_profile=learning_profile,
             battlefield_context=battlefield_context,
@@ -344,6 +360,7 @@ class PokemonShowdownBattleAgent:
             "knowledge_used": any("knowledge context" in reason for reason in reasons),
             "learning_used": any("learning profile" in reason for reason in reasons),
             "opponent_preview_used": any("opponent preview" in reason for reason in reasons),
+            "format_policy_used": any("format policy" in reason for reason in reasons),
         }
 
     def _score_preview_candidate(
@@ -352,6 +369,7 @@ class PokemonShowdownBattleAgent:
         team_member: dict[str, Any] | None,
         *,
         mode: str,
+        format_policy: dict[str, Any],
         knowledge_context: dict[str, Any] | None,
         learning_profile: dict[str, Any] | None,
         battlefield_context: dict[str, Any] | None,
@@ -377,6 +395,19 @@ class PokemonShowdownBattleAgent:
         if moves & {"spore", "sleeppowder", "taunt"}:
             score += 12
             reasons.append("disruption move is useful early")
+        profile_priorities = set(format_policy.get("priorities") or [])
+        if "entry_hazards" in profile_priorities and moves & {"stealthrock", "spikes", "toxicspikes", "stickyweb"}:
+            score += 18
+            reasons.append("format policy values early hazard pressure")
+        if "pivoting" in profile_priorities and moves & {"uturn", "voltswitch", "flipturn", "partingshot"}:
+            score += 12
+            reasons.append("format policy values pivoting leads")
+        if "setup_cleaner" in profile_priorities and moves & {"swordsdance", "nastyplot", "dragondance", "calmmind"}:
+            score += 10
+            reasons.append("format policy keeps setup pressure available")
+        if "do_not_assume_team_preview" in set(format_policy.get("risk_controls") or []):
+            score += 6
+            reasons.append("format policy handles generated random sets conservatively")
         if mode == "aggressive" and moves & {"fakeout", "spore", "sleeppowder", "taunt"}:
             score += 8
             reasons.append("aggressive mode favors immediate disruption")
@@ -479,6 +510,7 @@ class PokemonShowdownBattleAgent:
         request: ShowdownBattleRequest,
         *,
         mode: str,
+        format_policy: dict[str, Any],
         learning_profile: dict[str, Any] | None,
         team_context: list[dict[str, Any]] | None,
         battlefield_context: dict[str, Any] | None,
@@ -501,6 +533,7 @@ class PokemonShowdownBattleAgent:
                 pokemon,
                 used_slots,
                 mode=mode,
+                format_policy=format_policy,
                 learning_profile=learning_profile,
                 team_context=team_context,
                 battlefield_context=battlefield_context,
@@ -540,6 +573,7 @@ class PokemonShowdownBattleAgent:
         *,
         mode: str,
         active_pokemon: int | None,
+        format_policy: dict[str, Any],
         allow_tera: bool,
         knowledge_context: dict[str, Any] | None,
         learning_profile: dict[str, Any] | None,
@@ -556,6 +590,7 @@ class PokemonShowdownBattleAgent:
                 allow_tera=allow_tera and index == 0,
                 active_index=index,
                 active_pokemon=active_pokemon,
+                format_policy=format_policy,
                 pokemon_name=active_species[index] if index < len(active_species) else "",
                 knowledge_context=knowledge_context,
                 learning_profile=learning_profile,
@@ -571,6 +606,8 @@ class PokemonShowdownBattleAgent:
         details = [detail for _choice, detail in planned]
         command = self.connector.build_choose_multi(request.room_id, choices, request.request_id)
         reason = "Scored legal moves by damage, utility, spread pressure, mode, and obvious risk."
+        if any(detail.get("format_policy_used") for detail in details):
+            reason = f"{reason} Format strategy profile adjusted the candidates."
         if any(detail.get("learning_used") for detail in details):
             reason = f"{reason} Learning profile nudged the plan toward safer play."
         return ShowdownChoicePlan(
@@ -592,6 +629,7 @@ class PokemonShowdownBattleAgent:
         allow_tera: bool,
         active_index: int,
         active_pokemon: int | None,
+        format_policy: dict[str, Any],
         pokemon_name: str,
         knowledge_context: dict[str, Any] | None,
         learning_profile: dict[str, Any] | None,
@@ -612,6 +650,7 @@ class PokemonShowdownBattleAgent:
                     side_pokemon,
                     used_switch_slots,
                     mode=mode,
+                    format_policy=format_policy,
                     learning_profile=learning_profile,
                     team_context=team_context,
                     battlefield_context=battlefield_context,
@@ -638,6 +677,7 @@ class PokemonShowdownBattleAgent:
                     move,
                     mode,
                     pokemon_name,
+                    format_policy,
                     knowledge_context,
                     learning_profile,
                     battlefield_context,
@@ -664,6 +704,7 @@ class PokemonShowdownBattleAgent:
             "knowledge_used": "knowledge context" in reason,
             "learning_used": "learning profile" in reason,
             "matchup_used": "matchup context" in reason,
+            "format_policy_used": "format policy" in reason,
             "legal_candidates": [
                 {
                     "slot": slot,
@@ -672,6 +713,7 @@ class PokemonShowdownBattleAgent:
                     "knowledge_used": "knowledge context" in candidate_reason,
                     "learning_used": "learning profile" in candidate_reason,
                     "matchup_used": "matchup context" in candidate_reason,
+                    "format_policy_used": "format policy" in candidate_reason,
                 }
                 for slot, candidate, candidate_score, candidate_reason in sorted(
                     scored_moves,
@@ -686,11 +728,13 @@ class PokemonShowdownBattleAgent:
         move: dict[str, Any],
         mode: str,
         pokemon_name: str = "",
+        format_policy: dict[str, Any] | None = None,
         knowledge_context: dict[str, Any] | None = None,
         learning_profile: dict[str, Any] | None = None,
         battlefield_context: dict[str, Any] | None = None,
     ) -> tuple[float, str]:
         move_id = self.connector.to_id(move.get("id") or move.get("move"))
+        format_bonus, format_reason = self._format_move_bonus(move_id, move, format_policy)
         knowledge_bonus, knowledge_reason = self._knowledge_move_bonus(move_id, pokemon_name, knowledge_context)
         learning_bonus, learning_reason = self._learning_move_bonus(move_id, learning_profile)
         matchup_bonus, matchup_reason = self._matchup_move_bonus(move_id, battlefield_context)
@@ -699,6 +743,8 @@ class PokemonShowdownBattleAgent:
             return self._with_policy_bonuses(
                 score,
                 f"protective move scored for {mode} mode",
+                format_bonus,
+                format_reason,
                 knowledge_bonus,
                 knowledge_reason,
                 learning_bonus,
@@ -722,6 +768,20 @@ class PokemonShowdownBattleAgent:
             "snarl": 58.0,
             "reflect": 56.0,
             "lightscreen": 56.0,
+            "stealthrock": 58.0,
+            "spikes": 54.0,
+            "toxicspikes": 50.0,
+            "stickyweb": 56.0,
+            "rapidspin": 50.0,
+            "defog": 50.0,
+            "recover": 50.0,
+            "roost": 50.0,
+            "slackoff": 50.0,
+            "synthesis": 46.0,
+            "swordsdance": 52.0,
+            "nastyplot": 52.0,
+            "dragondance": 54.0,
+            "calmmind": 50.0,
         }
         if move_id in utility_scores:
             score = utility_scores[move_id]
@@ -732,6 +792,8 @@ class PokemonShowdownBattleAgent:
             return self._with_policy_bonuses(
                 score,
                 f"utility move {move_id} matched tactical priority",
+                format_bonus,
+                format_reason,
                 knowledge_bonus,
                 knowledge_reason,
                 learning_bonus,
@@ -751,6 +813,8 @@ class PokemonShowdownBattleAgent:
         return self._with_policy_bonuses(
             score,
             f"damage move scored from base power in {mode} mode",
+            format_bonus,
+            format_reason,
             knowledge_bonus,
             knowledge_reason,
             learning_bonus,
@@ -763,6 +827,8 @@ class PokemonShowdownBattleAgent:
         self,
         score: float,
         reason: str,
+        format_bonus: float,
+        format_reason: str,
         knowledge_bonus: float,
         knowledge_reason: str,
         learning_bonus: float,
@@ -770,9 +836,21 @@ class PokemonShowdownBattleAgent:
         matchup_bonus: float,
         matchup_reason: str,
     ) -> tuple[float, str]:
+        score, reason = self._with_format_bonus(score, reason, format_bonus, format_reason)
         score, reason = self._with_knowledge_bonus(score, reason, knowledge_bonus, knowledge_reason)
         score, reason = self._with_learning_bonus(score, reason, learning_bonus, learning_reason)
         return self._with_matchup_bonus(score, reason, matchup_bonus, matchup_reason)
+
+    def _with_format_bonus(
+        self,
+        score: float,
+        reason: str,
+        format_bonus: float,
+        format_reason: str,
+    ) -> tuple[float, str]:
+        if not format_bonus:
+            return score, reason
+        return score + format_bonus, f"{reason}; {format_reason}"
 
     def _with_knowledge_bonus(
         self,
@@ -806,6 +884,65 @@ class PokemonShowdownBattleAgent:
         if not matchup_bonus:
             return score, reason
         return score + matchup_bonus, f"{reason}; {matchup_reason}"
+
+    def _format_policy(self, battle_format: str | None, *, active_pokemon: int | None) -> dict[str, Any]:
+        if battle_format:
+            try:
+                return pokemon_format_catalog.get(battle_format).strategy_profile()
+            except ValueError:
+                pass
+        if active_pokemon == 1:
+            return {
+                "archetype": "structured_single",
+                "target_policy": "no_target",
+                "priorities": ["entry_hazards", "hazard_removal", "pivoting", "recovery", "setup_cleaner"],
+                "risk_controls": ["avoid_unnecessary_tera", "preserve_defensive_pivots"],
+                "supports_team_preview": True,
+                "supports_random_sets": False,
+            }
+        return {}
+
+    def _format_move_bonus(
+        self,
+        move_id: str,
+        move: dict[str, Any],
+        format_policy: dict[str, Any] | None,
+    ) -> tuple[float, str]:
+        if not move_id or not format_policy:
+            return 0.0, ""
+        priorities = set(format_policy.get("priorities") or [])
+        risk_controls = set(format_policy.get("risk_controls") or [])
+        archetype = str(format_policy.get("archetype") or "")
+
+        if "fake_out_pressure" in priorities and move_id == "fakeout":
+            return 12.0, "format policy prioritizes Fake Out pressure"
+        if "speed_control" in priorities and move_id in {"tailwind", "trickroom", "icywind", "thunderwave"}:
+            return 10.0, "format policy prioritizes speed control"
+        if "redirection_support" in priorities and move_id in {"followme", "ragepowder"}:
+            return 10.0, "format policy prioritizes redirection support"
+        if "spread_damage" in priorities and move.get("target") in {"allAdjacentFoes", "allAdjacent", "foeSide"}:
+            return 10.0, "format policy prioritizes spread pressure"
+        if "protect_positioning" in priorities and move_id in {"protect", "detect", "spikyshield", "kingsshield"}:
+            return 8.0, "format policy values board positioning protection"
+
+        if "entry_hazards" in priorities and move_id in {"stealthrock", "spikes", "toxicspikes", "stickyweb"}:
+            return 34.0, "format policy prioritizes entry hazards"
+        if "hazard_removal" in priorities and move_id in {"rapidspin", "defog", "mortalspin", "tidyup"}:
+            return 24.0, "format policy keeps hazard removal available"
+        if "pivoting" in priorities and move_id in {"uturn", "voltswitch", "flipturn", "partingshot", "chillyreception"}:
+            return 20.0, "format policy prioritizes pivoting"
+        if "recovery" in priorities and move_id in {"recover", "roost", "slackoff", "synthesis", "morningsun", "softboiled", "wish"}:
+            return 22.0, "format policy values recovery"
+        if "setup_cleaner" in priorities and move_id in {"swordsdance", "nastyplot", "dragondance", "calmmind", "bulkup", "quiverdance"}:
+            return 24.0, "format policy preserves setup cleaner lines"
+
+        if archetype == "random_single" and move_id in {"swordsdance", "nastyplot", "dragondance", "calmmind", "bulkup", "quiverdance"}:
+            return 30.0, "format policy rewards strong random-battle setup turns"
+        if archetype == "random_single" and float(move.get("basePower") or move.get("power") or 0) >= 90:
+            return 10.0, "format policy rewards immediate random-battle damage"
+        if "avoid_low_value_status_when_behind" in risk_controls and move_id in {"toxicspikes", "stickyweb"}:
+            return -12.0, "format policy discounts slow random-battle status plans"
+        return 0.0, ""
 
     def _learning_move_bonus(
         self,
@@ -968,6 +1105,7 @@ class PokemonShowdownBattleAgent:
         used_slots: set[int],
         *,
         mode: str,
+        format_policy: dict[str, Any],
         learning_profile: dict[str, Any] | None,
         team_context: list[dict[str, Any]] | None,
         battlefield_context: dict[str, Any] | None,
@@ -981,6 +1119,7 @@ class PokemonShowdownBattleAgent:
                 slot,
                 member,
                 mode=mode,
+                format_policy=format_policy,
                 learning_profile=learning_profile,
                 team_context=team_context,
                 battlefield_context=battlefield_context,
@@ -997,6 +1136,7 @@ class PokemonShowdownBattleAgent:
                     "strategy_used": bool(reasons),
                     "learning_used": any("learning profile" in reason for reason in reasons),
                     "opponent_preview_used": any("opponent preview" in reason for reason in reasons),
+                    "format_policy_used": any("format policy" in reason for reason in reasons),
                 },
             ))
         if not candidates:
@@ -1010,6 +1150,7 @@ class PokemonShowdownBattleAgent:
         member: dict[str, Any],
         *,
         mode: str,
+        format_policy: dict[str, Any],
         learning_profile: dict[str, Any] | None,
         team_context: list[dict[str, Any]] | None,
         battlefield_context: dict[str, Any] | None,
@@ -1041,6 +1182,16 @@ class PokemonShowdownBattleAgent:
         if moves & {"partingshot", "uturn", "voltswitch"}:
             score += 8
             reasons.append("pivot move keeps positioning flexible")
+        profile_priorities = set(format_policy.get("priorities") or [])
+        if "pivoting" in profile_priorities and moves & {"uturn", "voltswitch", "flipturn", "partingshot", "chillyreception"}:
+            score += 14
+            reasons.append("format policy favors pivot switch-ins")
+        if "recovery" in profile_priorities and moves & {"recover", "roost", "slackoff", "synthesis", "softboiled"}:
+            score += 8
+            reasons.append("format policy values durable switch-ins")
+        if "do_not_assume_team_preview" in set(format_policy.get("risk_controls") or []):
+            score += 6
+            reasons.append("format policy favors high-HP random switch-ins")
         if mode == "aggressive" and moves & {"fakeout", "taunt", "spore", "sleeppowder"}:
             score += 8
             reasons.append("aggressive mode favors disruptive switch-ins")

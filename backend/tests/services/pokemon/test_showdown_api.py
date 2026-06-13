@@ -43,6 +43,9 @@ async def test_pokemon_formats_endpoint_returns_showdown_metadata(client):
     data = response.json()
     assert any(item["id"] == "vgc2024" and item["showdown_format"] == "gen9vgc2024regg" for item in data)
     assert any(item["id"] == "gen9randombattle" and not item["requires_team"] for item in data)
+    random_format = next(item for item in data if item["id"] == "gen9randombattle")
+    assert random_format["strategy_profile"]["archetype"] == "random_single"
+    assert random_format["strategy_profile"]["target_policy"] == "no_target"
 
 
 @pytest.mark.asyncio
@@ -78,8 +81,11 @@ async def test_showdown_format_capabilities_endpoint_summarizes_multi_format_sup
     assert data["ready_count"] == data["format_count"]
     assert formats["gen9randombattle"]["team"]["requires_team"] is False
     assert formats["gen9randombattle"]["team"]["source"] == "not_required"
+    assert formats["gen9randombattle"]["strategy_profile"]["archetype"] == "random_single"
     assert formats["gen9ou"]["team"]["can_build"] is True
     assert formats["gen9ou"]["battle_policy"]["target_policy"] == "no_target"
+    assert formats["gen9ou"]["battle_policy"]["archetype"] == "structured_single"
+    assert "entry_hazards" in formats["gen9ou"]["battle_policy"]["priorities"]
     assert formats["gen9ou"]["learning"]["battles"] == 1
     assert "research_team" in formats["gen9ou"]["recommended_actions"]
 

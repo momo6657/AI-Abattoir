@@ -853,6 +853,7 @@ export default function PokemonBattlePage() {
     ['Phase 46', '自动选择输出决策安全审计，标记可发送状态、风险检查和兜底选择'],
     ['Phase 47', '自动驾驶执行前应用决策审计门控，阻断 blocked 命令并在运行摘要中展示原因'],
     ['Phase 48', '一键自动驾驶启用实战就绪 gate，未通过登录、队伍、连接等检查时停止发送'],
+    ['Phase 49', '多格式策略画像反哺首发、换人和出招评分，区分双打、单打 OU 与随机战'],
   ];
 
   return (
@@ -958,6 +959,22 @@ export default function PokemonBattlePage() {
                 <Metric label="Autopilot" value={activeFormatCapability.battle_policy?.supports_autopilot ? 'yes' : 'no'} compact />
                 <Metric label="Samples" value={activeFormatCapability.learning?.battles || 0} compact />
                 <Metric label="Next" value={activeFormatCapability.learning?.next_mission_goal || '-'} compact />
+                <Metric label="Style" value={activeFormatCapability.strategy_profile?.archetype || activeFormatCapability.battle_policy?.archetype || '-'} compact />
+                <Metric label="Priorities" value={(activeFormatCapability.strategy_profile?.priorities || []).length} compact />
+              </div>
+            ) : null}
+            {activeFormatCapability?.strategy_profile?.priorities?.length ? (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {activeFormatCapability.strategy_profile.priorities.slice(0, 6).map((priority: string) => (
+                  <span key={`format-priority-${priority}`} className="rounded border border-border bg-black/20 px-1.5 py-0.5 text-[10px] text-gray-300">
+                    {priority}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            {activeFormatCapability?.strategy_profile?.opening_style ? (
+              <div className="mt-2 break-words rounded border border-border bg-black/20 p-2 text-[10px] leading-4 text-gray-400">
+                {activeFormatCapability.strategy_profile.opening_style}
               </div>
             ) : null}
           </div>
@@ -1612,7 +1629,7 @@ export default function PokemonBattlePage() {
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-mono text-gray-200">{detail.choice || detail.move || 'choice'}</span>
                             <span className="text-gray-500">
-                              {detail.strategy_used ? 'strategy · ' : ''}{detail.matchup_used ? 'matchup · ' : ''}{detail.learning_used ? 'learning · ' : ''}{detail.knowledge_used ? 'knowledge · ' : ''}{detail.score !== undefined ? `score ${detail.score}` : ''}
+                              {detail.strategy_used ? 'strategy · ' : ''}{detail.format_policy_used ? 'format · ' : ''}{detail.matchup_used ? 'matchup · ' : ''}{detail.learning_used ? 'learning · ' : ''}{detail.knowledge_used ? 'knowledge · ' : ''}{detail.score !== undefined ? `score ${detail.score}` : ''}
                             </span>
                           </div>
                           <div className="mt-1 text-gray-500">{detail.reason}</div>
@@ -1624,7 +1641,7 @@ export default function PokemonBattlePage() {
                                     {candidate.move || candidate.choice || 'candidate'}
                                   </span>
                                   <span className="shrink-0 text-gray-500">
-                                    {candidate.matchup_used ? 'matchup · ' : ''}{candidate.learning_used ? 'learning · ' : ''}{candidate.knowledge_used ? 'knowledge · ' : ''}{candidate.score !== undefined ? `score ${candidate.score}` : ''}
+                                    {candidate.format_policy_used ? 'format · ' : ''}{candidate.matchup_used ? 'matchup · ' : ''}{candidate.learning_used ? 'learning · ' : ''}{candidate.knowledge_used ? 'knowledge · ' : ''}{candidate.score !== undefined ? `score ${candidate.score}` : ''}
                                   </span>
                                 </div>
                               ))}

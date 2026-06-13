@@ -146,6 +146,7 @@ class ShowdownDecisionRequest(BaseModel):
     payload: Optional[str] = None
     request: Optional[Dict[str, Any]] = None
     room_id: Optional[str] = None
+    battle_format: Optional[str] = None
     mode: str = "balanced"
     team_size: Optional[int] = None
     active_pokemon: Optional[int] = None

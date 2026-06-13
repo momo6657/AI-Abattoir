@@ -499,6 +499,7 @@ async def plan_showdown_decision(payload: ShowdownDecisionRequest):
                 mode=payload.mode,
                 team_size=payload.team_size,
                 active_pokemon=payload.active_pokemon,
+                battle_format=payload.battle_format,
                 allow_tera=payload.allow_tera,
                 knowledge_context=payload.knowledge_context,
                 learning_profile=payload.learning_profile,
@@ -521,6 +522,7 @@ async def plan_showdown_decision(payload: ShowdownDecisionRequest):
                 mode=payload.mode,
                 team_size=payload.team_size,
                 active_pokemon=payload.active_pokemon,
+                battle_format=payload.battle_format,
                 allow_tera=payload.allow_tera,
                 knowledge_context=payload.knowledge_context,
                 learning_profile=payload.learning_profile,
@@ -909,11 +911,13 @@ def _build_showdown_format_capability(format_info, learning_profile: dict | None
     action_items.append(training_plan.get("next_mission_goal") or "ladder")
 
     readiness = "blocked" if blockers else "ready"
-    target_policy = "targeted" if format_info.active_pokemon > 1 else "no_target"
+    strategy_profile = format_info.strategy_profile()
+    target_policy = strategy_profile["target_policy"]
     return {
         "format": format_info.to_dict(),
         "automation_readiness": readiness,
         "blockers": blockers,
+        "strategy_profile": strategy_profile,
         "team": {
             "requires_team": format_info.requires_team,
             "can_build": can_build_team,
@@ -926,6 +930,9 @@ def _build_showdown_format_capability(format_info, learning_profile: dict | None
             "active_pokemon": format_info.active_pokemon,
             "team_size": format_info.team_size,
             "target_policy": target_policy,
+            "archetype": strategy_profile["archetype"],
+            "priorities": strategy_profile["priorities"],
+            "risk_controls": strategy_profile["risk_controls"],
             "supports_team_preview": format_info.requires_team,
             "supports_autopilot": not blockers,
         },
