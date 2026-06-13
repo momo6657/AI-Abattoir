@@ -848,6 +848,7 @@ export default function PokemonBattlePage() {
     ['Phase 44', '对手预览 Matchup 简报识别威胁、目标优先级、首发调整和风险控制'],
     ['Phase 45', 'Matchup 信号反哺自动决策，出招候选展示 matchup_used 证据'],
     ['Phase 46', '自动选择输出决策安全审计，标记可发送状态、风险检查和兜底选择'],
+    ['Phase 47', '自动驾驶执行前应用决策审计门控，阻断 blocked 命令并在运行摘要中展示原因'],
   ];
 
   return (
@@ -1648,6 +1649,8 @@ export default function PokemonBattlePage() {
                   <Metric label="Sent" value={showdownRunSummary.total_sent_count ?? showdownRunSummary.sent_count ?? 0} compact />
                   <Metric label="Commands" value={showdownRunSummary.command_count ?? 0} compact />
                   <Metric label="Decisions" value={showdownRunSummary.decision_count ?? 0} compact />
+                  <Metric label="Audit" value={showdownRunSummary.decision_audit_status || '-'} compact />
+                  <Metric label="Blocked" value={showdownRunSummary.audit_blocked_count ?? 0} compact />
                 </div>
                 {showdownRunSummary.last_decision_type ? (
                   <div className="mt-2 rounded bg-black/30 p-2">
@@ -1656,6 +1659,11 @@ export default function PokemonBattlePage() {
                       {showdownRunSummary.last_decision_type}
                       {showdownRunSummary.last_command ? ` · ${showdownRunSummary.last_command}` : ''}
                     </div>
+                  </div>
+                ) : null}
+                {showdownRunSummary.stopped_reason === 'decision_audit_blocked' ? (
+                  <div className="mt-2 break-words rounded border border-amber-500/30 bg-amber-500/10 p-2 text-amber-100">
+                    Autopilot paused before sending because the latest decision audit was blocked.
                   </div>
                 ) : null}
                 {showdownRunSummary.actions?.length ? (

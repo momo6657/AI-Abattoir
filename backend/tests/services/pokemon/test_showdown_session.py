@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from app.services.pokemon.showdown_battle_agent import ShowdownChoicePlan
 from app.services.pokemon.showdown_connector import PokemonShowdownConnector, ShowdownConnectionError
 from app.services.pokemon.showdown_session import PokemonShowdownSessionService
 
@@ -52,6 +53,35 @@ class FakeShowdownConnector(PokemonShowdownConnector):
         if self.fail_assertion:
             raise RuntimeError("Fake assertion failed.")
         return "ASSERT-FROM-PS"
+
+
+class BlockedDecisionAgent:
+    def plan(self, request, **_kwargs):
+        return ShowdownChoicePlan(
+            room_id=request.room_id,
+            command=f"{request.room_id}|/choose move 99 9|{request.request_id}",
+            choices=["move 99 9"],
+            choice_details=[{"choice": "move 99 9", "target": 9}],
+            request_id=request.request_id,
+            decision_type="move",
+            reason="test blocked audit",
+            needs_choice=True,
+            decision_audit={
+                "status": "blocked",
+                "score": 55,
+                "sendable": False,
+                "warning_count": 0,
+                "blocked_count": 1,
+                "summary": "Manual review required before sending this choice.",
+                "checks": [
+                    {
+                        "name": "target_range",
+                        "status": "blocked",
+                        "detail": "Unexpected Showdown target value(s): 9.",
+                    }
+                ],
+            },
+        )
 
 
 def test_create_session_can_prepare_ladder_search_commands():
@@ -244,6 +274,32 @@ def test_process_payload_deduplicates_repeated_showdown_request_id():
     assert repeated["session"]["duplicate_request_count"] == 1
     assert repeated["session"]["command_log"] == ["battle-gen9vgc-51|/choose move 2 -1|51"]
     assert repeated["session"]["decision_count"] == 1
+
+
+def test_process_payload_blocks_commands_when_decision_audit_blocks():
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None)
+    service.agents[session.session_id] = BlockedDecisionAgent()
+    request = {
+        "rqid": 52,
+        "active": [
+            {
+                "moves": [
+                    {"id": "moonblast", "target": "normal", "basePower": 95, "pp": 15},
+                ]
+            }
+        ],
+    }
+
+    result = service.process_payload(session.session_id, f">battle-gen9vgc-52\n|request|{json.dumps(request)}")
+
+    assert result["commands"] == []
+    assert result["decision"]["decision_audit"]["status"] == "blocked"
+    assert result["session"]["status"] == "choice_blocked"
+    assert result["session"]["command_log"] == []
+    assert result["session"]["handled_request_count"] == 0
+    assert result["session"]["connection_diagnostics"]["stage"] == "decision_audit_blocked"
+    assert result["session"]["next_actions"][0]["action"] == "review_decision"
 
 
 def test_process_payload_scores_team_preview_from_session_team():
@@ -922,6 +978,33 @@ async def test_run_once_receives_payload_auto_responds_and_sends_command():
 
 
 @pytest.mark.asyncio
+async def test_run_once_stops_before_sending_blocked_decision_audit():
+    request = {
+        "rqid": 53,
+        "active": [
+            {
+                "moves": [
+                    {"id": "moonblast", "target": "normal", "basePower": 95, "pp": 15},
+                ]
+            }
+        ],
+    }
+    connector = FakeShowdownConnector([f">battle-gen9vgc-53\n|request|{json.dumps(request)}"])
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None, connector=connector)
+    service.agents[session.session_id] = BlockedDecisionAgent()
+
+    result = await service.run_once(session.session_id)
+
+    assert result["commands"] == []
+    assert result["sent"] == []
+    assert result["audit_blocked"]
+    assert connector.sent == []
+    assert result["session"]["status"] == "choice_blocked"
+    assert result["session"]["pending_command_count"] == 0
+
+
+@pytest.mark.asyncio
 async def test_run_once_auto_requests_assertion_from_challstr():
     connector = FakeShowdownConnector(["|challstr|42|abcdef"])
     service = PokemonShowdownSessionService()
@@ -1010,6 +1093,33 @@ async def test_run_until_stops_on_finished_and_close_marks_closed():
     assert result["session"]["run_history_count"] == 1
     assert connector.closed
     assert closed["status"] == "finished"
+
+
+@pytest.mark.asyncio
+async def test_run_until_summarizes_blocked_decision_audit_stop():
+    request = {
+        "rqid": 54,
+        "active": [
+            {
+                "moves": [
+                    {"id": "moonblast", "target": "normal", "basePower": 95, "pp": 15},
+                ]
+            }
+        ],
+    }
+    connector = FakeShowdownConnector([f">battle-gen9vgc-54\n|request|{json.dumps(request)}"])
+    service = PokemonShowdownSessionService()
+    session = service.create_session(username="Bot", team=None, connector=connector)
+    service.agents[session.session_id] = BlockedDecisionAgent()
+
+    result = await service.run_until(session.session_id, max_messages=5)
+
+    assert len(result["steps"]) == 1
+    assert result["run_summary"]["stopped_reason"] == "decision_audit_blocked"
+    assert result["run_summary"]["decision_audit_status"] == "blocked"
+    assert result["run_summary"]["audit_blocked_count"] == 1
+    assert result["run_summary"]["total_sent_count"] == 0
+    assert result["session"]["last_run_summary"]["stopped_reason"] == "decision_audit_blocked"
 
 
 @pytest.mark.asyncio

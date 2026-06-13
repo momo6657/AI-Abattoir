@@ -333,6 +333,8 @@ class ShowdownSessionState:
             add("autopilot", "Resume loop", "Continue the bounded automation loop after checking the live connection.", "high")
         elif stage == "assertion_error":
             add("run_once", "Retry login", "Request a new assertion from the next challstr payload.", "high")
+        elif stage == "decision_audit_blocked" or self.status == "choice_blocked":
+            add("review_decision", "Review choice", "Inspect the blocked decision audit before sending any Showdown command.", "high")
 
         if pending_count:
             add("flush_pending", "Flush commands", f"Send {pending_count} queued Showdown command(s).", "high")
@@ -566,12 +568,25 @@ class PokemonShowdownSessionService:
                     team_context=state.team if isinstance(state.team, list) else None,
                     battlefield_context=self._battlefield_context(state, battle_request.room_id),
                 )
-                if plan.command:
+                plan_dict = plan.to_dict()
+                audit = plan_dict.get("decision_audit") if isinstance(plan_dict.get("decision_audit"), dict) else {}
+                audit_blocked = audit.get("status") == "blocked" or bool(audit.get("blocked_count"))
+                if audit_blocked:
+                    state.status = "choice_blocked"
+                    state.last_error = audit.get("summary") or "Showdown decision audit blocked automatic sending."
+                    self._set_diagnostic(
+                        state,
+                        "decision_audit_blocked",
+                        audit_status=audit.get("status"),
+                        audit_score=audit.get("score"),
+                        blocked_count=audit.get("blocked_count", 1),
+                    )
+                elif plan.command:
                     commands.append(plan.command)
                     state.status = "responded"
-                if request_key and plan.command:
+                if request_key and plan.command and not audit_blocked:
                     state.handled_requests[request_key] = plan.command
-                state.decisions.append(plan.to_dict())
+                state.decisions.append(plan_dict)
 
         search = connector.parse_search_update(events)
         if search is not None:
@@ -662,7 +677,12 @@ class PokemonShowdownSessionService:
             team_size=team_size,
             allow_tera=allow_tera,
         )
-        sent = await self.flush_pending_commands(session_id) if send_commands else []
+        decision_audit = (result.get("decision") or {}).get("decision_audit") if isinstance(result.get("decision"), dict) else {}
+        audit_blocked = isinstance(decision_audit, dict) and (
+            decision_audit.get("status") == "blocked" or bool(decision_audit.get("blocked_count"))
+        )
+        sent = [] if audit_blocked else (await self.flush_pending_commands(session_id) if send_commands else [])
+        result["audit_blocked"] = audit_blocked
         result["sent"] = sent
         result["session"] = state.to_dict()
         return result
@@ -705,6 +725,8 @@ class PokemonShowdownSessionService:
                 break
             results.append(result)
             state = self._require_session(session_id)
+            if state.status == "choice_blocked":
+                break
             if stop_on_finished and state.status == "finished":
                 break
         state = self._require_session(session_id)
@@ -827,8 +849,11 @@ class PokemonShowdownSessionService:
         error_step = next((step for step in steps if step.get("error")), None)
         decisions = [step.get("decision") for step in steps if step.get("decision")]
         last_decision = decisions[-1] if decisions else None
+        last_audit = last_decision.get("decision_audit") if isinstance(last_decision, dict) and isinstance(last_decision.get("decision_audit"), dict) else {}
         if error_step:
             stopped_reason = "error"
+        elif state.status == "choice_blocked":
+            stopped_reason = "decision_audit_blocked"
         elif state.status == "finished":
             stopped_reason = "finished"
         elif len(steps) >= max_messages:
@@ -846,6 +871,10 @@ class PokemonShowdownSessionService:
             "decision_count": len(decisions),
             "last_decision_type": last_decision.get("decision_type") if isinstance(last_decision, dict) else None,
             "last_command": last_decision.get("command") if isinstance(last_decision, dict) else None,
+            "decision_audit_status": last_audit.get("status"),
+            "decision_audit_score": last_audit.get("score"),
+            "audit_blocked_count": last_audit.get("blocked_count", 0),
+            "audit_warning_count": last_audit.get("warning_count", 0),
             "error": error_step.get("error") if isinstance(error_step, dict) else state.last_error,
             "result": state.result,
         }
