@@ -846,6 +846,7 @@ export default function PokemonBattlePage() {
     ['Phase 42', '多格式能力矩阵展示每个 Showdown 格式的队伍、策略、学习和自动化覆盖'],
     ['Phase 43', '战术简报整合格式、队伍、学习档案和知识检索，给出下一局开局计划'],
     ['Phase 44', '对手预览 Matchup 简报识别威胁、目标优先级、首发调整和风险控制'],
+    ['Phase 45', 'Matchup 信号反哺自动决策，出招候选展示 matchup_used 证据'],
   ];
 
   return (
@@ -1567,10 +1568,24 @@ export default function PokemonBattlePage() {
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-mono text-gray-200">{detail.choice || detail.move || 'choice'}</span>
                             <span className="text-gray-500">
-                              {detail.strategy_used ? 'strategy · ' : ''}{detail.learning_used ? 'learning · ' : ''}{detail.knowledge_used ? 'knowledge · ' : ''}{detail.score !== undefined ? `score ${detail.score}` : ''}
+                              {detail.strategy_used ? 'strategy · ' : ''}{detail.matchup_used ? 'matchup · ' : ''}{detail.learning_used ? 'learning · ' : ''}{detail.knowledge_used ? 'knowledge · ' : ''}{detail.score !== undefined ? `score ${detail.score}` : ''}
                             </span>
                           </div>
                           <div className="mt-1 text-gray-500">{detail.reason}</div>
+                          {Array.isArray(detail.legal_candidates) && detail.legal_candidates.length ? (
+                            <div className="mt-2 space-y-1 border-t border-border/60 pt-2">
+                              {detail.legal_candidates.slice(0, 4).map((candidate: any, candidateIndex: number) => (
+                                <div key={`${candidate.move || candidate.choice || 'candidate'}-${candidateIndex}`} className="flex items-start justify-between gap-2 text-[10px]">
+                                  <span className="min-w-0 break-words font-mono text-gray-400">
+                                    {candidate.move || candidate.choice || 'candidate'}
+                                  </span>
+                                  <span className="shrink-0 text-gray-500">
+                                    {candidate.matchup_used ? 'matchup · ' : ''}{candidate.learning_used ? 'learning · ' : ''}{candidate.knowledge_used ? 'knowledge · ' : ''}{candidate.score !== undefined ? `score ${candidate.score}` : ''}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
                         </div>
                       ))}
                     </div>

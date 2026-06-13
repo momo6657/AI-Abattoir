@@ -558,7 +558,18 @@ class PokemonShowdownBattleAgent:
                 "reason": "no legal moves with PP were available",
             }
         scored_moves = [
-            (slot, move, *self._score_move(move, mode, pokemon_name, knowledge_context, learning_profile))
+            (
+                slot,
+                move,
+                *self._score_move(
+                    move,
+                    mode,
+                    pokemon_name,
+                    knowledge_context,
+                    learning_profile,
+                    battlefield_context,
+                ),
+            )
             for slot, move in legal_moves
         ]
         move_slot, move, score, reason = max(scored_moves, key=lambda item: item[2])
@@ -579,6 +590,7 @@ class PokemonShowdownBattleAgent:
             "reason": reason,
             "knowledge_used": "knowledge context" in reason,
             "learning_used": "learning profile" in reason,
+            "matchup_used": "matchup context" in reason,
             "legal_candidates": [
                 {
                     "slot": slot,
@@ -586,6 +598,7 @@ class PokemonShowdownBattleAgent:
                     "score": round(candidate_score, 2),
                     "knowledge_used": "knowledge context" in candidate_reason,
                     "learning_used": "learning profile" in candidate_reason,
+                    "matchup_used": "matchup context" in candidate_reason,
                 }
                 for slot, candidate, candidate_score, candidate_reason in sorted(
                     scored_moves,
@@ -602,10 +615,12 @@ class PokemonShowdownBattleAgent:
         pokemon_name: str = "",
         knowledge_context: dict[str, Any] | None = None,
         learning_profile: dict[str, Any] | None = None,
+        battlefield_context: dict[str, Any] | None = None,
     ) -> tuple[float, str]:
         move_id = self.connector.to_id(move.get("id") or move.get("move"))
         knowledge_bonus, knowledge_reason = self._knowledge_move_bonus(move_id, pokemon_name, knowledge_context)
         learning_bonus, learning_reason = self._learning_move_bonus(move_id, learning_profile)
+        matchup_bonus, matchup_reason = self._matchup_move_bonus(move_id, battlefield_context)
         if move_id in {"protect", "detect", "spikyshield", "kingsshield"}:
             score = 35.0 if mode == "defensive" else 15.0
             return self._with_policy_bonuses(
@@ -615,6 +630,8 @@ class PokemonShowdownBattleAgent:
                 knowledge_reason,
                 learning_bonus,
                 learning_reason,
+                matchup_bonus,
+                matchup_reason,
             )
         utility_scores = {
             "fakeout": 90.0,
@@ -646,6 +663,8 @@ class PokemonShowdownBattleAgent:
                 knowledge_reason,
                 learning_bonus,
                 learning_reason,
+                matchup_bonus,
+                matchup_reason,
             )
         score = float(move.get("basePower") or move.get("power") or 60)
         if move.get("target") in {"allAdjacentFoes", "allAdjacent", "foeSide"}:
@@ -663,6 +682,8 @@ class PokemonShowdownBattleAgent:
             knowledge_reason,
             learning_bonus,
             learning_reason,
+            matchup_bonus,
+            matchup_reason,
         )
 
     def _with_policy_bonuses(
@@ -673,9 +694,12 @@ class PokemonShowdownBattleAgent:
         knowledge_reason: str,
         learning_bonus: float,
         learning_reason: str,
+        matchup_bonus: float,
+        matchup_reason: str,
     ) -> tuple[float, str]:
         score, reason = self._with_knowledge_bonus(score, reason, knowledge_bonus, knowledge_reason)
-        return self._with_learning_bonus(score, reason, learning_bonus, learning_reason)
+        score, reason = self._with_learning_bonus(score, reason, learning_bonus, learning_reason)
+        return self._with_matchup_bonus(score, reason, matchup_bonus, matchup_reason)
 
     def _with_knowledge_bonus(
         self,
@@ -698,6 +722,17 @@ class PokemonShowdownBattleAgent:
         if not learning_bonus:
             return score, reason
         return score + learning_bonus, f"{reason}; {learning_reason}"
+
+    def _with_matchup_bonus(
+        self,
+        score: float,
+        reason: str,
+        matchup_bonus: float,
+        matchup_reason: str,
+    ) -> tuple[float, str]:
+        if not matchup_bonus:
+            return score, reason
+        return score + matchup_bonus, f"{reason}; {matchup_reason}"
 
     def _learning_move_bonus(
         self,
@@ -748,6 +783,44 @@ class PokemonShowdownBattleAgent:
         if move_id in searchable_text:
             return 12.0, "knowledge context mentions this move"
         return 0.0, ""
+
+    def _matchup_move_bonus(
+        self,
+        move_id: str,
+        battlefield_context: dict[str, Any] | None,
+    ) -> tuple[float, str]:
+        if not move_id or not battlefield_context:
+            return 0.0, ""
+        opponent_ids = self._opponent_preview_ids(battlefield_context) | self._opponent_active_ids(battlefield_context)
+        if not opponent_ids:
+            return 0.0, ""
+
+        speed_control = {"tornadus", "whimsicott", "talonflame", "pelipper", "farigiraf"}
+        redirection = {"amoonguss", "indeedee", "clefairy", "ogerponwellspring"}
+        spread_damage = {"fluttermane", "gholdengo", "kyogre", "calyrexshadow", "ursalunabloodmoon"}
+        physical_pressure = {"koraidon", "urshifu", "chienpao", "rillaboom", "landorustherian", "dragonite"}
+        setup_sweepers = {"kingambit", "dragonite", "gholdengo", "volcarona", "gougingfire"}
+
+        if move_id in {"fakeout", "taunt", "spore", "sleeppowder", "encore"} and opponent_ids & (speed_control | redirection | setup_sweepers):
+            return 42.0, "matchup context prioritizes disrupting preview threats"
+        if move_id in {"tailwind", "trickroom", "icywind", "thunderwave"} and opponent_ids & (speed_control | spread_damage):
+            return 32.0, "matchup context raises speed-control value"
+        if move_id in {"protect", "detect", "spikyshield", "kingsshield"} and opponent_ids & spread_damage:
+            return 86.0, "matchup context favors protecting into spread damage"
+        if move_id in {"willowisp", "reflect", "charm"} and opponent_ids & physical_pressure:
+            return 30.0, "matchup context values physical damage control"
+        if move_id in {"snarl", "lightscreen"} and opponent_ids & spread_damage:
+            return 28.0, "matchup context values special spread damage control"
+        return 0.0, ""
+
+    def _opponent_active_ids(self, battlefield_context: dict[str, Any] | None) -> set[str]:
+        if not battlefield_context:
+            return set()
+        return {
+            self.connector.to_id(entry.get("pokemon"))
+            for entry in battlefield_context.get("opponents") or []
+            if isinstance(entry, dict) and entry.get("pokemon") and not entry.get("fainted")
+        }
 
     def _knowledge_member_for_pokemon(
         self,

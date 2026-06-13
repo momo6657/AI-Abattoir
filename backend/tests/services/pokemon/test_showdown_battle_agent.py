@@ -297,6 +297,81 @@ def test_plan_moves_targets_weakened_opponent_from_battlefield_context():
     assert plan.choice_details[0]["target"] == -2
 
 
+def test_plan_moves_uses_matchup_preview_to_disrupt_speed_control():
+    agent = PokemonShowdownBattleAgent()
+    payload = {
+        "rqid": 31,
+        "active": [
+            {
+                "moves": [
+                    {"id": "flareblitz", "target": "normal", "basePower": 120, "pp": 15},
+                    {"id": "fakeout", "target": "normal", "basePower": 40, "pp": 10},
+                ],
+            }
+        ],
+        "side": {
+            "pokemon": [
+                {"ident": "p1: Incineroar", "condition": "100/100", "active": True},
+            ]
+        },
+    }
+
+    plan = agent.plan_from_raw_request(
+        payload,
+        "battle-gen9vgc-19",
+        active_pokemon=2,
+        battlefield_context={
+            "opponent_preview": [
+                {"species": "Tornadus", "details": "Tornadus, L50"},
+                {"species": "Amoonguss", "details": "Amoonguss, L50"},
+            ]
+        },
+    )
+
+    assert plan.command == "battle-gen9vgc-19|/choose move 2 -1|31"
+    assert plan.choice_details[0]["move"] == "fakeout"
+    assert plan.choice_details[0]["matchup_used"]
+    assert "matchup context prioritizes disrupting preview threats" in plan.choice_details[0]["reason"]
+    assert plan.choice_details[0]["legal_candidates"][0]["matchup_used"]
+
+
+def test_plan_moves_uses_active_matchup_to_protect_against_spread_damage():
+    agent = PokemonShowdownBattleAgent()
+    payload = {
+        "rqid": 32,
+        "active": [
+            {
+                "moves": [
+                    {"id": "protect", "target": "self", "pp": 16},
+                    {"id": "moonblast", "target": "normal", "basePower": 95, "pp": 15},
+                ],
+            }
+        ],
+        "side": {
+            "pokemon": [
+                {"ident": "p1: Flutter Mane", "condition": "100/100", "active": True},
+            ]
+        },
+    }
+
+    plan = agent.plan_from_raw_request(
+        payload,
+        "battle-gen9vgc-20",
+        active_pokemon=2,
+        battlefield_context={
+            "opponents": [
+                {"position": "a", "active": True, "fainted": False, "hp_fraction": 1.0, "pokemon": "Gholdengo"},
+                {"position": "b", "active": True, "fainted": False, "hp_fraction": 1.0, "pokemon": "Tornadus"},
+            ]
+        },
+    )
+
+    assert plan.command == "battle-gen9vgc-20|/choose move 1|32"
+    assert plan.choice_details[0]["move"] == "protect"
+    assert plan.choice_details[0]["matchup_used"]
+    assert "matchup context favors protecting into spread damage" in plan.choice_details[0]["reason"]
+
+
 def test_plan_moves_prioritizes_tactical_utility_and_avoids_self_ko():
     agent = PokemonShowdownBattleAgent()
     payload = {
