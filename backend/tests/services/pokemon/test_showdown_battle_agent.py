@@ -204,6 +204,11 @@ def test_plan_moves_skips_disabled_moves_targets_foe_and_can_tera():
     assert plan.choice_details[0]["move"] == "flareblitz"
     assert plan.choice_details[0]["modifier"] == "terastallize"
     assert plan.choice_details[0]["legal_candidates"][0]["move"] == "flareblitz"
+    audit = plan.to_dict()["decision_audit"]
+    assert audit["status"] == "passed"
+    assert audit["sendable"]
+    assert audit["score"] == 100
+    assert any(check["name"] == "target_range" and check["status"] == "passed" for check in audit["checks"])
 
 
 def test_plan_moves_fallback_switches_when_no_legal_moves_and_not_trapped():
@@ -266,6 +271,31 @@ def test_plan_moves_defaults_when_no_legal_moves_and_trapped():
     assert plan.command == "battle-gen9vgc-18|/choose default|30"
     assert plan.choice_details[0]["choice"] == "default"
     assert "no legal moves" in plan.choice_details[0]["reason"]
+    audit = plan.to_dict()["decision_audit"]
+    assert audit["status"] == "warning"
+    assert audit["sendable"]
+    assert audit["warning_count"] == 1
+    assert any(check["name"] == "default_choice" for check in audit["checks"])
+
+
+def test_decision_audit_warns_when_rqid_is_missing():
+    agent = PokemonShowdownBattleAgent()
+    payload = {
+        "active": [
+            {
+                "moves": [
+                    {"id": "moonblast", "target": "normal", "basePower": 95, "pp": 15},
+                ],
+            }
+        ],
+    }
+
+    plan = agent.plan_from_raw_request(payload, "battle-gen9vgc-no-rqid", active_pokemon=1)
+
+    audit = plan.to_dict()["decision_audit"]
+    assert audit["status"] == "warning"
+    assert audit["sendable"]
+    assert any(check["name"] == "request_id" and check["status"] == "warning" for check in audit["checks"])
 
 
 def test_plan_moves_targets_weakened_opponent_from_battlefield_context():

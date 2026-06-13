@@ -847,6 +847,7 @@ export default function PokemonBattlePage() {
     ['Phase 43', '战术简报整合格式、队伍、学习档案和知识检索，给出下一局开局计划'],
     ['Phase 44', '对手预览 Matchup 简报识别威胁、目标优先级、首发调整和风险控制'],
     ['Phase 45', 'Matchup 信号反哺自动决策，出招候选展示 matchup_used 证据'],
+    ['Phase 46', '自动选择输出决策安全审计，标记可发送状态、风险检查和兜底选择'],
   ];
 
   return (
@@ -1561,6 +1562,44 @@ export default function PokemonBattlePage() {
                     {showdownPlan.command || 'waiting'}
                   </div>
                   <div>{showdownPlan.reason}</div>
+                  {showdownPlan.decision_audit ? (
+                    <div className="rounded border border-border bg-black/30 p-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-semibold uppercase text-sky-200">Decision audit</span>
+                        <span className={`rounded px-1.5 py-0.5 text-[10px] ${
+                          showdownPlan.decision_audit.status === 'passed'
+                            ? 'bg-emerald-500/20 text-emerald-100'
+                            : showdownPlan.decision_audit.status === 'blocked'
+                              ? 'bg-red-500/20 text-red-100'
+                              : 'bg-amber-500/20 text-amber-100'
+                        }`}>
+                          {showdownPlan.decision_audit.status} · {showdownPlan.decision_audit.score ?? 0}/100
+                        </span>
+                      </div>
+                      <div className="mt-1 text-gray-500">{showdownPlan.decision_audit.summary}</div>
+                      {showdownPlan.decision_audit.checks?.length ? (
+                        <div className="mt-2 grid gap-1 md:grid-cols-2">
+                          {showdownPlan.decision_audit.checks.slice(0, 6).map((check: any) => (
+                            <div key={`decision-audit-${check.name}-${check.status}`} className="rounded bg-black/20 px-2 py-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-medium text-gray-300">{check.name}</span>
+                                <span className={
+                                  check.status === 'passed'
+                                    ? 'text-emerald-200'
+                                    : check.status === 'blocked'
+                                      ? 'text-red-200'
+                                      : 'text-amber-200'
+                                }>
+                                  {check.status}
+                                </span>
+                              </div>
+                              <div className="mt-0.5 text-gray-500">{check.detail}</div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                   {showdownPlan.choice_details?.length ? (
                     <div className="space-y-1">
                       {showdownPlan.choice_details.map((detail: any, index: number) => (

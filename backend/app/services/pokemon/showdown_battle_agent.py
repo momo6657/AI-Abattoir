@@ -30,8 +30,10 @@ class ShowdownChoicePlan:
     reason: str = ""
     needs_choice: bool = False
     warnings: list[str] = field(default_factory=list)
+    decision_audit: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        decision_audit = self.decision_audit or self.build_decision_audit()
         return {
             "room_id": self.room_id,
             "command": self.command,
@@ -42,6 +44,77 @@ class ShowdownChoicePlan:
             "reason": self.reason,
             "needs_choice": self.needs_choice,
             "warnings": self.warnings,
+            "decision_audit": decision_audit,
+        }
+
+    def build_decision_audit(self) -> dict[str, Any]:
+        checks: list[dict[str, str]] = []
+
+        def add_check(name: str, status: str, detail: str) -> None:
+            checks.append({"name": name, "status": status, "detail": detail})
+
+        if not self.needs_choice:
+            add_check("choice_required", "passed", "Showdown does not require a choice yet.")
+        elif self.command:
+            add_check("command_present", "passed", "A /choose command is ready to send.")
+        else:
+            add_check("command_present", "blocked", "Showdown requires a choice but no command was produced.")
+
+        if self.command and self.room_id and self.command.startswith(f"{self.room_id}|/choose"):
+            add_check("room_binding", "passed", "Command is bound to the current battle room.")
+        elif self.command:
+            add_check("room_binding", "warning", "Command format does not clearly bind to the current battle room.")
+
+        if self.needs_choice and self.request_id is None:
+            add_check("request_id", "warning", "Request id is missing; duplicate-request protection is weaker.")
+        elif self.needs_choice:
+            add_check("request_id", "passed", "Request id is attached to the command.")
+
+        if self.needs_choice and not self.choices:
+            add_check("choice_count", "blocked", "No concrete choices were produced.")
+        elif self.choices and self.choice_details and len(self.choices) != len(self.choice_details):
+            add_check("choice_count", "warning", "Choice count and explanation count differ.")
+        elif self.choices:
+            add_check("choice_count", "passed", f"{len(self.choices)} concrete choice(s) were produced.")
+
+        if any(choice == "default" for choice in self.choices):
+            add_check("default_choice", "warning", "Default choice is a fallback and may be tactically weak.")
+        if any(detail.get("fallback_switch") for detail in self.choice_details):
+            add_check("fallback_switch", "warning", "A switch was used because no legal move with PP was available.")
+
+        invalid_targets = [
+            str(detail.get("target"))
+            for detail in self.choice_details
+            if detail.get("target") is not None and detail.get("target") not in {-2, -1, 1, 2}
+        ]
+        if invalid_targets:
+            add_check("target_range", "blocked", f"Unexpected Showdown target value(s): {', '.join(invalid_targets)}.")
+        elif any(detail.get("target") is not None for detail in self.choice_details):
+            add_check("target_range", "passed", "Explicit move targets are within supported Showdown target slots.")
+
+        for warning in self.warnings:
+            add_check("planner_warning", "warning", warning)
+
+        blocked = sum(1 for check in checks if check["status"] == "blocked")
+        warnings = sum(1 for check in checks if check["status"] == "warning")
+        score = max(0, 100 - blocked * 45 - warnings * 15)
+        if blocked:
+            status = "blocked"
+            summary = "Manual review required before sending this choice."
+        elif warnings:
+            status = "warning"
+            summary = "Command is sendable, but the planner used a fallback or has reduced certainty."
+        else:
+            status = "passed"
+            summary = "Command is ready for autonomous send."
+        return {
+            "status": status,
+            "score": score,
+            "sendable": blocked == 0 and (bool(self.command) or not self.needs_choice),
+            "warning_count": warnings,
+            "blocked_count": blocked,
+            "summary": summary,
+            "checks": checks,
         }
 
 
