@@ -1042,9 +1042,52 @@ async def test_showdown_mission_plan_prepares_generated_team_without_knowledge(s
     assert response.status_code == 200
     data = response.json()
     assert data["mission_goal"] == "prepare"
-    assert data["mission_goal_source"] == "knowledge_precheck"
+    assert data["mission_goal_source"] == "team_audit"
     assert data["allowed_actions"] == ["research_team"]
+    assert data["action_plan_source"] == "team_audit"
+    assert data["team_source"] == "template"
+    assert data["team_audit"]["member_count"] == len(data["team_species"])
+    assert data["team_audit"]["status"] == "warning"
+    assert data["team_audit_gaps"]
+    assert data["team_audit_actions"] == ["research_team"]
     assert data["mission_request"]["auto_search"] is False
+
+
+def test_showdown_auto_policy_uses_team_audit_before_ladder():
+    payload = ShowdownSessionMissionRequest(
+        username="AuditPolicyBot",
+        battle_format="vgc2024",
+        mission_goal="auto",
+    )
+    session = {
+        "has_knowledge_context": False,
+        "team_species": ["Incineroar", "Flutter Mane"],
+        "team_audit": {
+            "status": "warning",
+            "score": 72,
+            "gaps": ["speed_control", "redirection_support"],
+            "recommendation": "The generated team should research missing support roles.",
+        },
+        "learning_profile": {
+            "battles": 5,
+            "win_rate": 0.65,
+            "average_reward": 80.0,
+            "training_plan": {
+                "next_mission_goal": "learn",
+                "actions": ["start_search", "autopilot", "analyze"],
+                "reason": "Performance is strong enough to keep laddering.",
+            },
+        },
+    }
+
+    policy = pokemon_api._resolve_showdown_mission_policy(payload, session)
+
+    assert policy["mission_goal"] == "prepare"
+    assert policy["mission_goal_source"] == "team_audit"
+    assert policy["action_plan_source"] == "team_audit"
+    assert policy["allowed_actions"] == ["research_team"]
+    assert policy["team_audit_gaps"] == ["speed_control", "redirection_support"]
+    assert "missing support roles" in policy["mission_goal_reason"]
 
 
 @pytest.mark.asyncio
@@ -1169,8 +1212,10 @@ async def test_showdown_mission_auto_goal_resolves_from_session_state(setup_db, 
     session_id = data["session"]["session_id"]
     assert data["mission_summary"]["requested_mission_goal"] == "auto"
     assert data["mission_summary"]["mission_goal"] == "prepare"
-    assert data["mission_summary"]["mission_goal_source"] == "knowledge_precheck"
+    assert data["mission_summary"]["mission_goal_source"] == "team_audit"
     assert data["mission_summary"]["allowed_actions"] == ["research_team"]
+    assert data["mission_summary"]["team_audit"]["status"] == "warning"
+    assert data["mission_summary"]["team_audit_actions"] == ["research_team"]
     assert data["mission_summary"]["training_plan"]["stage"] == "collect_data"
     assert data["mission_summary"]["training_plan"]["next_mission_goal"] == "queue"
     assert data["session"]["last_mission_summary"]["mission_goal"] == "prepare"

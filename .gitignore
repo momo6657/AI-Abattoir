@@ -17,6 +17,7 @@ next-build*.log
 dev-server*.log
 backend/.uvicorn-*.log
 frontend/.next-dev-*.log
+frontend/.codex-dev-server*.log
 
 # IDE
 .vscode/

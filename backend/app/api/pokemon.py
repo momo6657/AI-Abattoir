@@ -595,6 +595,13 @@ async def plan_showdown_mission(payload: ShowdownSessionMissionRequest, db: Asyn
         "mode_recommendation": mode_recommendation,
         "learning_profile": learning_profile,
         "training_plan": learning_profile.get("training_plan"),
+        "team_source": snapshot.get("team_source"),
+        "team_reason": snapshot.get("team_reason"),
+        "team_species": snapshot.get("team_species"),
+        "team_adjustments": snapshot.get("team_adjustments"),
+        "team_audit": mission_policy["team_audit"],
+        "team_audit_actions": mission_policy["team_audit_actions"],
+        "team_audit_gaps": mission_policy["team_audit_gaps"],
         "mission_goal": mission_policy["mission_goal"],
         "requested_mission_goal": mission_policy["requested_mission_goal"],
         "mission_goal_source": mission_policy["mission_goal_source"],
@@ -651,6 +658,9 @@ async def start_showdown_mission(payload: ShowdownSessionMissionRequest, db: Asy
         "executable_plan_actions": mission_policy["executable_plan_actions"],
         "unsupported_plan_actions": mission_policy["unsupported_plan_actions"],
         "action_plan_source": mission_policy["action_plan_source"],
+        "team_audit": final_session.get("team_audit") or mission_policy["team_audit"],
+        "team_audit_actions": mission_policy["team_audit_actions"],
+        "team_audit_gaps": mission_policy["team_audit_gaps"],
         "stop_reason": supervisor.get("stop_reason"),
         "step_count": supervisor.get("step_count", 0),
         "training_plan": (final_session.get("learning_profile") or {}).get("training_plan"),
@@ -1001,6 +1011,7 @@ async def _build_showdown_tactical_briefing(
         "learning_profile": learning_profile,
         "has_knowledge_context": bool(knowledge_context),
         "team_species": team_species,
+        "team_audit": team_audit,
     })
     training_plan = learning_profile.get("training_plan") or {}
     mastery_score = pokemon_showdown_learning_store.score_profile(learning_profile)
@@ -1348,14 +1359,33 @@ def _build_showdown_mission_plan_snapshot(
     learning_profile: dict,
 ) -> dict:
     team_species: list[str] = []
+    team_source = "not_required"
+    team_reason = f"{format_info.name} supplies teams on Pokemon Showdown."
+    team_adjustments: list[dict[str, Any]] = []
+    team_audit: dict[str, Any] = {}
     if isinstance(payload.team, list):
         team_species = [
             str(member.get("species") or member.get("name") or "Unknown")
             for member in payload.team
             if isinstance(member, dict)
         ]
+        team_source = "provided"
+        team_reason = "Using the team supplied in the mission planning payload."
     elif payload.team is None and format_info.requires_team:
-        team_species = ["generated_team"]
+        generated = pokemon_showdown_team_factory.generate(
+            format_info.id,
+            mode=resolved_mode,
+            learning_profile=learning_profile,
+        )
+        if generated:
+            team_species = generated.species()
+            team_source = generated.source
+            team_reason = generated.reason
+            team_adjustments = generated.adjustments
+            team_audit = generated.audit
+        else:
+            team_source = "unavailable"
+            team_reason = f"No autonomous team builder is available for {format_info.name}."
 
     return {
         "username": payload.username,
@@ -1367,6 +1397,10 @@ def _build_showdown_mission_plan_snapshot(
         "mode_recommendation": mode_recommendation,
         "learning_profile": learning_profile,
         "team_species": team_species,
+        "team_source": team_source,
+        "team_reason": team_reason,
+        "team_adjustments": team_adjustments,
+        "team_audit": team_audit,
         "has_knowledge_context": bool(payload.auto_research_team and team_species),
     }
 
@@ -1440,7 +1474,16 @@ def _resolve_showdown_mission_policy(payload: ShowdownSessionMissionRequest, ses
     policy["training_plan_actions"] = plan_actions
     policy["executable_plan_actions"] = executable_plan_actions
     policy["unsupported_plan_actions"] = unsupported_plan_actions
+    team_audit = session.get("team_audit") or {}
+    team_audit_gaps = [str(gap) for gap in team_audit.get("gaps") or [] if str(gap)]
+    team_audit_actions = _resolve_showdown_team_audit_actions(session)
+    policy["team_audit"] = team_audit
+    policy["team_audit_actions"] = team_audit_actions
+    policy["team_audit_gaps"] = team_audit_gaps
     policy["action_plan_source"] = "preset"
+    if requested_goal == "auto" and recommendation["source"] == "team_audit" and team_audit_actions:
+        policy["allowed_actions"] = team_audit_actions
+        policy["action_plan_source"] = "team_audit"
     if requested_goal == "auto" and recommendation["source"] == "training_plan" and executable_plan_actions:
         policy["allowed_actions"] = executable_plan_actions
         policy["action_plan_source"] = "training_plan"
@@ -1454,7 +1497,7 @@ def _resolve_showdown_mission_policy(payload: ShowdownSessionMissionRequest, ses
     return policy
 
 
-def _recommend_showdown_mission_goal(session: dict) -> dict[str, str]:
+def _recommend_showdown_mission_goal(session: dict) -> dict[str, Any]:
     profile = session.get("learning_profile") or {}
     training_plan = profile.get("training_plan") or {}
     plan_goal = str(training_plan.get("next_mission_goal") or "").lower()
@@ -1463,6 +1506,10 @@ def _recommend_showdown_mission_goal(session: dict) -> dict[str, str]:
     average_reward = float(profile.get("average_reward") or 0.0)
     has_knowledge = bool(session.get("has_knowledge_context"))
     has_team_species = bool(session.get("team_species"))
+    team_audit_recommendation = _recommend_showdown_mission_goal_from_team_audit(session)
+
+    if team_audit_recommendation:
+        return team_audit_recommendation
 
     if has_team_species and not has_knowledge:
         return {
@@ -1499,6 +1546,64 @@ def _recommend_showdown_mission_goal(session: dict) -> dict[str, str]:
         "source": "balanced_default",
         "reason": "Learning signals are stable enough for a bounded ladder run.",
     }
+
+
+def _recommend_showdown_mission_goal_from_team_audit(session: dict) -> dict[str, Any] | None:
+    team_audit = session.get("team_audit") or {}
+    if not team_audit or not session.get("team_species"):
+        return None
+
+    status = str(team_audit.get("status") or "").lower()
+    gaps = [str(gap) for gap in team_audit.get("gaps") or [] if str(gap)]
+    raw_score = team_audit.get("score")
+    try:
+        score = float(raw_score)
+    except (TypeError, ValueError):
+        score = 100.0
+    has_knowledge = bool(session.get("has_knowledge_context"))
+
+    should_prepare = status == "blocked" or score < 65 or (gaps and not has_knowledge)
+    if not should_prepare:
+        return None
+
+    recommendation = str(team_audit.get("recommendation") or "").strip()
+    gap_text = ", ".join(gaps[:4])
+    if status == "blocked":
+        detail = recommendation or "Generated team audit is blocked."
+    elif score < 65:
+        detail = recommendation or f"Generated team audit score is low ({score:.0f})."
+    elif gap_text:
+        detail = f"Generated team audit found role gap(s): {gap_text}."
+        if recommendation:
+            detail = f"{detail} {recommendation}"
+    else:
+        detail = recommendation or "Generated team audit recommends preparation before laddering."
+    return {
+        "mission_goal": "prepare",
+        "source": "team_audit",
+        "reason": f"{detail} Research or adjust the team before entering a longer ladder run.",
+    }
+
+
+def _resolve_showdown_team_audit_actions(session: dict) -> list[str]:
+    team_audit = session.get("team_audit") or {}
+    if not team_audit or not session.get("team_species"):
+        return []
+
+    actions: list[str] = []
+    if not session.get("has_knowledge_context"):
+        actions.append("research_team")
+    status = str(team_audit.get("status") or "").lower()
+    raw_score = team_audit.get("score")
+    try:
+        score = float(raw_score)
+    except (TypeError, ValueError):
+        score = 100.0
+    if status == "blocked" or score < 65:
+        actions.append("analyze")
+    if not actions:
+        actions.append("research_team")
+    return list(dict.fromkeys(actions))
 
 
 def _resolve_showdown_training_plan_actions(session: dict) -> tuple[list[str], list[str], list[str]]:

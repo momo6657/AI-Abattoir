@@ -855,6 +855,7 @@ export default function PokemonBattlePage() {
     ['Phase 48', '一键自动驾驶启用实战就绪 gate，未通过登录、队伍、连接等检查时停止发送'],
     ['Phase 49', '多格式策略画像反哺首发、换人和出招评分，区分双打、单打 OU 与随机战'],
     ['Phase 50', '自动建队输出格式角色覆盖审计，暴露队伍分数、策略缺口和学习调整证据'],
+    ['Phase 51', 'auto 自主任务读取建队审计，低分、blocked 或角色缺口时优先研究队伍'],
   ];
 
   return (
@@ -1467,10 +1468,35 @@ export default function PokemonBattlePage() {
                   <Metric label="Actions" value={(showdownMissionPlan.executable_plan_actions || showdownMissionPlan.allowed_actions || []).length} compact />
                   <Metric label="Action Source" value={showdownMissionPlan.action_plan_source || '-'} compact />
                   <Metric label="Samples" value={showdownMissionPlan.learning_profile?.battles || 0} compact />
+                  <Metric label="Team Score" value={showdownMissionPlan.team_audit?.score ?? '-'} compact />
+                  <Metric label="Audit" value={showdownMissionPlan.team_audit?.status || '-'} compact />
                 </div>
                 {showdownMissionPlan.mission_goal_reason ? (
                   <div className="mt-2 break-words rounded border border-border bg-black/20 p-2 text-[10px] leading-4 text-gray-300">
                     {showdownMissionPlan.mission_goal_reason}
+                  </div>
+                ) : null}
+                {showdownMissionPlan.team_audit?.recommendation ? (
+                  <div className="mt-2 break-words rounded border border-amber-500/25 bg-amber-500/10 p-2 text-[10px] leading-4 text-amber-100">
+                    Team audit: {showdownMissionPlan.team_audit.recommendation}
+                  </div>
+                ) : null}
+                {showdownMissionPlan.team_audit_gaps?.length ? (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {showdownMissionPlan.team_audit_gaps.slice(0, 6).map((gap: string) => (
+                      <span key={`preview-gap-${gap}`} className="rounded border border-amber-500/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-amber-100">
+                        {gap}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {showdownMissionPlan.team_audit_actions?.length ? (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {showdownMissionPlan.team_audit_actions.map((action: string) => (
+                      <span key={`audit-action-${action}`} className="rounded border border-amber-500/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-amber-100">
+                        audit:{action}
+                      </span>
+                    ))}
                   </div>
                 ) : null}
                 {(showdownMissionPlan.executable_plan_actions || []).length ? (
@@ -1787,10 +1813,35 @@ export default function PokemonBattlePage() {
                   <Metric label="Mode" value={showdownSession.last_mission_summary.mode || showdownSession.mode || '-'} compact />
                   <Metric label="Source" value={showdownSession.last_mission_summary.mission_goal_source || '-'} compact />
                   <Metric label="Action Source" value={showdownSession.last_mission_summary.action_plan_source || '-'} compact />
+                  <Metric label="Team Score" value={showdownSession.last_mission_summary.team_audit?.score ?? '-'} compact />
+                  <Metric label="Audit" value={showdownSession.last_mission_summary.team_audit?.status || '-'} compact />
                 </div>
                 {showdownSession.last_mission_summary.mission_goal_reason ? (
                   <div className="mt-2 break-words rounded border border-border bg-black/20 p-2 text-[10px] leading-4 text-gray-400">
                     {showdownSession.last_mission_summary.mission_goal_reason}
+                  </div>
+                ) : null}
+                {showdownSession.last_mission_summary.team_audit?.recommendation ? (
+                  <div className="mt-2 break-words rounded border border-amber-500/25 bg-amber-500/10 p-2 text-[10px] leading-4 text-amber-100">
+                    Team audit: {showdownSession.last_mission_summary.team_audit.recommendation}
+                  </div>
+                ) : null}
+                {showdownSession.last_mission_summary.team_audit_gaps?.length ? (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {showdownSession.last_mission_summary.team_audit_gaps.slice(0, 6).map((gap: string) => (
+                      <span key={`mission-gap-${gap}`} className="rounded border border-amber-500/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-amber-100">
+                        {gap}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {showdownSession.last_mission_summary.team_audit_actions?.length ? (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {showdownSession.last_mission_summary.team_audit_actions.map((action: string) => (
+                      <span key={`mission-audit-action-${action}`} className="rounded border border-amber-500/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-amber-100">
+                        audit:{action}
+                      </span>
+                    ))}
                   </div>
                 ) : null}
                 {showdownSession.last_mission_summary.allowed_actions?.length ? (
