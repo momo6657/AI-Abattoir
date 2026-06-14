@@ -315,6 +315,7 @@ class ShowdownSessionState:
         stage = str(self.connection_diagnostics.get("stage") or "")
         pending_count = self._pending_command_count()
         challenge_count = len((self.challenges or {}).get("challengesFrom") or {})
+        live_readiness = self._live_readiness()
 
         def add(action: str, label: str, detail: str, priority: str = "normal") -> None:
             if any(existing["action"] == action for existing in actions):
@@ -337,6 +338,8 @@ class ShowdownSessionState:
         elif stage == "decision_audit_blocked" or self.status == "choice_blocked":
             add("review_decision", "Review choice", "Inspect the blocked decision audit before sending any Showdown command.", "high")
         elif stage == "live_readiness_blocked" or self.status == "readiness_blocked":
+            add("review_readiness", "Review readiness", "Fix the blocked live-readiness checks before sending Showdown commands.", "high")
+        elif live_readiness.get("status") == "blocked":
             add("review_readiness", "Review readiness", "Fix the blocked live-readiness checks before sending Showdown commands.", "high")
 
         if pending_count:

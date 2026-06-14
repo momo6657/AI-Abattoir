@@ -577,6 +577,7 @@ async def plan_showdown_mission(payload: ShowdownSessionMissionRequest, db: Asyn
         "auto_research_team": payload.auto_research_team,
         "mission_goal": payload.mission_goal,
         "auto_search": mission_policy["auto_search"],
+        "require_live_readiness": mission_policy["require_live_readiness"],
         "max_actions": payload.max_actions,
         "max_messages": payload.max_messages,
         "send_commands": payload.send_commands,
@@ -602,6 +603,11 @@ async def plan_showdown_mission(payload: ShowdownSessionMissionRequest, db: Asyn
         "team_audit": mission_policy["team_audit"],
         "team_audit_actions": mission_policy["team_audit_actions"],
         "team_audit_gaps": mission_policy["team_audit_gaps"],
+        "live_readiness": mission_policy["live_readiness"],
+        "readiness_status": mission_policy["readiness_status"],
+        "readiness_score": mission_policy["readiness_score"],
+        "readiness_actions": mission_policy["readiness_actions"],
+        "require_live_readiness": mission_policy["require_live_readiness"],
         "mission_goal": mission_policy["mission_goal"],
         "requested_mission_goal": mission_policy["requested_mission_goal"],
         "mission_goal_source": mission_policy["mission_goal_source"],
@@ -638,6 +644,7 @@ async def start_showdown_mission(payload: ShowdownSessionMissionRequest, db: Asy
         allowed_actions=mission_policy["allowed_actions"],
         stop_actions=mission_policy["stop_actions"],
         stop_on_new_session=mission_policy["stop_on_new_session"],
+        require_live_readiness=mission_policy["require_live_readiness"],
     )
     supervisor = await supervise_showdown_session(session.session_id, supervisor_payload, db)
     final_session = supervisor.get("session") or session.to_dict()
@@ -661,6 +668,11 @@ async def start_showdown_mission(payload: ShowdownSessionMissionRequest, db: Asy
         "team_audit": final_session.get("team_audit") or mission_policy["team_audit"],
         "team_audit_actions": mission_policy["team_audit_actions"],
         "team_audit_gaps": mission_policy["team_audit_gaps"],
+        "live_readiness": final_session.get("live_readiness") or mission_policy["live_readiness"],
+        "readiness_status": mission_policy["readiness_status"],
+        "readiness_score": mission_policy["readiness_score"],
+        "readiness_actions": mission_policy["readiness_actions"],
+        "require_live_readiness": mission_policy["require_live_readiness"],
         "stop_reason": supervisor.get("stop_reason"),
         "step_count": supervisor.get("step_count", 0),
         "training_plan": (final_session.get("learning_profile") or {}).get("training_plan"),
@@ -1480,13 +1492,27 @@ def _resolve_showdown_mission_policy(payload: ShowdownSessionMissionRequest, ses
     policy["team_audit"] = team_audit
     policy["team_audit_actions"] = team_audit_actions
     policy["team_audit_gaps"] = team_audit_gaps
+    live_readiness = session.get("live_readiness") or {}
+    readiness_actions = _resolve_showdown_readiness_actions(session, mission_goal=goal)
+    policy["live_readiness"] = live_readiness
+    policy["readiness_status"] = live_readiness.get("status")
+    policy["readiness_score"] = live_readiness.get("score")
+    policy["readiness_actions"] = readiness_actions
+    policy["require_live_readiness"] = goal in {"ladder", "learn"}
     policy["action_plan_source"] = "preset"
+    if requested_goal == "auto" and recommendation["source"] == "live_readiness" and readiness_actions:
+        policy["allowed_actions"] = readiness_actions
+        policy["action_plan_source"] = "live_readiness"
     if requested_goal == "auto" and recommendation["source"] == "team_audit" and team_audit_actions:
         policy["allowed_actions"] = team_audit_actions
         policy["action_plan_source"] = "team_audit"
     if requested_goal == "auto" and recommendation["source"] == "training_plan" and executable_plan_actions:
         policy["allowed_actions"] = executable_plan_actions
         policy["action_plan_source"] = "training_plan"
+    if requested_goal == "auto" and recommendation["source"] != "live_readiness" and readiness_actions and goal in {"queue", "ladder", "learn"}:
+        policy["allowed_actions"] = list(dict.fromkeys(readiness_actions + policy["allowed_actions"]))
+        if policy["action_plan_source"] == "preset":
+            policy["action_plan_source"] = "live_readiness"
     if payload.allowed_actions:
         policy["allowed_actions"] = payload.allowed_actions
         policy["action_plan_source"] = "custom"
@@ -1506,8 +1532,11 @@ def _recommend_showdown_mission_goal(session: dict) -> dict[str, Any]:
     average_reward = float(profile.get("average_reward") or 0.0)
     has_knowledge = bool(session.get("has_knowledge_context"))
     has_team_species = bool(session.get("team_species"))
+    live_readiness_recommendation = _recommend_showdown_mission_goal_from_live_readiness(session)
     team_audit_recommendation = _recommend_showdown_mission_goal_from_team_audit(session)
 
+    if live_readiness_recommendation:
+        return live_readiness_recommendation
     if team_audit_recommendation:
         return team_audit_recommendation
 
@@ -1548,6 +1577,29 @@ def _recommend_showdown_mission_goal(session: dict) -> dict[str, Any]:
     }
 
 
+def _recommend_showdown_mission_goal_from_live_readiness(session: dict) -> dict[str, Any] | None:
+    live_readiness = session.get("live_readiness") or {}
+    if live_readiness.get("status") != "blocked":
+        return None
+
+    blocked_checks = [
+        check
+        for check in live_readiness.get("checks") or []
+        if isinstance(check, dict) and check.get("status") == "blocked"
+    ]
+    details = [
+        str(check.get("detail") or check.get("label") or check.get("id"))
+        for check in blocked_checks[:3]
+        if str(check.get("detail") or check.get("label") or check.get("id"))
+    ]
+    reason = "; ".join(details) or str(live_readiness.get("recommendation") or "Live readiness is blocked.")
+    return {
+        "mission_goal": "prepare",
+        "source": "live_readiness",
+        "reason": f"{reason} Review live readiness before sending Showdown commands.",
+    }
+
+
 def _recommend_showdown_mission_goal_from_team_audit(session: dict) -> dict[str, Any] | None:
     team_audit = session.get("team_audit") or {}
     if not team_audit or not session.get("team_species"):
@@ -1583,6 +1635,47 @@ def _recommend_showdown_mission_goal_from_team_audit(session: dict) -> dict[str,
         "source": "team_audit",
         "reason": f"{detail} Research or adjust the team before entering a longer ladder run.",
     }
+
+
+def _resolve_showdown_readiness_actions(session: dict, *, mission_goal: str) -> list[str]:
+    live_readiness = session.get("live_readiness") or {}
+    if not live_readiness:
+        return []
+
+    supported_actions = {
+        "review_readiness",
+        "research_team",
+        "connect",
+        "flush_pending",
+        "start_search",
+        "accept_challenge",
+        "run_once",
+        "autopilot",
+        "analyze",
+        "new_session",
+    }
+    actions: list[str] = []
+
+    def add(action: str | None) -> None:
+        if action and action in supported_actions and action not in actions:
+            actions.append(action)
+
+    status = str(live_readiness.get("status") or "")
+    if status == "blocked":
+        add("review_readiness")
+        for check in live_readiness.get("checks") or []:
+            if isinstance(check, dict) and check.get("status") == "blocked":
+                add(str(check.get("action") or ""))
+        return actions
+
+    if status != "action_required":
+        return []
+
+    for action in live_readiness.get("recommended_actions") or []:
+        add(str(action))
+    if mission_goal in {"ladder", "learn"}:
+        add("autopilot")
+    return actions
 
 
 def _resolve_showdown_team_audit_actions(session: dict) -> list[str]:

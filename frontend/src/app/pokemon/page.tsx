@@ -856,6 +856,7 @@ export default function PokemonBattlePage() {
     ['Phase 49', '多格式策略画像反哺首发、换人和出招评分，区分双打、单打 OU 与随机战'],
     ['Phase 50', '自动建队输出格式角色覆盖审计，暴露队伍分数、策略缺口和学习调整证据'],
     ['Phase 51', 'auto 自主任务读取建队审计，低分、blocked 或角色缺口时优先研究队伍'],
+    ['Phase 52', 'auto 自主任务读取实战就绪审计，blocked 时先复核 readiness 再发送命令'],
   ];
 
   return (
@@ -1470,6 +1471,8 @@ export default function PokemonBattlePage() {
                   <Metric label="Samples" value={showdownMissionPlan.learning_profile?.battles || 0} compact />
                   <Metric label="Team Score" value={showdownMissionPlan.team_audit?.score ?? '-'} compact />
                   <Metric label="Audit" value={showdownMissionPlan.team_audit?.status || '-'} compact />
+                  <Metric label="Readiness" value={showdownMissionPlan.readiness_status || '-'} compact />
+                  <Metric label="Gate" value={showdownMissionPlan.require_live_readiness ? 'on' : 'off'} compact />
                 </div>
                 {showdownMissionPlan.mission_goal_reason ? (
                   <div className="mt-2 break-words rounded border border-border bg-black/20 p-2 text-[10px] leading-4 text-gray-300">
@@ -1495,6 +1498,20 @@ export default function PokemonBattlePage() {
                     {showdownMissionPlan.team_audit_actions.map((action: string) => (
                       <span key={`audit-action-${action}`} className="rounded border border-amber-500/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-amber-100">
                         audit:{action}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {showdownMissionPlan.live_readiness?.recommendation ? (
+                  <div className="mt-2 break-words rounded border border-sky-500/25 bg-sky-500/10 p-2 text-[10px] leading-4 text-sky-100">
+                    Readiness: {showdownMissionPlan.live_readiness.recommendation}
+                  </div>
+                ) : null}
+                {showdownMissionPlan.readiness_actions?.length ? (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {showdownMissionPlan.readiness_actions.map((action: string) => (
+                      <span key={`readiness-action-${action}`} className="rounded border border-sky-500/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-sky-100">
+                        ready:{action}
                       </span>
                     ))}
                   </div>
@@ -1815,6 +1832,8 @@ export default function PokemonBattlePage() {
                   <Metric label="Action Source" value={showdownSession.last_mission_summary.action_plan_source || '-'} compact />
                   <Metric label="Team Score" value={showdownSession.last_mission_summary.team_audit?.score ?? '-'} compact />
                   <Metric label="Audit" value={showdownSession.last_mission_summary.team_audit?.status || '-'} compact />
+                  <Metric label="Readiness" value={showdownSession.last_mission_summary.readiness_status || '-'} compact />
+                  <Metric label="Gate" value={showdownSession.last_mission_summary.require_live_readiness ? 'on' : 'off'} compact />
                 </div>
                 {showdownSession.last_mission_summary.mission_goal_reason ? (
                   <div className="mt-2 break-words rounded border border-border bg-black/20 p-2 text-[10px] leading-4 text-gray-400">
@@ -1840,6 +1859,20 @@ export default function PokemonBattlePage() {
                     {showdownSession.last_mission_summary.team_audit_actions.map((action: string) => (
                       <span key={`mission-audit-action-${action}`} className="rounded border border-amber-500/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-amber-100">
                         audit:{action}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {showdownSession.last_mission_summary.live_readiness?.recommendation ? (
+                  <div className="mt-2 break-words rounded border border-sky-500/25 bg-sky-500/10 p-2 text-[10px] leading-4 text-sky-100">
+                    Readiness: {showdownSession.last_mission_summary.live_readiness.recommendation}
+                  </div>
+                ) : null}
+                {showdownSession.last_mission_summary.readiness_actions?.length ? (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {showdownSession.last_mission_summary.readiness_actions.map((action: string) => (
+                      <span key={`mission-readiness-action-${action}`} className="rounded border border-sky-500/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-sky-100">
+                        ready:{action}
                       </span>
                     ))}
                   </div>

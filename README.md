@@ -185,6 +185,7 @@ Abattoir（竞技场）是一个让 AI 展现真实能力的地方。在这里�
 - Showdown 决策安全审计：每次自动选择都会返回可发送状态、风险评分、rqid/房间绑定/目标合法性/兜底选择等检查项
 - Showdown 审计门控自动驾驶：监督循环会在 blocked 决策审计时停止发送，保留决策证据并在运行摘要中展示阻断原因
 - Showdown 实战就绪门控：一键自动驾驶可在发送前检查训练师名、队伍、登录、连接和诊断状态，未通过时停止并回传 gate 摘要
+- Showdown readiness 驱动任务：`auto` 自主任务会读取实战就绪审计，blocked 时先执行 `review_readiness`，ladder/learn 默认启用发送前 gate
 - Showdown 学习摘要：可从真实协议事件中汇总回合、出招、换人、受伤、击倒、胜负和奖励信号
 - Showdown 学习档案：将已完成实战摘要持久化到数据库，按用户和格式聚合胜率、平均奖励、决策类型收益，并给出下一局模式建议
 - Showdown 即时学习回写：完成对战后会把最新学习档案同步回当前会话快照，前端策略面板可直接使用新样本
@@ -594,8 +595,8 @@ AI-Abattoir/
 | GET | `/api/pokemon/showdown/formats/capabilities` | 汇总所有支持格式的队伍来源、目标策略、自动化覆盖、学习样本和建议动作 |
 | GET | `/api/pokemon/showdown/tactical-briefing` | 生成下一局 Showdown 战术简报，包含自动队伍、学习档案、开局计划、风险控制和可启动任务请求 |
 | GET | `/api/pokemon/showdown/sessions/{id}/matchup-briefing` | 根据已同步房间预览和场上状态生成对手 Matchup 简报，可选联网检索对手阵容知识 |
-| POST | `/api/pokemon/showdown/mission/plan` | 预览下一轮 Showdown 自主任务，返回可启动的 mission 请求预设、目标来源、队伍审计和可执行计划动作 |
-| POST | `/api/pokemon/showdown/mission` | 创建 Showdown 自主任务，并按 `auto/prepare/queue/ladder/learn` 目标运行有限监督循环，返回任务训练计划、建队审计、目标推荐来源和可执行计划动作 |
+| POST | `/api/pokemon/showdown/mission/plan` | 预览下一轮 Showdown 自主任务，返回可启动的 mission 请求预设、目标来源、队伍审计、实战就绪计划和可执行计划动作 |
+| POST | `/api/pokemon/showdown/mission` | 创建 Showdown 自主任务，并按 `auto/prepare/queue/ladder/learn` 目标运行有限监督循环，返回任务训练计划、建队审计、实战就绪计划、目标推荐来源和可执行计划动作 |
 | POST | `/api/pokemon/showdown/training-chain` | 连续执行多轮 Showdown 自主任务，每轮先读取学习计划再执行 mission，并汇总 Mastery 分数与停止原因 |
 | POST | `/api/pokemon/showdown/sessions` | 创建 Showdown 自动会话状态机，缺省队伍时自动建队，`mode=auto` 时按学习档案选择策略模式，可用 `auto_accept_challenges` 自动接受同格式挑战，或用 `auto_research_team` 自动检索整队知识 |
 | GET | `/api/pokemon/showdown/sessions` | 列出 Showdown 自动会话 |
@@ -860,6 +861,7 @@ alembic history
 - [x] 宝可梦 Showdown 自动驾驶实战就绪 gate 和阻断摘要展示
 - [x] 宝可梦 Showdown 多格式策略画像和格式感知出招评分
 - [x] 宝可梦 Showdown 建队审计驱动自主任务策略
+- [x] 宝可梦 Showdown 实战就绪审计驱动自主任务策略
 - [ ] Pokemon Showdown 真实登录和天梯实战
 - [ ] 宝可梦完整多格式战斗策略（单打、随机战、不同世代规则）
 - [ ] 宝可梦强化学习闭环与长期策略评估

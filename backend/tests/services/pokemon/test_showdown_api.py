@@ -1090,6 +1090,87 @@ def test_showdown_auto_policy_uses_team_audit_before_ladder():
     assert "missing support roles" in policy["mission_goal_reason"]
 
 
+def test_showdown_auto_policy_uses_blocked_live_readiness_before_ladder():
+    payload = ShowdownSessionMissionRequest(
+        username="",
+        battle_format="gen9randombattle",
+        mission_goal="auto",
+    )
+    session = {
+        "has_knowledge_context": False,
+        "team_species": [],
+        "live_readiness": {
+            "status": "blocked",
+            "score": 86,
+            "recommended_actions": ["connect", "start_search"],
+            "checks": [
+                {
+                    "id": "username",
+                    "label": "Trainer name",
+                    "status": "blocked",
+                    "detail": "A Showdown trainer name is required.",
+                    "action": None,
+                },
+                {
+                    "id": "connection",
+                    "label": "Websocket",
+                    "status": "action_required",
+                    "detail": "Connect to Pokemon Showdown before sending queued commands.",
+                    "action": "connect",
+                },
+            ],
+        },
+        "learning_profile": {
+            "battles": 6,
+            "win_rate": 0.75,
+            "average_reward": 100.0,
+            "training_plan": {
+                "next_mission_goal": "learn",
+                "actions": ["start_search", "autopilot"],
+            },
+        },
+    }
+
+    policy = pokemon_api._resolve_showdown_mission_policy(payload, session)
+
+    assert policy["mission_goal"] == "prepare"
+    assert policy["mission_goal_source"] == "live_readiness"
+    assert policy["mission_goal_reason"].startswith("A Showdown trainer name is required.")
+    assert policy["action_plan_source"] == "live_readiness"
+    assert policy["allowed_actions"] == ["review_readiness"]
+    assert policy["readiness_status"] == "blocked"
+    assert policy["readiness_actions"] == ["review_readiness"]
+    assert policy["require_live_readiness"] is False
+
+
+@pytest.mark.asyncio
+async def test_showdown_mission_auto_reviews_blocked_live_readiness(setup_db, client):
+    response = await client.post(
+        "/api/pokemon/showdown/mission",
+        json={
+            "username": "",
+            "battle_format": "gen9randombattle",
+            "mission_goal": "auto",
+            "max_actions": 2,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    session_id = data["session"]["session_id"]
+    assert data["mission_summary"]["mission_goal"] == "prepare"
+    assert data["mission_summary"]["mission_goal_source"] == "live_readiness"
+    assert data["mission_summary"]["action_plan_source"] == "live_readiness"
+    assert data["mission_summary"]["allowed_actions"] == ["review_readiness"]
+    assert data["mission_summary"]["readiness_status"] == "blocked"
+    assert data["mission_summary"]["readiness_actions"] == ["review_readiness"]
+    assert data["mission_summary"]["require_live_readiness"] is False
+    assert data["supervisor"]["steps"][0]["action"] == "review_readiness"
+    assert data["supervisor"]["steps"][0]["result"]["live_readiness"]["status"] == "blocked"
+
+    await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
+
+
 @pytest.mark.asyncio
 async def test_showdown_training_chain_runs_adaptive_planned_rounds(setup_db, db, client):
     await pokemon_showdown_learning_store.record_session(
