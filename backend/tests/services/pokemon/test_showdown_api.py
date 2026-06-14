@@ -1218,11 +1218,18 @@ async def test_showdown_training_chain_runs_adaptive_planned_rounds(setup_db, db
     assert data["progress"]["after_mastery_score"] == data["mastery_score"]
     assert data["progress"]["battle_delta"] == 0
     assert data["progress"]["direction"] == "unchanged"
+    assert data["recovery"]["status"] == "resume"
+    assert data["recovery"]["action_counts"]["connect"] == 4
+    assert data["recovery"]["action_counts"]["autopilot"] == 2
+    assert data["recovery"]["rounds"][-1]["status"] == "resume"
     assert data["training_chain_summary"]["chain_number"] == 1
     assert data["training_chain_summary"]["completed_rounds"] == 2
     assert data["training_chain_summary"]["progress"]["after_mastery_score"] == data["mastery_score"]
+    assert data["training_chain_summary"]["recovery"]["actions"][0] == "connect"
     assert data["training_chain_summary"]["rounds"][-1]["planned_goal"] == "learn"
+    assert data["training_chain_summary"]["rounds"][-1]["recovery_status"] == "resume"
     assert data["final_session"]["last_training_chain_summary"]["completed_rounds"] == 2
+    assert data["final_session"]["last_training_chain_summary"]["recovery"]["status"] == "resume"
     assert data["final_session"]["training_chain_history_count"] == 1
     assert data["final_session"]["training_chain_trend"]["chain_count"] == 1
     assert data["final_session"]["training_chain_trend"]["direction"] in {"flat", "improving"}
@@ -1558,6 +1565,64 @@ def test_showdown_training_chain_progress_keeps_zero_latest_score():
     assert progress["after_mastery_score"] == 0.0
     assert progress["mastery_score_delta"] == -25.0
     assert progress["direction"] == "declined"
+
+
+def test_showdown_training_chain_recovery_aggregates_missing_task_actions():
+    rounds = [
+        {
+            "round": 1,
+            "mission_summary": {
+                "training_task_progress": {
+                    "tasks": [
+                        {
+                            "id": "search",
+                            "action": "start_search",
+                            "status": "partial",
+                            "missing_actions": ["connect", "flush_pending"],
+                            "blocked_reason": "Mission stopped with max_actions.",
+                        },
+                        {
+                            "id": "audit",
+                            "action": "audit_switch",
+                            "status": "completed",
+                            "missing_actions": [],
+                        },
+                    ]
+                }
+            },
+        },
+        {
+            "round": 2,
+            "mission_summary": {
+                "training_task_progress": {
+                    "tasks": [
+                        {
+                            "id": "auto",
+                            "action": "autopilot",
+                            "status": "partial",
+                            "missing_actions": ["connect", "flush_pending", "autopilot"],
+                        },
+                        {
+                            "id": "custom",
+                            "action": "custom_step",
+                            "status": "unsupported",
+                            "unsupported_actions": ["custom_step"],
+                        },
+                    ]
+                }
+            },
+        },
+    ]
+
+    recovery = pokemon_api._build_showdown_training_chain_recovery(rounds)
+
+    assert recovery["status"] == "resume"
+    assert recovery["actions"] == ["connect", "flush_pending", "autopilot"]
+    assert recovery["action_counts"]["connect"] == 2
+    assert recovery["task_count"] == 3
+    assert recovery["rounds"][0]["round"] == 1
+    assert set(recovery["rounds"][1]["actions"]) == {"connect", "flush_pending", "autopilot"}
+    assert "max_actions" in recovery["blocked_reasons"][0]
 
 
 @pytest.mark.asyncio

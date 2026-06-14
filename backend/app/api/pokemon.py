@@ -770,6 +770,7 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
             "learning_profile": learning_profile,
             "mastery_score": latest_mastery_score,
         }
+        round_summary["recovery"] = _build_showdown_round_recovery(round_summary)
         rounds.append(round_summary)
 
         if payload.mastery_score_target is not None and latest_mastery_score >= payload.mastery_score_target:
@@ -790,6 +791,7 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
         latest_learning_profile=latest_learning_profile,
         latest_mastery_score=latest_mastery_score,
     )
+    recovery = _build_showdown_training_chain_recovery(rounds)
     training_chain_summary = None
     if final_session and final_session.get("session_id"):
         training_chain_summary = pokemon_showdown_session_service.store_training_chain_summary(
@@ -804,6 +806,7 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
                 "mastery_score": latest_mastery_score,
                 "learning_battles": (latest_learning_profile or {}).get("battles", 0),
                 "progress": progress,
+                "recovery": recovery,
                 "last_goal": rounds[-1]["planned_goal"] if rounds else None,
                 "last_goal_source": rounds[-1]["planned_goal_source"] if rounds else None,
                 "rounds": [
@@ -813,6 +816,8 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
                         "planned_goal_source": item["planned_goal_source"],
                         "supervisor_stop_reason": item["supervisor_stop_reason"],
                         "supervisor_step_count": item["supervisor_step_count"],
+                        "recovery_status": item["recovery"]["status"],
+                        "recovery_actions": item["recovery"]["actions"],
                         "mastery_score": item["mastery_score"],
                     }
                     for item in rounds
@@ -832,6 +837,7 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
         "learning_profile": latest_learning_profile,
         "mastery_score": latest_mastery_score,
         "progress": progress,
+        "recovery": recovery,
         "training_chain_summary": training_chain_summary,
         "rounds": rounds,
     }
@@ -913,6 +919,123 @@ def _build_showdown_training_chain_progress(
         "battle_delta": battle_delta,
         "direction": direction,
         "improved": score_delta > 0,
+        "recommendation": recommendation,
+    }
+
+
+def _build_showdown_round_recovery(round_summary: dict[str, Any]) -> dict[str, Any]:
+    mission_summary = round_summary.get("mission_summary") or {}
+    task_progress = mission_summary.get("training_task_progress") or {}
+    task_items = task_progress.get("tasks") or []
+    action_counts: dict[str, int] = {}
+    task_recovery: list[dict[str, Any]] = []
+    blocked_reasons: list[str] = []
+
+    for task in task_items:
+        if not isinstance(task, dict):
+            continue
+        status = str(task.get("status") or "")
+        if status not in {"pending", "partial", "unsupported"}:
+            continue
+        missing_actions = [str(action) for action in task.get("missing_actions") or [] if str(action)]
+        unsupported_actions = [str(action) for action in task.get("unsupported_actions") or [] if str(action)]
+        for action in missing_actions:
+            action_counts[action] = action_counts.get(action, 0) + 1
+        blocked_reason = str(task.get("blocked_reason") or "")
+        if blocked_reason and blocked_reason not in blocked_reasons:
+            blocked_reasons.append(blocked_reason)
+        task_recovery.append(
+            {
+                "id": task.get("id"),
+                "action": task.get("action"),
+                "status": status,
+                "priority": task.get("priority"),
+                "missing_actions": missing_actions,
+                "unsupported_actions": unsupported_actions,
+                "blocked_reason": blocked_reason,
+            }
+        )
+
+    if not task_recovery:
+        return {
+            "status": "clear",
+            "actions": [],
+            "action_counts": {},
+            "task_count": 0,
+            "tasks": [],
+            "blocked_reasons": [],
+            "recommendation": "No recovery action is needed from this round.",
+        }
+
+    actions = sorted(action_counts, key=lambda action: (-action_counts[action], action))
+    unsupported_count = sum(1 for task in task_recovery if task["status"] == "unsupported")
+    if unsupported_count == len(task_recovery):
+        status = "unsupported"
+        recommendation = "Add supported mappings for unsupported training tasks before the next chain."
+    elif actions:
+        status = "resume"
+        recommendation = f"Resume the next chain with {', '.join(actions[:4])} before broadening the mission."
+    else:
+        status = "blocked"
+        recommendation = "Review blocked training tasks before extending the chain."
+
+    return {
+        "status": status,
+        "actions": actions,
+        "action_counts": action_counts,
+        "task_count": len(task_recovery),
+        "tasks": task_recovery,
+        "blocked_reasons": blocked_reasons,
+        "recommendation": recommendation,
+    }
+
+
+def _build_showdown_training_chain_recovery(rounds: list[dict[str, Any]]) -> dict[str, Any]:
+    action_counts: dict[str, int] = {}
+    blocked_reasons: list[str] = []
+    round_recovery: list[dict[str, Any]] = []
+    task_count = 0
+
+    for round_item in rounds:
+        recovery = round_item.get("recovery") or _build_showdown_round_recovery(round_item)
+        for action, count in (recovery.get("action_counts") or {}).items():
+            action_counts[str(action)] = action_counts.get(str(action), 0) + int(count or 0)
+        for reason in recovery.get("blocked_reasons") or []:
+            reason_text = str(reason)
+            if reason_text and reason_text not in blocked_reasons:
+                blocked_reasons.append(reason_text)
+        task_count += int(recovery.get("task_count") or 0)
+        if recovery.get("status") != "clear":
+            round_recovery.append(
+                {
+                    "round": round_item.get("round"),
+                    "status": recovery.get("status"),
+                    "actions": recovery.get("actions") or [],
+                    "task_count": recovery.get("task_count") or 0,
+                }
+            )
+
+    actions = sorted(action_counts, key=lambda action: (-action_counts[action], action))
+    if not rounds:
+        status = "none"
+        recommendation = "No training rounds were executed."
+    elif not round_recovery:
+        status = "clear"
+        recommendation = "All mapped training task actions completed across the chain."
+    elif actions:
+        status = "resume"
+        recommendation = f"Start the next chain with recovery actions: {', '.join(actions[:5])}."
+    else:
+        status = "blocked"
+        recommendation = "Review unsupported or blocked training tasks before the next chain."
+
+    return {
+        "status": status,
+        "actions": actions,
+        "action_counts": action_counts,
+        "task_count": task_count,
+        "rounds": round_recovery,
+        "blocked_reasons": blocked_reasons,
         "recommendation": recommendation,
     }
 

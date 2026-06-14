@@ -860,6 +860,7 @@ export default function PokemonBattlePage() {
     ['Phase 53', '学习档案沉淀 battle lessons 和可执行 training tasks，实战后能复用经验调整下一轮任务'],
     ['Phase 54', 'auto 自主任务优先读取 training tasks，按任务证据驱动 supervisor 动作白名单'],
     ['Phase 55', 'mission summary 回写 training task progress，显示 completed/partial/pending/unsupported 执行证据'],
+    ['Phase 56', 'training-chain 汇总 recovery actions，把未完成训练任务转成下一轮恢复队列'],
   ];
 
   return (
@@ -1570,6 +1571,34 @@ export default function PokemonBattlePage() {
                     {activeShowdownTrainingChain.progress.recommendation}
                   </div>
                 ) : null}
+                {activeShowdownTrainingChain.recovery ? (
+                  <div className="mt-2 rounded border border-sky-500/25 bg-black/20 p-2">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[10px] font-semibold uppercase text-sky-100">Recovery</span>
+                      <span className="rounded bg-black/30 px-2 py-0.5 text-[10px] text-sky-100">
+                        {activeShowdownTrainingChain.recovery.status}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Metric label="Tasks" value={activeShowdownTrainingChain.recovery.task_count ?? 0} compact />
+                      <Metric label="Actions" value={activeShowdownTrainingChain.recovery.actions?.length ?? 0} compact />
+                    </div>
+                    {activeShowdownTrainingChain.recovery.recommendation ? (
+                      <div className="mt-2 break-words text-[10px] leading-4 text-gray-300">
+                        {activeShowdownTrainingChain.recovery.recommendation}
+                      </div>
+                    ) : null}
+                    {activeShowdownTrainingChain.recovery.actions?.length ? (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {activeShowdownTrainingChain.recovery.actions.slice(0, 8).map((action: string) => (
+                          <span key={`chain-recovery-${action}`} className="rounded border border-sky-500/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-sky-100">
+                            {action}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 {activeShowdownTrainingChain.rounds?.length ? (
                   <div className="mt-2 space-y-1.5">
                     {activeShowdownTrainingChain.rounds.slice(-4).map((round: any) => (
@@ -1578,6 +1607,11 @@ export default function PokemonBattlePage() {
                         <span className="text-[10px] text-gray-500">
                           {round.planned_goal_source} · {round.supervisor_stop_reason} · {round.supervisor_step_count} step(s)
                         </span>
+                        {round.recovery?.actions?.length || round.recovery_actions?.length ? (
+                          <span className="basis-full truncate text-[10px] text-sky-100">
+                            recovery: {(round.recovery?.actions || round.recovery_actions).slice(0, 4).join(' / ')}
+                          </span>
+                        ) : null}
                       </div>
                     ))}
                   </div>
