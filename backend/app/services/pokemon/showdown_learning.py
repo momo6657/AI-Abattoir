@@ -94,6 +94,9 @@ class ShowdownLearningProfile:
             }
             for decision_type, stats in self.decision_types.items()
         }
+        training_plan = self._training_plan(mode_summaries, decision_summaries)
+        learning_lessons = self._learning_lessons(mode_summaries, decision_summaries)
+        training_tasks = self._training_tasks(mode_summaries, decision_summaries)
         return {
             "username": self.username,
             "battle_format": self.battle_format,
@@ -111,7 +114,13 @@ class ShowdownLearningProfile:
             "decision_types": decision_summaries,
             "recommendation": self._recommendation(mode_summaries),
             "training_focus": self._training_focus(mode_summaries, decision_summaries),
-            "training_plan": self._training_plan(mode_summaries, decision_summaries),
+            "training_plan": {
+                **training_plan,
+                "lesson_count": len(learning_lessons),
+                "task_count": len(training_tasks),
+            },
+            "learning_lessons": learning_lessons,
+            "training_tasks": training_tasks,
             "recent_sessions": self.recent_sessions,
         }
 
@@ -261,6 +270,153 @@ class ShowdownLearningProfile:
             "reason": "The profile has usable data but still needs controlled samples to improve mode and decision estimates.",
         }
 
+    def _learning_lessons(
+        self,
+        mode_summaries: dict[str, dict[str, Any]],
+        decision_summaries: dict[str, dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        if not self.battles:
+            return [
+                {
+                    "id": "collect_baseline",
+                    "level": "info",
+                    "title": "No completed Showdown battles learned yet",
+                    "evidence": "0 completed battle records",
+                    "recommendation": "Run a bounded queue mission and analyze the first completed battle.",
+                }
+            ]
+
+        lessons: list[dict[str, Any]] = []
+        win_rate = self.wins / max(self.battles, 1)
+        average_reward = self.total_reward / max(self.battles, 1)
+        faint_delta = self.total_faints_for - self.total_faints_against
+        recent_results = [str(item.get("status") or "unknown") for item in self.recent_sessions[:5]]
+
+        if win_rate < 0.5:
+            lessons.append(
+                {
+                    "id": "outcome_control",
+                    "level": "warning",
+                    "title": "Match outcomes are unstable",
+                    "evidence": f"{self.wins}/{self.battles} wins, recent: {', '.join(recent_results)}",
+                    "recommendation": "Prefer safer choices and run short reviews before longer ladder loops.",
+                }
+            )
+        else:
+            lessons.append(
+                {
+                    "id": "winning_baseline",
+                    "level": "success",
+                    "title": "Winning baseline is usable",
+                    "evidence": f"{win_rate:.0%} win rate across {self.battles} battle(s)",
+                    "recommendation": "Continue bounded learning runs while monitoring reward and knockout delta.",
+                }
+            )
+
+        if average_reward < 50:
+            lessons.append(
+                {
+                    "id": "low_reward",
+                    "level": "warning",
+                    "title": "Reward baseline is low",
+                    "evidence": f"{average_reward:.1f} average reward",
+                    "recommendation": "Refresh team knowledge and avoid committing to long runs until reward improves.",
+                }
+            )
+
+        if faint_delta < 0:
+            lessons.append(
+                {
+                    "id": "knockout_deficit",
+                    "level": "warning",
+                    "title": "Knockout trade is negative",
+                    "evidence": f"{self.total_faints_for} KO for, {self.total_faints_against} KO against",
+                    "recommendation": "Audit defensive turns, switches, Protect usage, and speed-control positioning.",
+                }
+            )
+
+        best_mode = self._best_mode(mode_summaries)
+        if best_mode:
+            mode, stats = best_mode
+            lessons.append(
+                {
+                    "id": "preferred_mode",
+                    "level": "info",
+                    "title": f"Best observed mode: {mode}",
+                    "evidence": f"{stats['average_reward']:.1f} average reward, {stats['win_rate']:.0%} win rate",
+                    "recommendation": f"Use {mode} as the default mode until another mode has stronger evidence.",
+                }
+            )
+
+        weakest_mode = self._weakest_mode(mode_summaries)
+        if weakest_mode:
+            stats = mode_summaries[weakest_mode]
+            lessons.append(
+                {
+                    "id": "weak_mode",
+                    "level": "warning",
+                    "title": f"Weak mode: {weakest_mode}",
+                    "evidence": f"{stats['average_reward']:.1f} average reward across {stats['battles']} battle(s)",
+                    "recommendation": "Collect a controlled re-test or avoid this mode during ladder missions.",
+                }
+            )
+
+        weakest_decision = self._weakest_decision(decision_summaries)
+        if weakest_decision:
+            stats = decision_summaries[weakest_decision]
+            lessons.append(
+                {
+                    "id": "weak_decision",
+                    "level": "warning",
+                    "title": f"Decision type needs audit: {weakest_decision}",
+                    "evidence": f"{stats['average_reward']:.1f} average reward over {stats['count']} decision(s)",
+                    "recommendation": f"Run audit_{weakest_decision} before the next ladder or learn mission.",
+                }
+            )
+
+        return lessons[:6]
+
+    def _training_tasks(
+        self,
+        mode_summaries: dict[str, dict[str, Any]],
+        decision_summaries: dict[str, dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        plan = self._training_plan(mode_summaries, decision_summaries)
+        tasks: list[dict[str, Any]] = []
+        stage = str(plan.get("stage") or "collect_data")
+        priority_by_stage = {
+            "collect_data": "normal",
+            "stabilize": "high",
+            "improve": "normal",
+            "exploit": "normal",
+        }
+        for index, action in enumerate(plan.get("actions") or [], start=1):
+            tasks.append(
+                {
+                    "id": f"{stage}_{index}_{action}",
+                    "action": action,
+                    "priority": priority_by_stage.get(stage, "normal"),
+                    "stage": stage,
+                    "evidence": plan.get("reason") or "Derived from the current learning profile.",
+                    "done_when": plan.get("stop_condition") or "Refresh the learning profile after this task.",
+                }
+            )
+
+        weakest_decision = self._weakest_decision(decision_summaries)
+        if weakest_decision and not any(task["action"] == f"audit_{weakest_decision}" for task in tasks):
+            tasks.insert(
+                0,
+                {
+                    "id": f"audit_{weakest_decision}",
+                    "action": f"audit_{weakest_decision}",
+                    "priority": "high",
+                    "stage": stage,
+                    "evidence": "This decision type has the weakest observed reward.",
+                    "done_when": "Review the next completed battle and confirm the decision reward no longer trails other choices.",
+                },
+            )
+        return tasks[:8]
+
     def _weakest_mode(self, mode_summaries: dict[str, dict[str, Any]]) -> str | None:
         if len(mode_summaries) < 2:
             return None
@@ -269,6 +425,14 @@ class ShowdownLearningProfile:
             key=lambda item: (item[1]["average_reward"], item[1]["win_rate"], -item[1]["battles"]),
         )
         return mode if stats["average_reward"] < 50 else None
+
+    def _best_mode(self, mode_summaries: dict[str, dict[str, Any]]) -> tuple[str, dict[str, Any]] | None:
+        if not mode_summaries:
+            return None
+        return max(
+            mode_summaries.items(),
+            key=lambda item: (item[1]["average_reward"], item[1]["win_rate"], item[1]["battles"]),
+        )
 
     def _weakest_decision(self, decision_summaries: dict[str, dict[str, Any]]) -> str | None:
         if not decision_summaries:

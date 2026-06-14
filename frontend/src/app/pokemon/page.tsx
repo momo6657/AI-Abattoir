@@ -857,6 +857,7 @@ export default function PokemonBattlePage() {
     ['Phase 50', '自动建队输出格式角色覆盖审计，暴露队伍分数、策略缺口和学习调整证据'],
     ['Phase 51', 'auto 自主任务读取建队审计，低分、blocked 或角色缺口时优先研究队伍'],
     ['Phase 52', 'auto 自主任务读取实战就绪审计，blocked 时先复核 readiness 再发送命令'],
+    ['Phase 53', '学习档案沉淀 battle lessons 和可执行 training tasks，实战后能复用经验调整下一轮任务'],
   ];
 
   return (
@@ -2253,6 +2254,57 @@ export default function PokemonBattlePage() {
                               ))}
                             </div>
                           ) : null}
+                        </div>
+                      ) : null}
+                      {activeShowdownLearning.learning_lessons?.length ? (
+                        <div className="mt-3 rounded-md border border-sky-500/30 bg-sky-500/10 p-2">
+                          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-[10px] font-semibold uppercase text-sky-200">Battle lessons</span>
+                            <span className="rounded bg-black/30 px-2 py-0.5 text-[10px] text-gray-200">
+                              {activeShowdownLearning.learning_lessons.length}
+                            </span>
+                          </div>
+                          <div className="space-y-2">
+                            {activeShowdownLearning.learning_lessons.slice(0, 3).map((lesson: any) => {
+                              const tone = lesson.level === 'success'
+                                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100'
+                                : lesson.level === 'warning'
+                                  ? 'border-amber-500/30 bg-amber-500/10 text-amber-100'
+                                  : 'border-sky-500/30 bg-black/20 text-sky-100';
+                              return (
+                                <div key={`lesson-${lesson.id || lesson.title}`} className={`rounded border px-2 py-1.5 ${tone}`}>
+                                  <div className="break-words text-[11px] font-medium">{lesson.title}</div>
+                                  <div className="mt-1 break-words text-[10px] leading-4 text-gray-300">{lesson.evidence}</div>
+                                  <div className="mt-1 break-words text-[10px] leading-4 text-gray-400">{lesson.recommendation}</div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : null}
+                      {activeShowdownLearning.training_tasks?.length ? (
+                        <div className="mt-3 rounded-md border border-border bg-black/20 p-2">
+                          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-[10px] font-semibold uppercase text-gray-300">Training tasks</span>
+                            <span className="rounded bg-black/30 px-2 py-0.5 text-[10px] text-gray-200">
+                              {activeShowdownLearning.training_tasks.length}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {activeShowdownLearning.training_tasks.slice(0, 6).map((task: any) => (
+                              <span
+                                key={`training-task-${task.id || task.action}`}
+                                className={`rounded border px-1.5 py-0.5 text-[10px] ${
+                                  task.priority === 'high'
+                                    ? 'border-amber-500/30 bg-amber-500/10 text-amber-100'
+                                    : 'border-border bg-black/20 text-gray-200'
+                                }`}
+                                title={task.evidence || task.done_when || task.stage}
+                              >
+                                {task.action}
+                              </span>
+                            ))}
+                          </div>
                         </div>
                       ) : null}
                       {activeShowdownLearning.training_focus?.length ? (

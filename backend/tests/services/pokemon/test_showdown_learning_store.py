@@ -23,6 +23,8 @@ async def test_showdown_learning_store_persists_and_aggregates(setup_db, db):
     assert profile["average_reward"] == 130.0
     assert profile["recommendation"]["mode"] == "aggressive"
     assert profile["training_focus"][0]["level"] == "success"
+    assert {lesson["id"] for lesson in profile["learning_lessons"]} >= {"winning_baseline", "preferred_mode"}
+    assert profile["training_tasks"][0]["action"] == "start_search"
 
     duplicate = await pokemon_showdown_learning_store.record_session(
         db,
@@ -71,6 +73,9 @@ async def test_showdown_learning_store_returns_training_focus_for_weak_results(s
     assert "Reduce knockout deficit" in focus_titles
     assert "Improve reward baseline" in focus_titles
     assert "Audit move decisions" in focus_titles
+    lesson_ids = {lesson["id"] for lesson in profile["learning_lessons"]}
+    assert {"outcome_control", "low_reward", "knockout_deficit", "weak_decision"}.issubset(lesson_ids)
+    assert any(task["action"] == "audit_move" and task["priority"] == "high" for task in profile["training_tasks"])
 
 
 @pytest.mark.asyncio

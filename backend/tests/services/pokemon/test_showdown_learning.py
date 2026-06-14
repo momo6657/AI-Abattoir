@@ -36,6 +36,12 @@ def test_showdown_learning_profile_records_completed_sessions_once():
     assert duplicate["training_plan"]["next_mission_goal"] == "learn"
     assert duplicate["training_plan"]["recommended_mode"] == "balanced"
     assert duplicate["training_plan"]["stage"] == "exploit"
+    assert duplicate["training_plan"]["lesson_count"] >= 2
+    assert duplicate["training_plan"]["task_count"] >= 1
+    lesson_ids = {lesson["id"] for lesson in duplicate["learning_lessons"]}
+    assert "winning_baseline" in lesson_ids
+    assert "preferred_mode" in lesson_ids
+    assert duplicate["training_tasks"][0]["action"] == "start_search"
 
 
 def test_showdown_learning_profile_ignores_in_progress_sessions():
@@ -55,6 +61,8 @@ def test_showdown_learning_profile_ignores_in_progress_sessions():
     assert profile["recommendation"]["mode"] == "balanced"
     assert profile["training_plan"]["stage"] == "collect_data"
     assert profile["training_plan"]["next_mission_goal"] == "queue"
+    assert profile["learning_lessons"][0]["id"] == "collect_baseline"
+    assert profile["training_tasks"][0]["action"] == "research_team"
 
 
 def test_showdown_learning_profile_training_plan_stabilizes_weak_results():
@@ -74,3 +82,7 @@ def test_showdown_learning_profile_training_plan_stabilizes_weak_results():
     assert profile["training_plan"]["next_mission_goal"] == "prepare"
     assert profile["training_plan"]["recommended_mode"] == "defensive"
     assert "audit_switch" in profile["training_plan"]["actions"]
+    lesson_ids = {lesson["id"] for lesson in profile["learning_lessons"]}
+    assert {"outcome_control", "low_reward", "knockout_deficit", "weak_decision"}.issubset(lesson_ids)
+    audit_task = next(task for task in profile["training_tasks"] if task["action"] == "audit_switch")
+    assert audit_task["priority"] == "high"
