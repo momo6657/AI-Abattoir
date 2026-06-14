@@ -1011,7 +1011,7 @@ async def test_showdown_mission_plan_returns_next_request_from_learning_profile(
     data = response.json()
     assert data["mission_goal"] == "learn"
     assert data["mission_goal_source"] == "training_plan"
-    assert data["action_plan_source"] == "training_plan"
+    assert data["action_plan_source"] == "training_tasks"
     assert data["mission_request"]["mission_goal"] == "auto"
     assert data["mission_request"]["battle_format"] == "gen9randombattle"
     assert data["mission_request"]["max_actions"] == 4
@@ -1025,6 +1025,10 @@ async def test_showdown_mission_plan_returns_next_request_from_learning_profile(
         "analyze",
         "new_session",
     ]
+    assert data["training_task_actions"] == ["start_search", "autopilot", "analyze", "new_session"]
+    assert data["executable_task_actions"] == data["executable_plan_actions"]
+    assert data["unsupported_task_actions"] == []
+    assert data["training_tasks"][0]["action"] == "start_search"
 
 
 @pytest.mark.asyncio
@@ -1390,6 +1394,55 @@ def test_showdown_auto_policy_translates_training_plan_actions():
     ]
     assert policy["training_plan_actions"] == ["start_search", "autopilot", "analyze", "new_session"]
     assert policy["unsupported_plan_actions"] == []
+
+
+def test_showdown_auto_policy_prefers_executable_training_tasks():
+    payload = ShowdownSessionMissionRequest(
+        username="TaskPolicyBot",
+        battle_format="gen9randombattle",
+        mission_goal="auto",
+    )
+    session = {
+        "has_knowledge_context": False,
+        "team_species": [],
+        "learning_profile": {
+            "battles": 4,
+            "win_rate": 0.7,
+            "average_reward": 90.0,
+            "training_plan": {
+                "next_mission_goal": "learn",
+                "actions": ["start_search", "autopilot", "analyze"],
+                "reason": "Use task evidence to drive the next learning loop.",
+            },
+            "training_tasks": [
+                {
+                    "id": "normal-search",
+                    "action": "start_search",
+                    "priority": "normal",
+                    "stage": "exploit",
+                    "evidence": "Queue another sample.",
+                },
+                {
+                    "id": "high-audit",
+                    "action": "audit_switch",
+                    "priority": "high",
+                    "stage": "exploit",
+                    "evidence": "Switch choices need review.",
+                },
+            ],
+        },
+    }
+
+    policy = pokemon_api._resolve_showdown_mission_policy(payload, session)
+
+    assert policy["mission_goal"] == "learn"
+    assert policy["mission_goal_source"] == "training_plan"
+    assert policy["action_plan_source"] == "training_tasks"
+    assert policy["training_task_actions"] == ["audit_switch", "start_search"]
+    assert policy["allowed_actions"] == ["analyze", "connect", "flush_pending", "start_search"]
+    assert policy["executable_task_actions"] == ["analyze", "connect", "flush_pending", "start_search"]
+    assert policy["unsupported_task_actions"] == []
+    assert policy["training_tasks"][0]["id"] == "high-audit"
 
 
 def test_showdown_auto_policy_maps_abstract_training_actions():

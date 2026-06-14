@@ -858,6 +858,7 @@ export default function PokemonBattlePage() {
     ['Phase 51', 'auto 自主任务读取建队审计，低分、blocked 或角色缺口时优先研究队伍'],
     ['Phase 52', 'auto 自主任务读取实战就绪审计，blocked 时先复核 readiness 再发送命令'],
     ['Phase 53', '学习档案沉淀 battle lessons 和可执行 training tasks，实战后能复用经验调整下一轮任务'],
+    ['Phase 54', 'auto 自主任务优先读取 training tasks，按任务证据驱动 supervisor 动作白名单'],
   ];
 
   return (
@@ -1526,6 +1527,25 @@ export default function PokemonBattlePage() {
                     ))}
                   </div>
                 ) : null}
+                {(showdownMissionPlan.training_task_actions || []).length ? (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {showdownMissionPlan.training_task_actions.map((action: string) => (
+                      <span key={`preview-task-action-${action}`} className="rounded border border-emerald-500/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-emerald-100">
+                        task:{action}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {(showdownMissionPlan.executable_task_actions || []).length ? (
+                  <div className="mt-2 break-words rounded border border-emerald-500/20 bg-black/20 p-2 text-[10px] leading-4 text-emerald-100">
+                    Task executable: {showdownMissionPlan.executable_task_actions.join(' / ')}
+                  </div>
+                ) : null}
+                {(showdownMissionPlan.unsupported_task_actions || []).length ? (
+                  <div className="mt-2 break-words rounded border border-amber-500/30 bg-amber-500/10 p-2 text-[10px] text-amber-100">
+                    Unsupported task: {showdownMissionPlan.unsupported_task_actions.join(' / ')}
+                  </div>
+                ) : null}
               </div>
             ) : null}
 
@@ -1928,6 +1948,28 @@ export default function PokemonBattlePage() {
                     {showdownSession.last_mission_summary.unsupported_plan_actions?.length ? (
                       <div className="mt-2 break-words rounded border border-amber-500/30 bg-amber-500/10 p-2 text-[10px] text-amber-100">
                         Unsupported: {showdownSession.last_mission_summary.unsupported_plan_actions.join(' / ')}
+                      </div>
+                    ) : null}
+                    {showdownSession.last_mission_summary.training_task_actions?.length ? (
+                      <div className="mt-2">
+                        <div className="text-[10px] font-semibold uppercase text-emerald-200/80">Task actions</div>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {showdownSession.last_mission_summary.training_task_actions.map((action: string) => (
+                            <span key={`mission-task-action-${action}`} className="rounded border border-emerald-500/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-emerald-100">
+                              {action}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {showdownSession.last_mission_summary.executable_task_actions?.length ? (
+                      <div className="mt-2 break-words rounded border border-emerald-500/20 bg-black/20 p-2 text-[10px] leading-4 text-emerald-100">
+                        Task executable: {showdownSession.last_mission_summary.executable_task_actions.join(' / ')}
+                      </div>
+                    ) : null}
+                    {showdownSession.last_mission_summary.unsupported_task_actions?.length ? (
+                      <div className="mt-2 break-words rounded border border-amber-500/30 bg-amber-500/10 p-2 text-[10px] text-amber-100">
+                        Unsupported task: {showdownSession.last_mission_summary.unsupported_task_actions.join(' / ')}
                       </div>
                     ) : null}
                   </div>

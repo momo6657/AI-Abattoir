@@ -614,8 +614,12 @@ async def plan_showdown_mission(payload: ShowdownSessionMissionRequest, db: Asyn
         "mission_goal_reason": mission_policy["mission_goal_reason"],
         "allowed_actions": mission_policy["allowed_actions"],
         "training_plan_actions": mission_policy["training_plan_actions"],
+        "training_task_actions": mission_policy["training_task_actions"],
         "executable_plan_actions": mission_policy["executable_plan_actions"],
+        "executable_task_actions": mission_policy["executable_task_actions"],
         "unsupported_plan_actions": mission_policy["unsupported_plan_actions"],
+        "unsupported_task_actions": mission_policy["unsupported_task_actions"],
+        "training_tasks": mission_policy["training_tasks"],
         "action_plan_source": mission_policy["action_plan_source"],
         "mission_request": mission_request,
     }
@@ -662,8 +666,12 @@ async def start_showdown_mission(payload: ShowdownSessionMissionRequest, db: Asy
         "mission_goal_reason": mission_policy["mission_goal_reason"],
         "allowed_actions": mission_policy["allowed_actions"],
         "training_plan_actions": mission_policy["training_plan_actions"],
+        "training_task_actions": mission_policy["training_task_actions"],
         "executable_plan_actions": mission_policy["executable_plan_actions"],
+        "executable_task_actions": mission_policy["executable_task_actions"],
         "unsupported_plan_actions": mission_policy["unsupported_plan_actions"],
+        "unsupported_task_actions": mission_policy["unsupported_task_actions"],
+        "training_tasks": mission_policy["training_tasks"],
         "action_plan_source": mission_policy["action_plan_source"],
         "team_audit": final_session.get("team_audit") or mission_policy["team_audit"],
         "team_audit_actions": mission_policy["team_audit_actions"],
@@ -1483,9 +1491,14 @@ def _resolve_showdown_mission_policy(payload: ShowdownSessionMissionRequest, ses
     policy["mission_goal_source"] = recommendation["source"] if requested_goal == "auto" else "manual"
     policy["mission_goal_reason"] = recommendation["reason"] if requested_goal == "auto" else "Mission goal was selected manually."
     plan_actions, executable_plan_actions, unsupported_plan_actions = _resolve_showdown_training_plan_actions(session)
+    training_tasks, task_actions, executable_task_actions, unsupported_task_actions = _resolve_showdown_training_task_actions(session)
     policy["training_plan_actions"] = plan_actions
     policy["executable_plan_actions"] = executable_plan_actions
     policy["unsupported_plan_actions"] = unsupported_plan_actions
+    policy["training_tasks"] = training_tasks
+    policy["training_task_actions"] = task_actions
+    policy["executable_task_actions"] = executable_task_actions
+    policy["unsupported_task_actions"] = unsupported_task_actions
     team_audit = session.get("team_audit") or {}
     team_audit_gaps = [str(gap) for gap in team_audit.get("gaps") or [] if str(gap)]
     team_audit_actions = _resolve_showdown_team_audit_actions(session)
@@ -1506,7 +1519,10 @@ def _resolve_showdown_mission_policy(payload: ShowdownSessionMissionRequest, ses
     if requested_goal == "auto" and recommendation["source"] == "team_audit" and team_audit_actions:
         policy["allowed_actions"] = team_audit_actions
         policy["action_plan_source"] = "team_audit"
-    if requested_goal == "auto" and recommendation["source"] == "training_plan" and executable_plan_actions:
+    if requested_goal == "auto" and recommendation["source"] == "training_plan" and executable_task_actions:
+        policy["allowed_actions"] = executable_task_actions
+        policy["action_plan_source"] = "training_tasks"
+    elif requested_goal == "auto" and recommendation["source"] == "training_plan" and executable_plan_actions:
         policy["allowed_actions"] = executable_plan_actions
         policy["action_plan_source"] = "training_plan"
     if requested_goal == "auto" and recommendation["source"] != "live_readiness" and readiness_actions and goal in {"queue", "ladder", "learn"}:
@@ -1707,6 +1723,43 @@ def _resolve_showdown_training_plan_actions(session: dict) -> tuple[list[str], l
         for action in training_plan.get("actions") or []
         if str(action).strip()
     ]
+    executable, unsupported = _map_showdown_training_actions(plan_actions)
+    return plan_actions, executable, unsupported
+
+
+def _resolve_showdown_training_task_actions(session: dict) -> tuple[list[dict[str, Any]], list[str], list[str], list[str]]:
+    profile = session.get("learning_profile") or {}
+    raw_tasks = profile.get("training_tasks") or []
+    normalized_tasks: list[dict[str, Any]] = []
+    task_actions: list[str] = []
+
+    priority_rank = {"high": 0, "normal": 1, "low": 2}
+    for index, task in enumerate(raw_tasks):
+        if not isinstance(task, dict):
+            continue
+        action = str(task.get("action") or "").strip().lower()
+        if not action:
+            continue
+        normalized_task = {
+            "id": str(task.get("id") or f"task_{index + 1}_{action}"),
+            "action": action,
+            "priority": str(task.get("priority") or "normal"),
+            "stage": str(task.get("stage") or ""),
+            "evidence": str(task.get("evidence") or ""),
+            "done_when": str(task.get("done_when") or ""),
+        }
+        normalized_tasks.append(normalized_task)
+
+    normalized_tasks.sort(key=lambda item: (priority_rank.get(item["priority"], 1), item["id"]))
+    for task in normalized_tasks:
+        if task["action"] not in task_actions:
+            task_actions.append(task["action"])
+
+    executable, unsupported = _map_showdown_training_actions(task_actions)
+    return normalized_tasks, task_actions, executable, unsupported
+
+
+def _map_showdown_training_actions(actions: list[str]) -> tuple[list[str], list[str]]:
     executable: list[str] = []
     unsupported: list[str] = []
 
@@ -1728,7 +1781,7 @@ def _resolve_showdown_training_plan_actions(session: dict) -> tuple[list[str], l
         if action not in executable:
             executable.append(action)
 
-    for action in plan_actions:
+    for action in actions:
         mapped = aliases.get(action)
         if mapped is None and action.startswith("audit_"):
             mapped = ["analyze"]
@@ -1737,7 +1790,7 @@ def _resolve_showdown_training_plan_actions(session: dict) -> tuple[list[str], l
             continue
         for item in mapped:
             add(item)
-    return plan_actions, executable, unsupported
+    return executable, unsupported
 
 
 @router.get("/showdown/learning/profiles")
