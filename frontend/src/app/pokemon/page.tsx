@@ -489,7 +489,10 @@ export default function PokemonBattlePage() {
       setShowdownLearning(response.learning_profile || response.final_session?.learning_profile || null);
       setShowdownAnalysis(response.final_session?.analysis || null);
       const lastRound = [...(response.rounds || [])].reverse()[0];
-      addMessage(`Training chain ${response.completed_rounds}/${response.requested_rounds}: ${response.stop_reason} · ${lastRound?.planned_goal || 'auto'}.`);
+      const recoverySummary = response.recovery?.status
+        ? ` · recovery ${response.recovery.status}${response.recovery.actions?.length ? `/${response.recovery.actions.length}` : ''}`
+        : '';
+      addMessage(`Training chain ${response.completed_rounds}/${response.requested_rounds}: ${response.stop_reason} · ${lastRound?.planned_goal || 'auto'}${recoverySummary}.`);
       refreshShowdownMastery();
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '启动 Showdown 训练链失败');
@@ -861,6 +864,7 @@ export default function PokemonBattlePage() {
     ['Phase 54', 'auto 自主任务优先读取 training tasks，按任务证据驱动 supervisor 动作白名单'],
     ['Phase 55', 'mission summary 回写 training task progress，显示 completed/partial/pending/unsupported 执行证据'],
     ['Phase 56', 'training-chain 汇总 recovery actions，把未完成训练任务转成下一轮恢复队列'],
+    ['Phase 57', 'training-chain 后续轮次自动消费上一轮 recovery actions，形成自我修复训练闭环'],
   ];
 
   return (
@@ -1610,6 +1614,11 @@ export default function PokemonBattlePage() {
                         {round.recovery?.actions?.length || round.recovery_actions?.length ? (
                           <span className="basis-full truncate text-[10px] text-sky-100">
                             recovery: {(round.recovery?.actions || round.recovery_actions).slice(0, 4).join(' / ')}
+                          </span>
+                        ) : null}
+                        {round.recovery_action_source?.actions?.length ? (
+                          <span className="basis-full truncate text-[10px] text-emerald-100">
+                            applied: {round.recovery_action_source.actions.slice(0, 4).join(' / ')}
                           </span>
                         ) : null}
                       </div>

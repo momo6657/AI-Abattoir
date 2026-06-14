@@ -738,10 +738,20 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
     final_session = None
     latest_learning_profile = None
     latest_mastery_score = None
+    previous_recovery = None
 
     for index in range(payload.rounds):
-        plan = await plan_showdown_mission(mission_payload, db)
-        mission = await start_showdown_mission(mission_payload, db)
+        recovery_action_source = _build_showdown_recovery_action_source(
+            previous_recovery,
+            custom_allowed_actions=payload.allowed_actions,
+        )
+        current_mission_payload = mission_payload
+        if recovery_action_source["actions"]:
+            current_mission_payload = mission_payload.model_copy(
+                update={"allowed_actions": recovery_action_source["actions"]}
+            )
+        plan = await plan_showdown_mission(current_mission_payload, db)
+        mission = await start_showdown_mission(current_mission_payload, db)
         final_session = mission.get("session")
         supervisor = mission.get("supervisor") or {}
         mission_summary = mission.get("mission_summary") or {}
@@ -762,6 +772,7 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
             "planned_goal_source": plan["mission_goal_source"],
             "planned_actions": plan["allowed_actions"],
             "action_plan_source": plan["action_plan_source"],
+            "recovery_action_source": recovery_action_source,
             "session_id": (final_session or {}).get("session_id"),
             "status": (final_session or {}).get("status"),
             "mission_summary": mission_summary,
@@ -772,6 +783,7 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
         }
         round_summary["recovery"] = _build_showdown_round_recovery(round_summary)
         rounds.append(round_summary)
+        previous_recovery = round_summary["recovery"]
 
         if payload.mastery_score_target is not None and latest_mastery_score >= payload.mastery_score_target:
             stop_reason = "mastery_score_target"
@@ -814,6 +826,7 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
                         "round": item["round"],
                         "planned_goal": item["planned_goal"],
                         "planned_goal_source": item["planned_goal_source"],
+                        "recovery_action_source": item["recovery_action_source"],
                         "supervisor_stop_reason": item["supervisor_stop_reason"],
                         "supervisor_step_count": item["supervisor_step_count"],
                         "recovery_status": item["recovery"]["status"],
@@ -920,6 +933,43 @@ def _build_showdown_training_chain_progress(
         "direction": direction,
         "improved": score_delta > 0,
         "recommendation": recommendation,
+    }
+
+
+def _build_showdown_recovery_action_source(
+    previous_recovery: dict[str, Any] | None,
+    *,
+    custom_allowed_actions: list[str] | None,
+) -> dict[str, Any]:
+    if custom_allowed_actions:
+        return {
+            "status": "custom_override",
+            "source": "custom_allowed_actions",
+            "actions": [],
+            "reason": "Custom allowed_actions were provided, so recovery actions were not injected.",
+        }
+    if not previous_recovery:
+        return {
+            "status": "none",
+            "source": "first_round",
+            "actions": [],
+            "reason": "No previous training round is available.",
+        }
+
+    actions = [str(action) for action in previous_recovery.get("actions") or [] if str(action)]
+    if previous_recovery.get("status") != "resume" or not actions:
+        return {
+            "status": str(previous_recovery.get("status") or "clear"),
+            "source": "previous_round_recovery",
+            "actions": [],
+            "reason": "Previous recovery state did not expose executable resume actions.",
+        }
+
+    return {
+        "status": "applied",
+        "source": "previous_round_recovery",
+        "actions": list(dict.fromkeys(actions)),
+        "reason": "Previous incomplete training tasks were promoted to this round's action allow-list.",
     }
 
 

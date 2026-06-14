@@ -1212,6 +1212,7 @@ async def test_showdown_training_chain_runs_adaptive_planned_rounds(setup_db, db
     assert [round_item["planned_goal"] for round_item in data["rounds"]] == ["learn", "learn"]
     assert all(round_item["planned_goal_source"] == "training_plan" for round_item in data["rounds"])
     assert all(round_item["action_plan_source"] == "custom" for round_item in data["rounds"])
+    assert all(round_item["recovery_action_source"]["status"] == "custom_override" for round_item in data["rounds"])
     assert all(round_item["supervisor_step_count"] == 1 for round_item in data["rounds"])
     assert all(round_item["mission_summary"]["allowed_actions"] == ["start_search"] for round_item in data["rounds"])
     assert data["progress"]["before_mastery_score"] > 0
@@ -1233,6 +1234,46 @@ async def test_showdown_training_chain_runs_adaptive_planned_rounds(setup_db, db
     assert data["final_session"]["training_chain_history_count"] == 1
     assert data["final_session"]["training_chain_trend"]["chain_count"] == 1
     assert data["final_session"]["training_chain_trend"]["direction"] in {"flat", "improving"}
+
+    for round_item in data["rounds"]:
+        await client.delete(f"/api/pokemon/showdown/sessions/{round_item['session_id']}")
+
+
+@pytest.mark.asyncio
+async def test_showdown_training_chain_applies_previous_recovery_actions(setup_db, db, client):
+    await pokemon_showdown_learning_store.record_session(
+        db,
+        session_id="chain-recovery-win",
+        username="RecoveryBot",
+        battle_format="gen9randombattle",
+        showdown_format="gen9randombattle",
+        mode="aggressive",
+        analysis={"status": "win", "reward": 130.0, "turns": 4, "faints_for": 3, "faints_against": 0},
+        decisions=[{"decision_type": "move"}],
+    )
+
+    response = await client.post(
+        "/api/pokemon/showdown/training-chain",
+        json={
+            "username": "RecoveryBot",
+            "battle_format": "gen9randombattle",
+            "mode": "auto",
+            "mission_goal": "auto",
+            "rounds": 2,
+            "max_actions": 1,
+            "stop_on_finished": False,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["completed_rounds"] == 2
+    assert data["rounds"][0]["recovery_action_source"]["status"] == "none"
+    assert data["rounds"][1]["recovery_action_source"]["status"] == "applied"
+    assert data["rounds"][1]["recovery_action_source"]["source"] == "previous_round_recovery"
+    assert data["rounds"][1]["planned_actions"] == data["rounds"][0]["recovery"]["actions"]
+    assert data["rounds"][1]["mission_summary"]["allowed_actions"] == data["rounds"][0]["recovery"]["actions"]
+    assert data["training_chain_summary"]["rounds"][1]["recovery_action_source"]["status"] == "applied"
 
     for round_item in data["rounds"]:
         await client.delete(f"/api/pokemon/showdown/sessions/{round_item['session_id']}")
@@ -1623,6 +1664,31 @@ def test_showdown_training_chain_recovery_aggregates_missing_task_actions():
     assert recovery["rounds"][0]["round"] == 1
     assert set(recovery["rounds"][1]["actions"]) == {"connect", "flush_pending", "autopilot"}
     assert "max_actions" in recovery["blocked_reasons"][0]
+
+
+def test_showdown_recovery_action_source_respects_custom_allowed_actions():
+    recovery = {"status": "resume", "actions": ["connect", "flush_pending", "connect"]}
+
+    source = pokemon_api._build_showdown_recovery_action_source(
+        recovery,
+        custom_allowed_actions=["start_search"],
+    )
+
+    assert source["status"] == "custom_override"
+    assert source["actions"] == []
+
+
+def test_showdown_recovery_action_source_applies_resume_actions():
+    recovery = {"status": "resume", "actions": ["connect", "flush_pending", "connect"]}
+
+    source = pokemon_api._build_showdown_recovery_action_source(
+        recovery,
+        custom_allowed_actions=None,
+    )
+
+    assert source["status"] == "applied"
+    assert source["source"] == "previous_round_recovery"
+    assert source["actions"] == ["connect", "flush_pending"]
 
 
 @pytest.mark.asyncio
