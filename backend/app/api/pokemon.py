@@ -2834,14 +2834,32 @@ async def _resolve_showdown_mode(
         raise ValueError(f"Unsupported Showdown mode: {requested_mode}")
 
     recommendation = profile.get("recommendation") or {}
-    recommended_mode = recommendation.get("mode")
+    policy_evaluation = profile.get("policy_evaluation") or {}
+    policy_next_experiment = policy_evaluation.get("next_experiment") or {}
+    recommended_mode = (
+        policy_next_experiment.get("mode")
+        or policy_evaluation.get("recommended_mode")
+        or recommendation.get("mode")
+    )
+    source = "policy_evaluation" if policy_evaluation else "learning_profile"
     if recommended_mode not in allowed_modes:
         recommended_mode = "balanced"
         recommendation = {
             "mode": recommended_mode,
             "reason": "No reliable learned mode was available, so balanced was selected.",
         }
-    return recommended_mode, "learning_profile", recommendation, profile
+        source = "learning_profile"
+    elif policy_evaluation:
+        recommendation = {
+            **recommendation,
+            "mode": recommended_mode,
+            "reason": policy_next_experiment.get("reason") or recommendation.get("reason"),
+            "policy": policy_evaluation.get("policy"),
+            "policy_phase": policy_evaluation.get("phase"),
+            "policy_confidence": policy_evaluation.get("confidence"),
+            "policy_risk": policy_evaluation.get("risk"),
+        }
+    return recommended_mode, source, recommendation, profile
 
 
 # Data loading endpoint

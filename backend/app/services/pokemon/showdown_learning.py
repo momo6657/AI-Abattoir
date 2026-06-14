@@ -95,6 +95,7 @@ class ShowdownLearningProfile:
             for decision_type, stats in self.decision_types.items()
         }
         training_plan = self._training_plan(mode_summaries, decision_summaries)
+        policy_evaluation = self._policy_evaluation(mode_summaries)
         learning_lessons = self._learning_lessons(mode_summaries, decision_summaries)
         training_tasks = self._training_tasks(mode_summaries, decision_summaries)
         return {
@@ -113,11 +114,14 @@ class ShowdownLearningProfile:
             "modes": mode_summaries,
             "decision_types": decision_summaries,
             "recommendation": self._recommendation(mode_summaries),
+            "policy_evaluation": policy_evaluation,
             "training_focus": self._training_focus(mode_summaries, decision_summaries),
             "training_plan": {
                 **training_plan,
                 "lesson_count": len(learning_lessons),
                 "task_count": len(training_tasks),
+                "policy_phase": policy_evaluation["phase"],
+                "policy_confidence": policy_evaluation["confidence"],
             },
             "learning_lessons": learning_lessons,
             "training_tasks": training_tasks,
@@ -268,6 +272,114 @@ class ShowdownLearningProfile:
             "actions": ["research_team", "start_search", "autopilot", "analyze"],
             "stop_condition": "Stop after each battle to refresh learning and review decision rewards.",
             "reason": "The profile has usable data but still needs controlled samples to improve mode and decision estimates.",
+        }
+
+    def _policy_evaluation(self, mode_summaries: dict[str, dict[str, Any]]) -> dict[str, Any]:
+        candidate_modes = ["balanced", "aggressive", "defensive"]
+        sample_goal = 3
+        win_rate = self.wins / max(self.battles, 1) if self.battles else 0.0
+        average_reward = self.total_reward / max(self.battles, 1) if self.battles else 0.0
+        faint_delta = self.total_faints_for - self.total_faints_against
+        mode_scores: list[dict[str, Any]] = []
+
+        for mode in candidate_modes:
+            stats = mode_summaries.get(mode) or {
+                "battles": 0,
+                "wins": 0,
+                "average_reward": 0.0,
+                "win_rate": 0.0,
+            }
+            battles = int(stats.get("battles") or 0)
+            mode_win_rate = float(stats.get("win_rate") or 0.0)
+            mode_reward = float(stats.get("average_reward") or 0.0)
+            exploit_score = round(mode_reward + mode_win_rate * 100.0 + min(battles, 10) * 3.0, 2)
+            sample_gap = max(0, sample_goal - battles)
+            explore_bonus = sample_gap * 18.0
+            policy_score = round(exploit_score + explore_bonus, 2)
+            mode_scores.append(
+                {
+                    "mode": mode,
+                    "battles": battles,
+                    "win_rate": mode_win_rate,
+                    "average_reward": round(mode_reward, 2),
+                    "exploit_score": exploit_score,
+                    "explore_bonus": explore_bonus,
+                    "policy_score": policy_score,
+                    "sample_gap": sample_gap,
+                    "sample_goal": sample_goal,
+                }
+            )
+
+        known_scores = [score for score in mode_scores if score["battles"] > 0]
+        best_known = max(
+            known_scores or mode_scores,
+            key=lambda item: (item["exploit_score"], item["win_rate"], item["battles"]),
+        )
+        exploration_targets = sorted(
+            [score for score in mode_scores if score["sample_gap"] > 0],
+            key=lambda item: (-item["sample_gap"], item["battles"], item["mode"]),
+        )
+        exploration_required = bool(exploration_targets)
+
+        if not self.battles:
+            phase = "collect_data"
+            policy = "collect_baseline"
+            recommended_mode = "balanced"
+            confidence = "low"
+            mission_goal = "queue"
+            reason = "No completed battle sample exists; collect a baseline before comparing policies."
+        elif win_rate < 0.45 or average_reward < 40 or faint_delta < 0:
+            phase = "stabilize"
+            policy = "stabilize"
+            recommended_mode = best_known["mode"]
+            confidence = "medium" if self.battles >= 3 else "low"
+            mission_goal = "prepare"
+            reason = "Outcome, reward, or knockout signals are weak; stabilize before expanding experiments."
+        elif exploration_required and self.battles < sample_goal * len(candidate_modes):
+            target = exploration_targets[0]
+            phase = "explore"
+            policy = "explore_under_sampled_mode"
+            recommended_mode = str(target["mode"])
+            confidence = "medium" if self.battles >= 3 else "low"
+            mission_goal = "ladder"
+            reason = f"{recommended_mode} needs {target['sample_gap']} more sample(s) to compare modes reliably."
+        else:
+            phase = "exploit"
+            policy = "exploit_best_mode"
+            recommended_mode = best_known["mode"]
+            confidence = "high" if best_known["battles"] >= sample_goal and self.battles >= 5 else "medium"
+            mission_goal = "learn"
+            reason = f"{recommended_mode} has the strongest observed reward and win-rate evidence."
+
+        if win_rate < 0.45 or average_reward < 40 or faint_delta < 0:
+            risk = "high"
+        elif win_rate >= 0.6 and average_reward >= 70 and faint_delta >= 0:
+            risk = "low"
+        else:
+            risk = "medium"
+
+        return {
+            "phase": phase,
+            "policy": policy,
+            "recommended_mode": recommended_mode,
+            "confidence": confidence,
+            "risk": risk,
+            "sample_goal_per_mode": sample_goal,
+            "exploration_required": exploration_required,
+            "mode_scores": sorted(mode_scores, key=lambda item: item["policy_score"], reverse=True),
+            "exploration_targets": [
+                {
+                    "mode": item["mode"],
+                    "sample_gap": item["sample_gap"],
+                    "battles": item["battles"],
+                }
+                for item in exploration_targets
+            ],
+            "next_experiment": {
+                "mode": recommended_mode,
+                "mission_goal": mission_goal,
+                "reason": reason,
+            },
         }
 
     def _learning_lessons(

@@ -131,6 +131,7 @@ export default function PokemonBattlePage() {
     activeShowdownLearning?.training_plan ||
     showdownSession?.learning_profile?.training_plan ||
     null;
+  const showdownPolicyEvaluation = activeShowdownLearning?.policy_evaluation || null;
   const activeShowdownTrainingChain = showdownTrainingChain || showdownSession?.last_training_chain_summary || null;
   const activeTrainingChainTrend = showdownSession?.training_chain_trend || showdownTrainingChain?.final_session?.training_chain_trend || null;
   const activeLiveReadiness = showdownSession?.live_readiness || null;
@@ -867,6 +868,7 @@ export default function PokemonBattlePage() {
     ['Phase 56', 'training-chain 汇总 recovery actions，把未完成训练任务转成下一轮恢复队列'],
     ['Phase 57', 'training-chain 后续轮次自动消费上一轮 recovery actions，形成自我修复训练闭环'],
     ['Phase 58', '新 training-chain 会继承同训练师/格式的历史 recovery actions，支持跨链续跑'],
+    ['Phase 59', '学习档案输出长期 policy evaluation，在探索、稳定和利用之间自动切换策略'],
   ];
 
   return (
@@ -2372,6 +2374,37 @@ export default function PokemonBattlePage() {
                       <div className="mt-2 text-gray-500">
                         Suggested mode: <span className="text-gray-200">{activeShowdownLearning.recommendation?.mode || 'balanced'}</span>
                       </div>
+                      {showdownPolicyEvaluation ? (
+                        <div className="mt-3 rounded-md border border-violet-500/30 bg-violet-500/10 p-2">
+                          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-[10px] font-semibold uppercase text-violet-200">Policy evaluation</span>
+                            <span className="rounded bg-black/30 px-2 py-0.5 text-[10px] text-gray-200">
+                              {showdownPolicyEvaluation.phase || 'collect_data'} · {showdownPolicyEvaluation.policy || 'baseline'}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <Metric label="Policy Mode" value={showdownPolicyEvaluation.recommended_mode || '-'} compact />
+                            <Metric label="Confidence" value={showdownPolicyEvaluation.confidence || '-'} compact />
+                            <Metric label="Risk" value={showdownPolicyEvaluation.risk || '-'} compact />
+                            <Metric label="Explore" value={showdownPolicyEvaluation.exploration_required ? 'yes' : 'no'} compact />
+                          </div>
+                          {showdownPolicyEvaluation.next_experiment?.reason ? (
+                            <div className="mt-2 break-words text-[10px] leading-4 text-gray-300">
+                              {showdownPolicyEvaluation.next_experiment.reason}
+                            </div>
+                          ) : null}
+                          {showdownPolicyEvaluation.mode_scores?.length ? (
+                            <div className="mt-2 space-y-1">
+                              {showdownPolicyEvaluation.mode_scores.slice(0, 3).map((score: any) => (
+                                <div key={`policy-score-${score.mode}`} className="flex items-center justify-between gap-2 rounded border border-violet-500/20 bg-black/20 px-2 py-1 text-[10px] text-gray-300">
+                                  <span className="font-medium text-violet-100">{score.mode}</span>
+                                  <span>{Number(score.policy_score || 0).toFixed(1)} pts · {score.battles || 0}/{score.sample_goal || 3}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
                       {showdownTrainingPlan ? (
                         <div className="mt-3 rounded-md border border-accent/30 bg-accent/10 p-2">
                           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">

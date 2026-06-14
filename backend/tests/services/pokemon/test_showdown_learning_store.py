@@ -22,6 +22,9 @@ async def test_showdown_learning_store_persists_and_aggregates(setup_db, db):
     assert profile["wins"] == 1
     assert profile["average_reward"] == 130.0
     assert profile["recommendation"]["mode"] == "aggressive"
+    assert profile["policy_evaluation"]["phase"] == "explore"
+    assert profile["policy_evaluation"]["policy"] == "explore_under_sampled_mode"
+    assert profile["training_plan"]["policy_phase"] == "explore"
     assert profile["training_focus"][0]["level"] == "success"
     assert {lesson["id"] for lesson in profile["learning_lessons"]} >= {"winning_baseline", "preferred_mode"}
     assert profile["training_tasks"][0]["action"] == "start_search"
@@ -39,6 +42,7 @@ async def test_showdown_learning_store_persists_and_aggregates(setup_db, db):
 
     assert duplicate["battles"] == 1
     assert duplicate["decision_types"]["move"]["count"] == 1
+    assert duplicate["policy_evaluation"]["exploration_required"] is True
 
     profiles = await pokemon_showdown_learning_store.list_profiles(db)
     assert len(profiles) == 1
@@ -69,6 +73,8 @@ async def test_showdown_learning_store_returns_training_focus_for_weak_results(s
 
     assert profile["losses"] == 2
     assert profile["win_rate"] == 0.0
+    assert profile["policy_evaluation"]["phase"] == "stabilize"
+    assert profile["policy_evaluation"]["risk"] == "high"
     assert "Stabilize match outcomes" in focus_titles
     assert "Reduce knockout deficit" in focus_titles
     assert "Improve reward baseline" in focus_titles

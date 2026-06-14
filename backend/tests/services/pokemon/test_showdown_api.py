@@ -554,7 +554,7 @@ async def test_showdown_session_readiness_endpoint_returns_live_audit(setup_db, 
 
 
 @pytest.mark.asyncio
-async def test_showdown_session_auto_mode_uses_learning_recommendation(setup_db, db, client):
+async def test_showdown_session_auto_mode_uses_policy_evaluation(setup_db, db, client):
     await pokemon_showdown_learning_store.record_session(
         db,
         session_id="auto-mode-seed",
@@ -574,9 +574,11 @@ async def test_showdown_session_auto_mode_uses_learning_recommendation(setup_db,
     assert created.status_code == 200
     data = created.json()
     assert data["requested_mode"] == "auto"
-    assert data["mode"] == "aggressive"
-    assert data["mode_source"] == "learning_profile"
-    assert data["mode_recommendation"]["mode"] == "aggressive"
+    assert data["mode"] == "balanced"
+    assert data["mode_source"] == "policy_evaluation"
+    assert data["mode_recommendation"]["mode"] == "balanced"
+    assert data["mode_recommendation"]["policy_phase"] == "explore"
+    assert data["mode_recommendation"]["policy"] == "explore_under_sampled_mode"
     assert data["team_source"] == "template"
     assert len(data["team_species"]) == 4
 

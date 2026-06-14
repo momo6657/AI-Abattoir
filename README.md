@@ -189,6 +189,7 @@ Abattoir（竞技场）是一个让 AI 展现真实能力的地方。在这里�
 - Showdown 学习摘要：可从真实协议事件中汇总回合、出招、换人、受伤、击倒、胜负和奖励信号
 - Showdown 学习档案：将已完成实战摘要持久化到数据库，按用户和格式聚合胜率、平均奖励、决策类型收益，并给出下一局模式建议
 - Showdown 经验教训：学习档案会沉淀 `learning_lessons` 和 `training_tasks`，把胜负、击倒差、模式表现和弱决策转成下一轮可执行训练任务
+- Showdown 长期策略评估：学习档案输出 `policy_evaluation`，在收集数据、稳定弱项、探索样本不足模式和利用最佳模式之间切换
 - Showdown 任务驱动自主训练：`auto` 自主任务会优先读取 `training_tasks`，把任务动作翻译成 supervisor 可执行白名单并记录任务来源
 - Showdown 任务执行回执：自主任务摘要会记录 `training_task_progress`，按 completed/partial/pending/unsupported 展示任务动作是否被 supervisor 实际执行
 - Showdown 训练链恢复队列：`training-chain` 会汇总每轮未完成训练任务，生成 `recovery.actions`，提示下一轮优先补齐的 supervisor 动作
@@ -596,8 +597,8 @@ AI-Abattoir/
 | POST | `/api/pokemon/showdown/commands` | 构建上传队伍、搜索、挑战和对战选择等 Showdown 协议命令 |
 | POST | `/api/pokemon/showdown/decision` | 将 Showdown `request` 转换为下一步自动选择计划，可传 `active_pokemon` 适配单打/双打 target 策略，也可传 `knowledge_context` 和 `learning_profile` 调整评分 |
 | GET | `/api/pokemon/showdown/learning/profiles` | 列出 Showdown 学习档案 |
-| GET | `/api/pokemon/showdown/learning/profile` | 获取指定用户和格式的胜率、平均奖励、模式建议、经验教训、训练任务和下一轮训练计划 |
-| GET | `/api/pokemon/showdown/learning/mastery` | 按格式返回 Showdown Mastery 排行、评分、训练重点、经验教训和训练计划 |
+| GET | `/api/pokemon/showdown/learning/profile` | 获取指定用户和格式的胜率、平均奖励、模式建议、长期策略评估、经验教训、训练任务和下一轮训练计划 |
+| GET | `/api/pokemon/showdown/learning/mastery` | 按格式返回 Showdown Mastery 排行、评分、长期策略评估、训练重点、经验教训和训练计划 |
 | GET | `/api/pokemon/showdown/formats/capabilities` | 汇总所有支持格式的队伍来源、目标策略、自动化覆盖、学习样本和建议动作 |
 | GET | `/api/pokemon/showdown/tactical-briefing` | 生成下一局 Showdown 战术简报，包含自动队伍、学习档案、开局计划、风险控制和可启动任务请求 |
 | GET | `/api/pokemon/showdown/sessions/{id}/matchup-briefing` | 根据已同步房间预览和场上状态生成对手 Matchup 简报，可选联网检索对手阵容知识 |
@@ -874,9 +875,10 @@ alembic history
 - [x] 宝可梦 Showdown training-chain 汇总未完成训练任务并生成恢复动作队列
 - [x] 宝可梦 Showdown training-chain 自动应用上一轮恢复动作，形成自我修复训练闭环
 - [x] 宝可梦 Showdown training-chain 跨链继承历史恢复动作，支持长期续跑
+- [x] 宝可梦 Showdown 学习档案长期策略评估，自动切换收集、稳定、探索和利用阶段
 - [ ] Pokemon Showdown 真实登录和天梯实战
 - [ ] 宝可梦完整多格式战斗策略（单打、随机战、不同世代规则）
-- [ ] 宝可梦强化学习闭环与长期策略评估
+- [ ] 宝可梦强化学习闭环与长期策略优化
 - [ ] Elo 评分排名系统
 - [ ] 更多游戏类型（棋类、文字冒险）
 - [ ] 多模态竞技（生图对决、配音 PK）
