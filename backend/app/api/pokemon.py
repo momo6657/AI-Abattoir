@@ -652,6 +652,11 @@ async def start_showdown_mission(payload: ShowdownSessionMissionRequest, db: Asy
     )
     supervisor = await supervise_showdown_session(session.session_id, supervisor_payload, db)
     final_session = supervisor.get("session") or session.to_dict()
+    training_task_progress = _build_showdown_training_task_progress(
+        mission_policy["training_tasks"],
+        supervisor.get("steps") or [],
+        stop_reason=supervisor.get("stop_reason"),
+    )
     mission_summary = {
         "session_id": supervisor.get("session_id", session.session_id),
         "original_session_id": session.session_id,
@@ -672,6 +677,12 @@ async def start_showdown_mission(payload: ShowdownSessionMissionRequest, db: Asy
         "unsupported_plan_actions": mission_policy["unsupported_plan_actions"],
         "unsupported_task_actions": mission_policy["unsupported_task_actions"],
         "training_tasks": mission_policy["training_tasks"],
+        "training_task_progress": training_task_progress,
+        "training_task_status": training_task_progress["status"],
+        "training_task_completed_count": training_task_progress["completed_count"],
+        "training_task_pending_count": training_task_progress["pending_count"],
+        "training_task_partial_count": training_task_progress["partial_count"],
+        "training_task_unsupported_count": training_task_progress["unsupported_count"],
         "action_plan_source": mission_policy["action_plan_source"],
         "team_audit": final_session.get("team_audit") or mission_policy["team_audit"],
         "team_audit_actions": mission_policy["team_audit_actions"],
@@ -1757,6 +1768,101 @@ def _resolve_showdown_training_task_actions(session: dict) -> tuple[list[dict[st
 
     executable, unsupported = _map_showdown_training_actions(task_actions)
     return normalized_tasks, task_actions, executable, unsupported
+
+
+def _build_showdown_training_task_progress(
+    training_tasks: list[dict[str, Any]],
+    steps: list[dict[str, Any]],
+    *,
+    stop_reason: str | None,
+) -> dict[str, Any]:
+    successful_actions = [
+        str(step.get("action") or "")
+        for step in steps
+        if step.get("action") and not step.get("error")
+    ]
+    attempted_actions = [
+        str(step.get("action") or "")
+        for step in steps
+        if step.get("action")
+    ]
+    error_step = next((step for step in steps if step.get("error")), None)
+    task_results: list[dict[str, Any]] = []
+
+    for task in training_tasks:
+        action = str(task.get("action") or "").strip().lower()
+        executable, unsupported = _map_showdown_training_actions([action])
+        executed = [item for item in executable if item in successful_actions]
+        missing = [item for item in executable if item not in successful_actions]
+
+        if unsupported:
+            status = "unsupported"
+        elif not executable:
+            status = "unsupported"
+        elif not executed:
+            status = "pending"
+        elif missing:
+            status = "partial"
+        else:
+            status = "completed"
+
+        blocked_reason = None
+        if status in {"pending", "partial"}:
+            if error_step and error_step.get("error"):
+                blocked_reason = str(error_step["error"])
+            elif stop_reason:
+                blocked_reason = f"Mission stopped with {stop_reason} before all mapped task actions completed."
+
+        task_results.append({
+            "id": task.get("id"),
+            "action": action,
+            "priority": task.get("priority"),
+            "stage": task.get("stage"),
+            "status": status,
+            "mapped_actions": executable,
+            "executed_actions": executed,
+            "missing_actions": missing,
+            "unsupported_actions": unsupported,
+            "evidence": task.get("evidence"),
+            "done_when": task.get("done_when"),
+            "blocked_reason": blocked_reason,
+        })
+
+    completed_count = sum(1 for item in task_results if item["status"] == "completed")
+    partial_count = sum(1 for item in task_results if item["status"] == "partial")
+    pending_count = sum(1 for item in task_results if item["status"] == "pending")
+    unsupported_count = sum(1 for item in task_results if item["status"] == "unsupported")
+    task_count = len(task_results)
+
+    if not task_count:
+        status = "none"
+        recommendation = "No training tasks were attached to this mission."
+    elif completed_count == task_count:
+        status = "completed"
+        recommendation = "All mapped training tasks were observed in the supervisor steps."
+    elif completed_count or partial_count:
+        status = "partial"
+        recommendation = "Continue or review the next mission to finish pending task actions."
+    elif unsupported_count == task_count:
+        status = "unsupported"
+        recommendation = "Training tasks need supported action mappings before the supervisor can execute them."
+    else:
+        status = "pending"
+        recommendation = "Supervisor stopped before the mapped training tasks were executed."
+
+    return {
+        "status": status,
+        "task_count": task_count,
+        "completed_count": completed_count,
+        "partial_count": partial_count,
+        "pending_count": pending_count,
+        "unsupported_count": unsupported_count,
+        "executed_actions": list(dict.fromkeys(successful_actions)),
+        "attempted_actions": list(dict.fromkeys(attempted_actions)),
+        "stop_reason": stop_reason,
+        "recommendation": recommendation,
+        "tasks": task_results,
+    }
 
 
 def _map_showdown_training_actions(actions: list[str]) -> tuple[list[str], list[str]]:

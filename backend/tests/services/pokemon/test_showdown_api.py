@@ -1353,7 +1353,18 @@ async def test_showdown_mission_auto_goal_uses_training_plan(setup_db, db, clien
     ]
     assert data["mission_summary"]["training_plan"]["stage"] == "exploit"
     assert data["mission_summary"]["training_plan"]["next_mission_goal"] == "learn"
+    assert data["mission_summary"]["training_task_status"] == "partial"
+    assert data["mission_summary"]["training_task_partial_count"] == 2
+    assert data["mission_summary"]["training_task_pending_count"] >= 1
+    progress = data["mission_summary"]["training_task_progress"]
+    assert progress["executed_actions"] == ["start_search"]
+    tasks_by_action = {task["action"]: task for task in progress["tasks"]}
+    assert tasks_by_action["start_search"]["status"] == "partial"
+    assert "connect" in tasks_by_action["start_search"]["missing_actions"]
+    assert tasks_by_action["autopilot"]["status"] == "partial"
+    assert "autopilot" in tasks_by_action["autopilot"]["missing_actions"]
     assert data["session"]["last_mission_summary"]["mission_goal_source"] == "training_plan"
+    assert data["session"]["last_mission_summary"]["training_task_status"] == "partial"
 
     await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
 
@@ -1443,6 +1454,32 @@ def test_showdown_auto_policy_prefers_executable_training_tasks():
     assert policy["executable_task_actions"] == ["analyze", "connect", "flush_pending", "start_search"]
     assert policy["unsupported_task_actions"] == []
     assert policy["training_tasks"][0]["id"] == "high-audit"
+
+
+def test_showdown_training_task_progress_tracks_completed_partial_and_pending_tasks():
+    progress = pokemon_api._build_showdown_training_task_progress(
+        [
+            {"id": "audit", "action": "audit_switch", "priority": "high"},
+            {"id": "search", "action": "start_search", "priority": "normal"},
+            {"id": "custom", "action": "unmapped_action", "priority": "normal"},
+        ],
+        [
+            {"action": "analyze"},
+            {"action": "start_search"},
+        ],
+        stop_reason="max_actions",
+    )
+
+    assert progress["status"] == "partial"
+    assert progress["completed_count"] == 1
+    assert progress["partial_count"] == 1
+    assert progress["unsupported_count"] == 1
+    by_id = {task["id"]: task for task in progress["tasks"]}
+    assert by_id["audit"]["status"] == "completed"
+    assert by_id["search"]["status"] == "partial"
+    assert by_id["search"]["executed_actions"] == ["start_search"]
+    assert by_id["search"]["missing_actions"] == ["connect", "flush_pending"]
+    assert by_id["custom"]["status"] == "unsupported"
 
 
 def test_showdown_auto_policy_maps_abstract_training_actions():

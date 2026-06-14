@@ -859,6 +859,7 @@ export default function PokemonBattlePage() {
     ['Phase 52', 'auto 自主任务读取实战就绪审计，blocked 时先复核 readiness 再发送命令'],
     ['Phase 53', '学习档案沉淀 battle lessons 和可执行 training tasks，实战后能复用经验调整下一轮任务'],
     ['Phase 54', 'auto 自主任务优先读取 training tasks，按任务证据驱动 supervisor 动作白名单'],
+    ['Phase 55', 'mission summary 回写 training task progress，显示 completed/partial/pending/unsupported 执行证据'],
   ];
 
   return (
@@ -1970,6 +1971,45 @@ export default function PokemonBattlePage() {
                     {showdownSession.last_mission_summary.unsupported_task_actions?.length ? (
                       <div className="mt-2 break-words rounded border border-amber-500/30 bg-amber-500/10 p-2 text-[10px] text-amber-100">
                         Unsupported task: {showdownSession.last_mission_summary.unsupported_task_actions.join(' / ')}
+                      </div>
+                    ) : null}
+                    {showdownSession.last_mission_summary.training_task_progress ? (
+                      <div className="mt-3 rounded-md border border-border bg-black/20 p-2">
+                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-[10px] font-semibold uppercase text-gray-300">Task progress</span>
+                          <span className="rounded bg-black/30 px-2 py-0.5 text-[10px] text-gray-200">
+                            {showdownSession.last_mission_summary.training_task_progress.status}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <Metric label="Done" value={showdownSession.last_mission_summary.training_task_completed_count ?? 0} compact />
+                          <Metric label="Partial" value={showdownSession.last_mission_summary.training_task_partial_count ?? 0} compact />
+                          <Metric label="Pending" value={showdownSession.last_mission_summary.training_task_pending_count ?? 0} compact />
+                          <Metric label="Unsupported" value={showdownSession.last_mission_summary.training_task_unsupported_count ?? 0} compact />
+                        </div>
+                        {showdownSession.last_mission_summary.training_task_progress.recommendation ? (
+                          <div className="mt-2 break-words text-[10px] leading-4 text-gray-400">
+                            {showdownSession.last_mission_summary.training_task_progress.recommendation}
+                          </div>
+                        ) : null}
+                        {showdownSession.last_mission_summary.training_task_progress.tasks?.length ? (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {showdownSession.last_mission_summary.training_task_progress.tasks.slice(0, 6).map((task: any) => {
+                              const tone = task.status === 'completed'
+                                ? 'border-emerald-500/30 text-emerald-100'
+                                : task.status === 'partial'
+                                  ? 'border-sky-500/30 text-sky-100'
+                                  : task.status === 'unsupported'
+                                    ? 'border-amber-500/30 text-amber-100'
+                                    : 'border-border text-gray-300';
+                              return (
+                                <span key={`task-progress-${task.id || task.action}`} className={`rounded border bg-black/20 px-1.5 py-0.5 text-[10px] ${tone}`}>
+                                  {task.action}:{task.status}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
                   </div>
