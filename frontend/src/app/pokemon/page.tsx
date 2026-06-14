@@ -492,7 +492,8 @@ export default function PokemonBattlePage() {
       const recoverySummary = response.recovery?.status
         ? ` · recovery ${response.recovery.status}${response.recovery.actions?.length ? `/${response.recovery.actions.length}` : ''}`
         : '';
-      addMessage(`Training chain ${response.completed_rounds}/${response.requested_rounds}: ${response.stop_reason} · ${lastRound?.planned_goal || 'auto'}${recoverySummary}.`);
+      const resumedSummary = response.initial_recovery?.actions?.length ? ' · resumed history' : '';
+      addMessage(`Training chain ${response.completed_rounds}/${response.requested_rounds}: ${response.stop_reason} · ${lastRound?.planned_goal || 'auto'}${recoverySummary}${resumedSummary}.`);
       refreshShowdownMastery();
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '启动 Showdown 训练链失败');
@@ -865,6 +866,7 @@ export default function PokemonBattlePage() {
     ['Phase 55', 'mission summary 回写 training task progress，显示 completed/partial/pending/unsupported 执行证据'],
     ['Phase 56', 'training-chain 汇总 recovery actions，把未完成训练任务转成下一轮恢复队列'],
     ['Phase 57', 'training-chain 后续轮次自动消费上一轮 recovery actions，形成自我修复训练闭环'],
+    ['Phase 58', '新 training-chain 会继承同训练师/格式的历史 recovery actions，支持跨链续跑'],
   ];
 
   return (
@@ -1575,6 +1577,23 @@ export default function PokemonBattlePage() {
                     {activeShowdownTrainingChain.progress.recommendation}
                   </div>
                 ) : null}
+                {activeShowdownTrainingChain.initial_recovery?.actions?.length ? (
+                  <div className="mt-2 rounded border border-emerald-500/25 bg-black/20 p-2">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[10px] font-semibold uppercase text-emerald-100">Resumed Recovery</span>
+                      <span className="rounded bg-black/30 px-2 py-0.5 text-[10px] text-emerald-100">
+                        chain #{activeShowdownTrainingChain.initial_recovery.chain_number ?? '-'}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {activeShowdownTrainingChain.initial_recovery.actions.slice(0, 8).map((action: string) => (
+                        <span key={`initial-recovery-${action}`} className="rounded border border-emerald-500/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-emerald-100">
+                          {action}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
                 {activeShowdownTrainingChain.recovery ? (
                   <div className="mt-2 rounded border border-sky-500/25 bg-black/20 p-2">
                     <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -1618,7 +1637,7 @@ export default function PokemonBattlePage() {
                         ) : null}
                         {round.recovery_action_source?.actions?.length ? (
                           <span className="basis-full truncate text-[10px] text-emerald-100">
-                            applied: {round.recovery_action_source.actions.slice(0, 4).join(' / ')}
+                            applied ({round.recovery_action_source.source || 'recovery'}): {round.recovery_action_source.actions.slice(0, 4).join(' / ')}
                           </span>
                         ) : null}
                       </div>

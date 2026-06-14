@@ -193,6 +193,7 @@ Abattoir（竞技场）是一个让 AI 展现真实能力的地方。在这里�
 - Showdown 任务执行回执：自主任务摘要会记录 `training_task_progress`，按 completed/partial/pending/unsupported 展示任务动作是否被 supervisor 实际执行
 - Showdown 训练链恢复队列：`training-chain` 会汇总每轮未完成训练任务，生成 `recovery.actions`，提示下一轮优先补齐的 supervisor 动作
 - Showdown 自我修复训练链：没有手动 `allowed_actions` 时，`training-chain` 后续轮次会自动消费上一轮 `recovery.actions`，优先补齐未完成训练任务
+- Showdown 跨链恢复续跑：新 `training-chain` 默认会继承同训练师/同格式最近一次未完成的 `recovery.actions`，让长期训练不中断
 - Showdown 即时学习回写：完成对战后会把最新学习档案同步回当前会话快照，前端策略面板可直接使用新样本
 - Showdown 训练复盘：学习档案会输出训练重点，提示低胜率、击倒劣势、低奖励模式和需要审计的决策类型
 - Showdown 自适应策略：创建会话时可使用 `mode=auto`，系统会读取学习档案并选择当前格式下收益最高的策略模式
@@ -602,7 +603,7 @@ AI-Abattoir/
 | GET | `/api/pokemon/showdown/sessions/{id}/matchup-briefing` | 根据已同步房间预览和场上状态生成对手 Matchup 简报，可选联网检索对手阵容知识 |
 | POST | `/api/pokemon/showdown/mission/plan` | 预览下一轮 Showdown 自主任务，返回可启动的 mission 请求预设、目标来源、队伍审计、实战就绪计划、训练任务和可执行计划动作 |
 | POST | `/api/pokemon/showdown/mission` | 创建 Showdown 自主任务，并按 `auto/prepare/queue/ladder/learn` 目标运行有限监督循环，返回任务训练计划、训练任务、任务执行回执、建队审计、实战就绪计划、目标推荐来源和可执行计划动作 |
-| POST | `/api/pokemon/showdown/training-chain` | 连续执行多轮 Showdown 自主任务，每轮先读取学习计划再执行 mission，并汇总 Mastery 分数、停止原因和未完成训练任务恢复队列；无手动动作白名单时，下一轮会自动应用上一轮 `recovery.actions` |
+| POST | `/api/pokemon/showdown/training-chain` | 连续执行多轮 Showdown 自主任务，每轮先读取学习计划再执行 mission，并汇总 Mastery 分数、停止原因和未完成训练任务恢复队列；无手动动作白名单时，下一轮会自动应用上一轮 `recovery.actions`，新链默认会通过 `resume_recovery=true` 继承历史未完成恢复动作 |
 | POST | `/api/pokemon/showdown/sessions` | 创建 Showdown 自动会话状态机，缺省队伍时自动建队，`mode=auto` 时按学习档案选择策略模式，可用 `auto_accept_challenges` 自动接受同格式挑战，或用 `auto_research_team` 自动检索整队知识 |
 | GET | `/api/pokemon/showdown/sessions` | 列出 Showdown 自动会话 |
 | POST | `/api/pokemon/showdown/sessions/{id}/search` | 为会话生成并记录天梯搜索命令 |
@@ -872,6 +873,7 @@ alembic history
 - [x] 宝可梦 Showdown 自主任务训练任务执行回执和前端进度展示
 - [x] 宝可梦 Showdown training-chain 汇总未完成训练任务并生成恢复动作队列
 - [x] 宝可梦 Showdown training-chain 自动应用上一轮恢复动作，形成自我修复训练闭环
+- [x] 宝可梦 Showdown training-chain 跨链继承历史恢复动作，支持长期续跑
 - [ ] Pokemon Showdown 真实登录和天梯实战
 - [ ] 宝可梦完整多格式战斗策略（单打、随机战、不同世代规则）
 - [ ] 宝可梦强化学习闭环与长期策略评估

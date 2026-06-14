@@ -731,19 +731,25 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
     baseline_mastery_score = pokemon_showdown_learning_store.score_profile(baseline_learning_profile)
 
     mission_payload = ShowdownSessionMissionRequest(
-        **payload.model_dump(exclude={"rounds", "mastery_score_target", "stop_on_no_progress"})
+        **payload.model_dump(exclude={"rounds", "resume_recovery", "mastery_score_target", "stop_on_no_progress"})
     )
     rounds = []
     stop_reason = "round_limit"
     final_session = None
     latest_learning_profile = None
     latest_mastery_score = None
-    previous_recovery = None
+    previous_recovery = _find_showdown_training_chain_resume_recovery(
+        username=payload.username,
+        battle_format=format_info.id,
+    ) if payload.resume_recovery else None
+    initial_recovery = previous_recovery
+    recovery_source = "previous_training_chain_recovery" if previous_recovery else "previous_round_recovery"
 
     for index in range(payload.rounds):
         recovery_action_source = _build_showdown_recovery_action_source(
             previous_recovery,
             custom_allowed_actions=payload.allowed_actions,
+            source=recovery_source,
         )
         current_mission_payload = mission_payload
         if recovery_action_source["actions"]:
@@ -784,6 +790,7 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
         round_summary["recovery"] = _build_showdown_round_recovery(round_summary)
         rounds.append(round_summary)
         previous_recovery = round_summary["recovery"]
+        recovery_source = "previous_round_recovery"
 
         if payload.mastery_score_target is not None and latest_mastery_score >= payload.mastery_score_target:
             stop_reason = "mastery_score_target"
@@ -818,6 +825,7 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
                 "mastery_score": latest_mastery_score,
                 "learning_battles": (latest_learning_profile or {}).get("battles", 0),
                 "progress": progress,
+                "initial_recovery": initial_recovery,
                 "recovery": recovery,
                 "last_goal": rounds[-1]["planned_goal"] if rounds else None,
                 "last_goal_source": rounds[-1]["planned_goal_source"] if rounds else None,
@@ -850,6 +858,7 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
         "learning_profile": latest_learning_profile,
         "mastery_score": latest_mastery_score,
         "progress": progress,
+        "initial_recovery": initial_recovery,
         "recovery": recovery,
         "training_chain_summary": training_chain_summary,
         "rounds": rounds,
@@ -940,6 +949,7 @@ def _build_showdown_recovery_action_source(
     previous_recovery: dict[str, Any] | None,
     *,
     custom_allowed_actions: list[str] | None,
+    source: str = "previous_round_recovery",
 ) -> dict[str, Any]:
     if custom_allowed_actions:
         return {
@@ -960,17 +970,41 @@ def _build_showdown_recovery_action_source(
     if previous_recovery.get("status") != "resume" or not actions:
         return {
             "status": str(previous_recovery.get("status") or "clear"),
-            "source": "previous_round_recovery",
+            "source": source,
             "actions": [],
             "reason": "Previous recovery state did not expose executable resume actions.",
         }
 
     return {
         "status": "applied",
-        "source": "previous_round_recovery",
+        "source": source,
         "actions": list(dict.fromkeys(actions)),
         "reason": "Previous incomplete training tasks were promoted to this round's action allow-list.",
     }
+
+
+def _find_showdown_training_chain_resume_recovery(username: str, battle_format: str) -> dict[str, Any] | None:
+    normalized_username = str(username or "").lower()
+    normalized_format = str(battle_format or "").lower()
+    for session in pokemon_showdown_session_service.list_sessions():
+        snapshot = session.to_dict()
+        if str(snapshot.get("username") or "").lower() != normalized_username:
+            continue
+        if str(snapshot.get("battle_format") or "").lower() != normalized_format:
+            continue
+        summary = snapshot.get("last_training_chain_summary") or {}
+        recovery = summary.get("recovery") if isinstance(summary, dict) else None
+        if not isinstance(recovery, dict):
+            continue
+        actions = [str(action) for action in recovery.get("actions") or [] if str(action)]
+        if recovery.get("status") != "resume" or not actions:
+            continue
+        seeded = dict(recovery)
+        seeded["actions"] = actions
+        seeded["chain_number"] = summary.get("chain_number")
+        seeded["session_id"] = snapshot.get("session_id")
+        return seeded
+    return None
 
 
 def _build_showdown_round_recovery(round_summary: dict[str, Any]) -> dict[str, Any]:

@@ -266,6 +266,10 @@ class ShowdownTrainingChainRequest(ShowdownSessionMissionRequest):
         2,
         description="Maximum autonomous mission rounds to plan and execute in one training chain.",
     )
+    resume_recovery: bool = Field(
+        True,
+        description="When true, seed the first round with the latest unfinished recovery actions for this user and format.",
+    )
     mastery_score_target: Optional[float] = Field(
         None,
         description="Optional mastery score threshold. The chain stops after a round reaches this score.",

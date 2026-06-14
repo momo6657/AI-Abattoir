@@ -1280,6 +1280,66 @@ async def test_showdown_training_chain_applies_previous_recovery_actions(setup_d
 
 
 @pytest.mark.asyncio
+async def test_showdown_training_chain_resumes_recovery_from_previous_chain(setup_db, client):
+    previous = pokemon_api.pokemon_showdown_session_service.create_session(
+        username="CarryBot",
+        team=None,
+        battle_format="gen9randombattle",
+    )
+    pokemon_api.pokemon_showdown_session_service.store_training_chain_summary(
+        previous.session_id,
+        {
+            "username": "CarryBot",
+            "battle_format": "gen9randombattle",
+            "showdown_format": "gen9randombattle",
+            "requested_rounds": 2,
+            "completed_rounds": 2,
+            "stop_reason": "round_limit",
+            "mastery_score": 10,
+            "progress": {"direction": "unchanged", "battle_delta": 0},
+            "recovery": {
+                "status": "resume",
+                "actions": ["analyze"],
+                "action_counts": {"analyze": 1},
+                "task_count": 1,
+                "rounds": [{"round": 2, "status": "resume", "actions": ["analyze"], "task_count": 1}],
+                "blocked_reasons": [],
+                "recommendation": "Resume analysis.",
+            },
+            "rounds": [],
+        },
+    )
+
+    response = await client.post(
+        "/api/pokemon/showdown/training-chain",
+        json={
+            "username": "CarryBot",
+            "battle_format": "gen9randombattle",
+            "mode": "auto",
+            "mission_goal": "auto",
+            "rounds": 1,
+            "max_actions": 1,
+            "send_commands": False,
+            "stop_on_finished": False,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["initial_recovery"]["actions"] == ["analyze"]
+    assert data["initial_recovery"]["chain_number"] == 1
+    assert data["rounds"][0]["recovery_action_source"]["status"] == "applied"
+    assert data["rounds"][0]["recovery_action_source"]["source"] == "previous_training_chain_recovery"
+    assert data["rounds"][0]["planned_actions"] == ["analyze"]
+    assert data["rounds"][0]["mission_summary"]["allowed_actions"] == ["analyze"]
+    assert data["training_chain_summary"]["initial_recovery"]["actions"] == ["analyze"]
+
+    await client.delete(f"/api/pokemon/showdown/sessions/{previous.session_id}")
+    for round_item in data["rounds"]:
+        await client.delete(f"/api/pokemon/showdown/sessions/{round_item['session_id']}")
+
+
+@pytest.mark.asyncio
 async def test_showdown_training_chain_stops_on_mastery_target(setup_db, db, client):
     await pokemon_showdown_learning_store.record_session(
         db,
