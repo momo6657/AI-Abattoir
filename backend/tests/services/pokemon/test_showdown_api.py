@@ -1288,7 +1288,12 @@ async def test_showdown_training_chain_applies_previous_recovery_actions(setup_d
     assert data["rounds"][1]["recovery_action_source"]["source"] == "previous_round_recovery"
     assert data["rounds"][1]["planned_actions"] == data["rounds"][0]["recovery"]["actions"]
     assert data["rounds"][1]["mission_summary"]["allowed_actions"] == data["rounds"][0]["recovery"]["actions"]
+    assert data["rounds"][1]["recovery_effectiveness"]["applied_count"] == len(data["rounds"][0]["recovery"]["actions"])
+    assert data["rounds"][1]["recovery_effectiveness"]["status"] in {"partial", "stuck", "shifted", "cleared"}
+    assert data["recovery_effectiveness"]["applied_rounds"] == 1
+    assert data["training_chain_summary"]["recovery_effectiveness"]["applied_rounds"] == 1
     assert data["training_chain_summary"]["rounds"][1]["recovery_action_source"]["status"] == "applied"
+    assert data["training_chain_summary"]["rounds"][1]["recovery_effectiveness"]["applied_count"] == len(data["rounds"][0]["recovery"]["actions"])
 
     for round_item in data["rounds"]:
         await client.delete(f"/api/pokemon/showdown/sessions/{round_item['session_id']}")
@@ -1846,6 +1851,75 @@ def test_showdown_round_recovery_includes_policy_progress_actions():
     assert recovery["action_counts"]["connect"] == 2
     assert recovery["actions"][0] == "connect"
     assert {task["source"] for task in recovery["tasks"]} == {"policy"}
+
+
+def test_showdown_recovery_effectiveness_marks_cleared_actions():
+    effect = pokemon_api._build_showdown_recovery_effectiveness(
+        {"status": "applied", "source": "previous_round_recovery", "actions": ["connect", "flush_pending"]},
+        {"status": "clear", "actions": []},
+    )
+
+    assert effect["status"] == "cleared"
+    assert effect["recovered_actions"] == ["connect", "flush_pending"]
+    assert effect["still_pending_actions"] == []
+    assert effect["burndown_ratio"] == 1.0
+
+
+def test_showdown_recovery_effectiveness_marks_stuck_actions():
+    effect = pokemon_api._build_showdown_recovery_effectiveness(
+        {"status": "applied", "source": "previous_round_recovery", "actions": ["connect", "autopilot"]},
+        {"status": "resume", "actions": ["connect", "autopilot", "analyze"]},
+    )
+
+    assert effect["status"] == "stuck"
+    assert effect["still_pending_actions"] == ["connect", "autopilot"]
+    assert effect["new_actions"] == ["analyze"]
+    assert effect["burndown_ratio"] == 0.0
+
+
+def test_showdown_training_chain_recovery_effectiveness_summarizes_rounds():
+    summary = pokemon_api._build_showdown_training_chain_recovery_effectiveness(
+        [
+            {
+                "round": 1,
+                "recovery_effectiveness": {
+                    "status": "not_applied",
+                    "applied_count": 0,
+                    "recovered_count": 0,
+                    "still_pending_count": 0,
+                    "new_count": 0,
+                    "applied_actions": [],
+                    "recovered_actions": [],
+                    "still_pending_actions": [],
+                    "new_actions": [],
+                },
+            },
+            {
+                "round": 2,
+                "recovery_effectiveness": {
+                    "status": "partial",
+                    "applied_count": 3,
+                    "recovered_count": 2,
+                    "still_pending_count": 1,
+                    "new_count": 1,
+                    "applied_actions": ["connect", "flush_pending", "autopilot"],
+                    "recovered_actions": ["connect", "flush_pending"],
+                    "still_pending_actions": ["autopilot"],
+                    "new_actions": ["analyze"],
+                },
+            },
+        ]
+    )
+
+    assert summary["status"] == "partial"
+    assert summary["applied_rounds"] == 1
+    assert summary["applied_count"] == 3
+    assert summary["recovered_count"] == 2
+    assert summary["still_pending_count"] == 1
+    assert summary["new_count"] == 1
+    assert summary["burndown_ratio"] == 0.67
+    assert summary["action_counts"]["recovered"]["connect"] == 1
+    assert summary["still_pending_actions"] == ["autopilot"]
 
 
 def test_showdown_recovery_action_source_respects_custom_allowed_actions():

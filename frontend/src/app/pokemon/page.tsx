@@ -871,6 +871,7 @@ export default function PokemonBattlePage() {
     ['Phase 59', '学习档案输出长期 policy evaluation，在探索、稳定和利用之间自动切换策略'],
     ['Phase 60', '自主任务读取 policy evaluation，按收集、稳定、探索和利用阶段规划目标与动作边界'],
     ['Phase 61', '自主任务回写 policy action progress，并将未完成策略动作纳入训练链恢复队列'],
+    ['Phase 62', '训练链追踪 recovery burn-down，判断恢复动作是否清除、卡住或产生新队列'],
   ];
 
   return (
@@ -1626,6 +1627,36 @@ export default function PokemonBattlePage() {
                     ) : null}
                   </div>
                 ) : null}
+                {activeShowdownTrainingChain.recovery_effectiveness ? (
+                  <div className="mt-2 rounded border border-cyan-500/25 bg-cyan-500/10 p-2">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[10px] font-semibold uppercase text-cyan-100">Recovery burn-down</span>
+                      <span className="rounded bg-black/30 px-2 py-0.5 text-[10px] text-cyan-100">
+                        {activeShowdownTrainingChain.recovery_effectiveness.status}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Metric label="Applied" value={activeShowdownTrainingChain.recovery_effectiveness.applied_count ?? 0} compact />
+                      <Metric label="Cleared" value={activeShowdownTrainingChain.recovery_effectiveness.recovered_count ?? 0} compact />
+                      <Metric label="Still" value={activeShowdownTrainingChain.recovery_effectiveness.still_pending_count ?? 0} compact />
+                      <Metric label="Ratio" value={`${Math.round((activeShowdownTrainingChain.recovery_effectiveness.burndown_ratio ?? 0) * 100)}%`} compact />
+                    </div>
+                    {activeShowdownTrainingChain.recovery_effectiveness.recommendation ? (
+                      <div className="mt-2 break-words text-[10px] leading-4 text-gray-300">
+                        {activeShowdownTrainingChain.recovery_effectiveness.recommendation}
+                      </div>
+                    ) : null}
+                    {activeShowdownTrainingChain.recovery_effectiveness.still_pending_actions?.length ? (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {activeShowdownTrainingChain.recovery_effectiveness.still_pending_actions.slice(0, 8).map((action: string) => (
+                          <span key={`chain-recovery-still-${action}`} className="rounded border border-cyan-500/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-cyan-100">
+                            still:{action}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 {activeShowdownTrainingChain.rounds?.length ? (
                   <div className="mt-2 space-y-1.5">
                     {activeShowdownTrainingChain.rounds.slice(-4).map((round: any) => (
@@ -1642,6 +1673,11 @@ export default function PokemonBattlePage() {
                         {round.recovery_action_source?.actions?.length ? (
                           <span className="basis-full truncate text-[10px] text-emerald-100">
                             applied ({round.recovery_action_source.source || 'recovery'}): {round.recovery_action_source.actions.slice(0, 4).join(' / ')}
+                          </span>
+                        ) : null}
+                        {round.recovery_effectiveness ? (
+                          <span className="basis-full truncate text-[10px] text-cyan-100">
+                            burn-down: {round.recovery_effectiveness.status} · cleared {round.recovery_effectiveness.recovered_count ?? 0}/{round.recovery_effectiveness.applied_count ?? 0}
                           </span>
                         ) : null}
                       </div>

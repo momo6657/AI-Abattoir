@@ -807,6 +807,10 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
             "mastery_score": latest_mastery_score,
         }
         round_summary["recovery"] = _build_showdown_round_recovery(round_summary)
+        round_summary["recovery_effectiveness"] = _build_showdown_recovery_effectiveness(
+            round_summary["recovery_action_source"],
+            round_summary["recovery"],
+        )
         rounds.append(round_summary)
         previous_recovery = round_summary["recovery"]
         recovery_source = "previous_round_recovery"
@@ -830,6 +834,7 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
         latest_mastery_score=latest_mastery_score,
     )
     recovery = _build_showdown_training_chain_recovery(rounds)
+    recovery_effectiveness = _build_showdown_training_chain_recovery_effectiveness(rounds)
     training_chain_summary = None
     if final_session and final_session.get("session_id"):
         training_chain_summary = pokemon_showdown_session_service.store_training_chain_summary(
@@ -846,6 +851,7 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
                 "progress": progress,
                 "initial_recovery": initial_recovery,
                 "recovery": recovery,
+                "recovery_effectiveness": recovery_effectiveness,
                 "last_goal": rounds[-1]["planned_goal"] if rounds else None,
                 "last_goal_source": rounds[-1]["planned_goal_source"] if rounds else None,
                 "rounds": [
@@ -858,6 +864,7 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
                         "supervisor_step_count": item["supervisor_step_count"],
                         "recovery_status": item["recovery"]["status"],
                         "recovery_actions": item["recovery"]["actions"],
+                        "recovery_effectiveness": item["recovery_effectiveness"],
                         "mastery_score": item["mastery_score"],
                     }
                     for item in rounds
@@ -879,6 +886,7 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
         "progress": progress,
         "initial_recovery": initial_recovery,
         "recovery": recovery,
+        "recovery_effectiveness": recovery_effectiveness,
         "training_chain_summary": training_chain_summary,
         "rounds": rounds,
     }
@@ -1151,6 +1159,142 @@ def _build_showdown_training_chain_recovery(rounds: list[dict[str, Any]]) -> dic
         "policy_count": policy_count,
         "rounds": round_recovery,
         "blocked_reasons": blocked_reasons,
+        "recommendation": recommendation,
+    }
+
+
+def _build_showdown_recovery_effectiveness(
+    recovery_action_source: dict[str, Any] | None,
+    recovery: dict[str, Any] | None,
+) -> dict[str, Any]:
+    source = recovery_action_source or {}
+    recovery = recovery or {}
+    applied_actions = list(dict.fromkeys(str(action) for action in source.get("actions") or [] if str(action)))
+    remaining_actions = list(dict.fromkeys(str(action) for action in recovery.get("actions") or [] if str(action)))
+    remaining_set = set(remaining_actions)
+    recovered_actions = [action for action in applied_actions if action not in remaining_set]
+    still_pending_actions = [action for action in applied_actions if action in remaining_set]
+    new_actions = [action for action in remaining_actions if action not in set(applied_actions)]
+
+    if not applied_actions:
+        status = "not_applied"
+        recommendation = "No recovery actions were injected into this round."
+    elif not still_pending_actions and not new_actions:
+        status = "cleared"
+        recommendation = "Injected recovery actions cleared the pending queue."
+    elif recovered_actions and still_pending_actions:
+        status = "partial"
+        recommendation = "Some recovery actions cleared, but the next round should continue the still-pending actions."
+    elif recovered_actions and new_actions:
+        status = "shifted"
+        recommendation = "Injected recovery actions cleared, but new recovery actions appeared and should seed the next round."
+    else:
+        status = "stuck"
+        recommendation = "Injected recovery actions are still pending; broaden the next round or inspect blocked supervisor steps."
+
+    applied_count = len(applied_actions)
+    recovered_count = len(recovered_actions)
+    burndown_ratio = round(recovered_count / applied_count, 2) if applied_count else 0.0
+    return {
+        "status": status,
+        "source": source.get("source") or "none",
+        "applied_actions": applied_actions,
+        "remaining_actions": remaining_actions,
+        "recovered_actions": recovered_actions,
+        "still_pending_actions": still_pending_actions,
+        "new_actions": new_actions,
+        "applied_count": applied_count,
+        "recovered_count": recovered_count,
+        "still_pending_count": len(still_pending_actions),
+        "new_count": len(new_actions),
+        "remaining_count": len(remaining_actions),
+        "burndown_ratio": burndown_ratio,
+        "recommendation": recommendation,
+    }
+
+
+def _build_showdown_training_chain_recovery_effectiveness(rounds: list[dict[str, Any]]) -> dict[str, Any]:
+    round_effects = [
+        round_item.get("recovery_effectiveness")
+        or _build_showdown_recovery_effectiveness(
+            round_item.get("recovery_action_source"),
+            round_item.get("recovery"),
+        )
+        for round_item in rounds
+    ]
+    applied_rounds = [effect for effect in round_effects if int(effect.get("applied_count") or 0) > 0]
+    action_counts = {
+        "applied": {},
+        "recovered": {},
+        "still_pending": {},
+        "new": {},
+    }
+    for effect in applied_rounds:
+        for bucket, key in (
+            ("applied", "applied_actions"),
+            ("recovered", "recovered_actions"),
+            ("still_pending", "still_pending_actions"),
+            ("new", "new_actions"),
+        ):
+            for action in effect.get(key) or []:
+                action_text = str(action)
+                action_counts[bucket][action_text] = action_counts[bucket].get(action_text, 0) + 1
+
+    applied_count = sum(int(effect.get("applied_count") or 0) for effect in applied_rounds)
+    recovered_count = sum(int(effect.get("recovered_count") or 0) for effect in applied_rounds)
+    still_pending_count = sum(int(effect.get("still_pending_count") or 0) for effect in applied_rounds)
+    new_count = sum(int(effect.get("new_count") or 0) for effect in applied_rounds)
+    stuck_rounds = sum(1 for effect in applied_rounds if effect.get("status") == "stuck")
+    partial_rounds = sum(1 for effect in applied_rounds if effect.get("status") in {"partial", "shifted"})
+    cleared_rounds = sum(1 for effect in applied_rounds if effect.get("status") == "cleared")
+
+    if not applied_rounds:
+        status = "none"
+        recommendation = "No recovery actions were injected during this chain."
+    elif still_pending_count == 0 and new_count == 0:
+        status = "cleared"
+        recommendation = "Recovery injections cleared all pending recovery actions."
+    elif recovered_count and still_pending_count:
+        status = "partial"
+        recommendation = "Recovery is burning down, but the next chain should continue still-pending actions first."
+    elif stuck_rounds:
+        status = "stuck"
+        recommendation = "Recovery actions repeated without clearing; broaden allowed actions or inspect supervisor blockers."
+    else:
+        status = "shifted"
+        recommendation = "Previous recovery actions cleared, but new recovery work appeared."
+
+    burndown_ratio = round(recovered_count / applied_count, 2) if applied_count else 0.0
+    return {
+        "status": status,
+        "applied_rounds": len(applied_rounds),
+        "cleared_rounds": cleared_rounds,
+        "partial_rounds": partial_rounds,
+        "stuck_rounds": stuck_rounds,
+        "applied_count": applied_count,
+        "recovered_count": recovered_count,
+        "still_pending_count": still_pending_count,
+        "new_count": new_count,
+        "burndown_ratio": burndown_ratio,
+        "action_counts": action_counts,
+        "applied_actions": sorted(action_counts["applied"], key=lambda action: (-action_counts["applied"][action], action)),
+        "recovered_actions": sorted(action_counts["recovered"], key=lambda action: (-action_counts["recovered"][action], action)),
+        "still_pending_actions": sorted(
+            action_counts["still_pending"],
+            key=lambda action: (-action_counts["still_pending"][action], action),
+        ),
+        "new_actions": sorted(action_counts["new"], key=lambda action: (-action_counts["new"][action], action)),
+        "rounds": [
+            {
+                "round": round_item.get("round"),
+                "status": effect.get("status"),
+                "applied_count": effect.get("applied_count") or 0,
+                "recovered_count": effect.get("recovered_count") or 0,
+                "still_pending_count": effect.get("still_pending_count") or 0,
+                "new_count": effect.get("new_count") or 0,
+            }
+            for round_item, effect in zip(rounds, round_effects)
+        ],
         "recommendation": recommendation,
     }
 
