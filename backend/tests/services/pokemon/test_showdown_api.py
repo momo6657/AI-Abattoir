@@ -1011,14 +1011,25 @@ async def test_showdown_mission_plan_returns_next_request_from_learning_profile(
 
     assert response.status_code == 200
     data = response.json()
-    assert data["mission_goal"] == "learn"
-    assert data["mission_goal_source"] == "training_plan"
-    assert data["action_plan_source"] == "training_tasks"
+    assert data["mission_goal"] == "ladder"
+    assert data["mission_goal_source"] == "policy_evaluation"
+    assert data["action_plan_source"] == "policy_evaluation"
     assert data["mission_request"]["mission_goal"] == "auto"
     assert data["mission_request"]["battle_format"] == "gen9randombattle"
     assert data["mission_request"]["max_actions"] == 4
     assert data["mission_request"]["max_messages"] == 12
     assert "login_password" not in data["mission_request"]
+    assert data["policy_evaluation"]["phase"] == "explore"
+    assert data["policy_actions"] == ["start_search", "autopilot", "analyze"]
+    assert data["executable_policy_actions"] == [
+        "connect",
+        "flush_pending",
+        "start_search",
+        "autopilot",
+        "analyze",
+    ]
+    assert data["unsupported_policy_actions"] == []
+    assert data["allowed_actions"] == data["executable_policy_actions"]
     assert data["executable_plan_actions"] == [
         "connect",
         "flush_pending",
@@ -1211,8 +1222,8 @@ async def test_showdown_training_chain_runs_adaptive_planned_rounds(setup_db, db
     assert data["stop_reason"] == "round_limit"
     assert data["learning_profile"]["training_plan"]["next_mission_goal"] == "learn"
     assert data["mastery_score"] > 0
-    assert [round_item["planned_goal"] for round_item in data["rounds"]] == ["learn", "learn"]
-    assert all(round_item["planned_goal_source"] == "training_plan" for round_item in data["rounds"])
+    assert [round_item["planned_goal"] for round_item in data["rounds"]] == ["ladder", "ladder"]
+    assert all(round_item["planned_goal_source"] == "policy_evaluation" for round_item in data["rounds"])
     assert all(round_item["action_plan_source"] == "custom" for round_item in data["rounds"])
     assert all(round_item["recovery_action_source"]["status"] == "custom_override" for round_item in data["rounds"])
     assert all(round_item["supervisor_step_count"] == 1 for round_item in data["rounds"])
@@ -1229,7 +1240,7 @@ async def test_showdown_training_chain_runs_adaptive_planned_rounds(setup_db, db
     assert data["training_chain_summary"]["completed_rounds"] == 2
     assert data["training_chain_summary"]["progress"]["after_mastery_score"] == data["mastery_score"]
     assert data["training_chain_summary"]["recovery"]["actions"][0] == "connect"
-    assert data["training_chain_summary"]["rounds"][-1]["planned_goal"] == "learn"
+    assert data["training_chain_summary"]["rounds"][-1]["planned_goal"] == "ladder"
     assert data["training_chain_summary"]["rounds"][-1]["recovery_status"] == "resume"
     assert data["final_session"]["last_training_chain_summary"]["completed_rounds"] == 2
     assert data["final_session"]["last_training_chain_summary"]["recovery"]["status"] == "resume"
@@ -1420,7 +1431,7 @@ async def test_showdown_mission_auto_goal_resolves_from_session_state(setup_db, 
 
 
 @pytest.mark.asyncio
-async def test_showdown_mission_auto_goal_uses_training_plan(setup_db, db, client):
+async def test_showdown_mission_auto_goal_uses_policy_evaluation(setup_db, db, client):
     await pokemon_showdown_learning_store.record_session(
         db,
         session_id="planned-auto-win",
@@ -1449,9 +1460,11 @@ async def test_showdown_mission_auto_goal_uses_training_plan(setup_db, db, clien
     data = response.json()
     session_id = data["session"]["session_id"]
     assert data["mission_summary"]["requested_mission_goal"] == "auto"
-    assert data["mission_summary"]["mission_goal"] == "learn"
-    assert data["mission_summary"]["mission_goal_source"] == "training_plan"
+    assert data["mission_summary"]["mission_goal"] == "ladder"
+    assert data["mission_summary"]["mission_goal_source"] == "policy_evaluation"
     assert data["mission_summary"]["action_plan_source"] == "custom"
+    assert data["mission_summary"]["policy_evaluation"]["phase"] == "explore"
+    assert data["mission_summary"]["policy_actions"] == ["start_search", "autopilot", "analyze"]
     assert data["mission_summary"]["training_plan_actions"] == ["start_search", "autopilot", "analyze", "new_session"]
     assert data["mission_summary"]["executable_plan_actions"] == [
         "connect",
@@ -1473,7 +1486,7 @@ async def test_showdown_mission_auto_goal_uses_training_plan(setup_db, db, clien
     assert "connect" in tasks_by_action["start_search"]["missing_actions"]
     assert tasks_by_action["autopilot"]["status"] == "partial"
     assert "autopilot" in tasks_by_action["autopilot"]["missing_actions"]
-    assert data["session"]["last_mission_summary"]["mission_goal_source"] == "training_plan"
+    assert data["session"]["last_mission_summary"]["mission_goal_source"] == "policy_evaluation"
     assert data["session"]["last_mission_summary"]["training_task_status"] == "partial"
 
     await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
@@ -1515,6 +1528,49 @@ def test_showdown_auto_policy_translates_training_plan_actions():
     ]
     assert policy["training_plan_actions"] == ["start_search", "autopilot", "analyze", "new_session"]
     assert policy["unsupported_plan_actions"] == []
+
+
+def test_showdown_auto_policy_evaluation_overrides_training_plan_goal():
+    payload = ShowdownSessionMissionRequest(
+        username="PolicyEvalBot",
+        battle_format="gen9randombattle",
+        mission_goal="auto",
+    )
+    session = {
+        "has_knowledge_context": False,
+        "team_species": [],
+        "learning_profile": {
+            "battles": 1,
+            "win_rate": 1.0,
+            "average_reward": 125.0,
+            "training_plan": {
+                "next_mission_goal": "learn",
+                "actions": ["start_search", "autopilot", "analyze", "new_session"],
+            },
+            "policy_evaluation": {
+                "phase": "explore",
+                "policy": "explore_under_sampled_mode",
+                "recommended_mode": "balanced",
+                "confidence": "low",
+                "risk": "low",
+                "next_experiment": {
+                    "mode": "balanced",
+                    "mission_goal": "ladder",
+                    "reason": "balanced needs more samples before exploiting.",
+                },
+            },
+        },
+    }
+
+    policy = pokemon_api._resolve_showdown_mission_policy(payload, session)
+
+    assert policy["mission_goal"] == "ladder"
+    assert policy["mission_goal_source"] == "policy_evaluation"
+    assert policy["mission_goal_reason"] == "balanced needs more samples before exploiting."
+    assert policy["action_plan_source"] == "policy_evaluation"
+    assert policy["policy_actions"] == ["start_search", "autopilot", "analyze"]
+    assert policy["allowed_actions"] == ["connect", "flush_pending", "start_search", "autopilot", "analyze"]
+    assert policy["unsupported_policy_actions"] == []
 
 
 def test_showdown_auto_policy_prefers_executable_training_tasks():

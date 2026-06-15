@@ -869,6 +869,7 @@ export default function PokemonBattlePage() {
     ['Phase 57', 'training-chain 后续轮次自动消费上一轮 recovery actions，形成自我修复训练闭环'],
     ['Phase 58', '新 training-chain 会继承同训练师/格式的历史 recovery actions，支持跨链续跑'],
     ['Phase 59', '学习档案输出长期 policy evaluation，在探索、稳定和利用之间自动切换策略'],
+    ['Phase 60', '自主任务读取 policy evaluation，按收集、稳定、探索和利用阶段规划目标与动作边界'],
   ];
 
   return (
@@ -2013,6 +2014,36 @@ export default function PokemonBattlePage() {
                     {showdownSession.last_mission_summary.unsupported_plan_actions?.length ? (
                       <div className="mt-2 break-words rounded border border-amber-500/30 bg-amber-500/10 p-2 text-[10px] text-amber-100">
                         Unsupported: {showdownSession.last_mission_summary.unsupported_plan_actions.join(' / ')}
+                      </div>
+                    ) : null}
+                    {showdownSession.last_mission_summary.policy_evaluation ? (
+                      <div className="mt-3 rounded-md border border-violet-500/30 bg-violet-500/10 p-2">
+                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-[10px] font-semibold uppercase text-violet-200">Policy driver</span>
+                          <span className="rounded bg-black/30 px-2 py-0.5 text-[10px] text-gray-200">
+                            {showdownSession.last_mission_summary.policy_evaluation.phase || 'policy'} · {showdownSession.last_mission_summary.action_plan_source || 'preset'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <Metric label="Goal" value={showdownSession.last_mission_summary.mission_goal || '-'} compact />
+                          <Metric label="Mode" value={showdownSession.last_mission_summary.policy_evaluation.recommended_mode || '-'} compact />
+                          <Metric label="Risk" value={showdownSession.last_mission_summary.policy_evaluation.risk || '-'} compact />
+                          <Metric label="Confidence" value={showdownSession.last_mission_summary.policy_evaluation.confidence || '-'} compact />
+                        </div>
+                        {showdownSession.last_mission_summary.policy_actions?.length ? (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {showdownSession.last_mission_summary.policy_actions.map((action: string) => (
+                              <span key={`mission-policy-${action}`} className="rounded border border-violet-500/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-violet-100">
+                                {action}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                        {showdownSession.last_mission_summary.executable_policy_actions?.length ? (
+                          <div className="mt-2 break-words rounded border border-violet-500/20 bg-black/20 p-2 text-[10px] leading-4 text-violet-100">
+                            Policy executable: {showdownSession.last_mission_summary.executable_policy_actions.join(' / ')}
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
                     {showdownSession.last_mission_summary.training_task_actions?.length ? (

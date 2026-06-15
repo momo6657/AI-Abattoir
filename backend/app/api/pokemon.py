@@ -615,10 +615,14 @@ async def plan_showdown_mission(payload: ShowdownSessionMissionRequest, db: Asyn
         "allowed_actions": mission_policy["allowed_actions"],
         "training_plan_actions": mission_policy["training_plan_actions"],
         "training_task_actions": mission_policy["training_task_actions"],
+        "policy_evaluation": mission_policy["policy_evaluation"],
+        "policy_actions": mission_policy["policy_actions"],
         "executable_plan_actions": mission_policy["executable_plan_actions"],
         "executable_task_actions": mission_policy["executable_task_actions"],
+        "executable_policy_actions": mission_policy["executable_policy_actions"],
         "unsupported_plan_actions": mission_policy["unsupported_plan_actions"],
         "unsupported_task_actions": mission_policy["unsupported_task_actions"],
+        "unsupported_policy_actions": mission_policy["unsupported_policy_actions"],
         "training_tasks": mission_policy["training_tasks"],
         "action_plan_source": mission_policy["action_plan_source"],
         "mission_request": mission_request,
@@ -672,10 +676,14 @@ async def start_showdown_mission(payload: ShowdownSessionMissionRequest, db: Asy
         "allowed_actions": mission_policy["allowed_actions"],
         "training_plan_actions": mission_policy["training_plan_actions"],
         "training_task_actions": mission_policy["training_task_actions"],
+        "policy_evaluation": mission_policy["policy_evaluation"],
+        "policy_actions": mission_policy["policy_actions"],
         "executable_plan_actions": mission_policy["executable_plan_actions"],
         "executable_task_actions": mission_policy["executable_task_actions"],
+        "executable_policy_actions": mission_policy["executable_policy_actions"],
         "unsupported_plan_actions": mission_policy["unsupported_plan_actions"],
         "unsupported_task_actions": mission_policy["unsupported_task_actions"],
+        "unsupported_policy_actions": mission_policy["unsupported_policy_actions"],
         "training_tasks": mission_policy["training_tasks"],
         "training_task_progress": training_task_progress,
         "training_task_status": training_task_progress["status"],
@@ -1710,6 +1718,10 @@ def _resolve_showdown_mission_policy(payload: ShowdownSessionMissionRequest, ses
     policy["mission_goal_reason"] = recommendation["reason"] if requested_goal == "auto" else "Mission goal was selected manually."
     plan_actions, executable_plan_actions, unsupported_plan_actions = _resolve_showdown_training_plan_actions(session)
     training_tasks, task_actions, executable_task_actions, unsupported_task_actions = _resolve_showdown_training_task_actions(session)
+    policy_evaluation, policy_actions, executable_policy_actions, unsupported_policy_actions = _resolve_showdown_policy_actions(
+        session,
+        mission_goal=goal,
+    )
     policy["training_plan_actions"] = plan_actions
     policy["executable_plan_actions"] = executable_plan_actions
     policy["unsupported_plan_actions"] = unsupported_plan_actions
@@ -1717,6 +1729,10 @@ def _resolve_showdown_mission_policy(payload: ShowdownSessionMissionRequest, ses
     policy["training_task_actions"] = task_actions
     policy["executable_task_actions"] = executable_task_actions
     policy["unsupported_task_actions"] = unsupported_task_actions
+    policy["policy_evaluation"] = policy_evaluation
+    policy["policy_actions"] = policy_actions
+    policy["executable_policy_actions"] = executable_policy_actions
+    policy["unsupported_policy_actions"] = unsupported_policy_actions
     team_audit = session.get("team_audit") or {}
     team_audit_gaps = [str(gap) for gap in team_audit.get("gaps") or [] if str(gap)]
     team_audit_actions = _resolve_showdown_team_audit_actions(session)
@@ -1743,6 +1759,9 @@ def _resolve_showdown_mission_policy(payload: ShowdownSessionMissionRequest, ses
     elif requested_goal == "auto" and recommendation["source"] == "training_plan" and executable_plan_actions:
         policy["allowed_actions"] = executable_plan_actions
         policy["action_plan_source"] = "training_plan"
+    if requested_goal == "auto" and recommendation["source"] == "policy_evaluation" and executable_policy_actions:
+        policy["allowed_actions"] = executable_policy_actions
+        policy["action_plan_source"] = "policy_evaluation"
     if requested_goal == "auto" and recommendation["source"] != "live_readiness" and readiness_actions and goal in {"queue", "ladder", "learn"}:
         policy["allowed_actions"] = list(dict.fromkeys(readiness_actions + policy["allowed_actions"]))
         if policy["action_plan_source"] == "preset":
@@ -1780,6 +1799,9 @@ def _recommend_showdown_mission_goal(session: dict) -> dict[str, Any]:
             "source": "knowledge_precheck",
             "reason": "Current generated team has no attached knowledge context yet.",
         }
+    policy_recommendation = _recommend_showdown_mission_goal_from_policy_evaluation(session)
+    if policy_recommendation:
+        return policy_recommendation
     if plan_goal in {"prepare", "queue", "ladder", "learn"}:
         return {
             "mission_goal": plan_goal,
@@ -1808,6 +1830,41 @@ def _recommend_showdown_mission_goal(session: dict) -> dict[str, Any]:
         "mission_goal": "ladder",
         "source": "balanced_default",
         "reason": "Learning signals are stable enough for a bounded ladder run.",
+    }
+
+
+def _recommend_showdown_mission_goal_from_policy_evaluation(session: dict) -> dict[str, Any] | None:
+    profile = session.get("learning_profile") or {}
+    policy_evaluation = profile.get("policy_evaluation") or {}
+    if not isinstance(policy_evaluation, dict) or not policy_evaluation:
+        return None
+
+    next_experiment = policy_evaluation.get("next_experiment") or {}
+    mission_goal = str(next_experiment.get("mission_goal") or "").strip().lower()
+    if mission_goal not in {"prepare", "queue", "ladder", "learn"}:
+        phase = str(policy_evaluation.get("phase") or "").strip().lower()
+        mission_goal = {
+            "collect_data": "queue",
+            "stabilize": "prepare",
+            "explore": "ladder",
+            "exploit": "learn",
+        }.get(phase, "")
+    if mission_goal not in {"prepare", "queue", "ladder", "learn"}:
+        return None
+
+    reason = str(next_experiment.get("reason") or "").strip()
+    if not reason:
+        phase = str(policy_evaluation.get("phase") or "policy").strip()
+        recommended_mode = str(policy_evaluation.get("recommended_mode") or "balanced").strip()
+        reason = f"Policy evaluation selected {mission_goal} from {phase} phase using {recommended_mode} mode."
+    return {
+        "mission_goal": mission_goal,
+        "source": "policy_evaluation",
+        "reason": reason,
+        "policy_phase": policy_evaluation.get("phase"),
+        "policy": policy_evaluation.get("policy"),
+        "policy_confidence": policy_evaluation.get("confidence"),
+        "policy_risk": policy_evaluation.get("risk"),
     }
 
 
@@ -1943,6 +2000,28 @@ def _resolve_showdown_training_plan_actions(session: dict) -> tuple[list[str], l
     ]
     executable, unsupported = _map_showdown_training_actions(plan_actions)
     return plan_actions, executable, unsupported
+
+
+def _resolve_showdown_policy_actions(session: dict, *, mission_goal: str) -> tuple[dict, list[str], list[str], list[str]]:
+    profile = session.get("learning_profile") or {}
+    policy_evaluation = profile.get("policy_evaluation") or {}
+    if not isinstance(policy_evaluation, dict) or not policy_evaluation:
+        return {}, [], [], []
+
+    phase = str(policy_evaluation.get("phase") or "").strip().lower()
+    policy = str(policy_evaluation.get("policy") or "").strip().lower()
+    risk = str(policy_evaluation.get("risk") or "").strip().lower()
+    if phase == "collect_data" or mission_goal == "queue":
+        actions = ["start_search"]
+    elif phase == "stabilize" or mission_goal == "prepare" or risk == "high":
+        actions = ["research_team", "analyze"]
+    elif phase == "explore" or policy == "explore_under_sampled_mode" or mission_goal == "ladder":
+        actions = ["start_search", "autopilot", "analyze"]
+    else:
+        actions = ["start_search", "autopilot", "analyze", "new_session"]
+
+    executable, unsupported = _map_showdown_training_actions(actions)
+    return policy_evaluation, actions, executable, unsupported
 
 
 def _resolve_showdown_training_task_actions(session: dict) -> tuple[list[dict[str, Any]], list[str], list[str], list[str]]:
