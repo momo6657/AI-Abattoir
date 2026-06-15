@@ -661,6 +661,11 @@ async def start_showdown_mission(payload: ShowdownSessionMissionRequest, db: Asy
         supervisor.get("steps") or [],
         stop_reason=supervisor.get("stop_reason"),
     )
+    policy_progress = _build_showdown_policy_action_progress(
+        mission_policy["policy_actions"],
+        supervisor.get("steps") or [],
+        stop_reason=supervisor.get("stop_reason"),
+    )
     mission_summary = {
         "session_id": supervisor.get("session_id", session.session_id),
         "original_session_id": session.session_id,
@@ -691,6 +696,12 @@ async def start_showdown_mission(payload: ShowdownSessionMissionRequest, db: Asy
         "training_task_pending_count": training_task_progress["pending_count"],
         "training_task_partial_count": training_task_progress["partial_count"],
         "training_task_unsupported_count": training_task_progress["unsupported_count"],
+        "policy_progress": policy_progress,
+        "policy_status": policy_progress["status"],
+        "policy_completed_count": policy_progress["completed_count"],
+        "policy_pending_count": policy_progress["pending_count"],
+        "policy_partial_count": policy_progress["partial_count"],
+        "policy_unsupported_count": policy_progress["unsupported_count"],
         "action_plan_source": mission_policy["action_plan_source"],
         "team_audit": final_session.get("team_audit") or mission_policy["team_audit"],
         "team_audit_actions": mission_policy["team_audit_actions"],
@@ -1017,36 +1028,40 @@ def _find_showdown_training_chain_resume_recovery(username: str, battle_format: 
 
 def _build_showdown_round_recovery(round_summary: dict[str, Any]) -> dict[str, Any]:
     mission_summary = round_summary.get("mission_summary") or {}
-    task_progress = mission_summary.get("training_task_progress") or {}
-    task_items = task_progress.get("tasks") or []
+    recovery_sources = [
+        ("training_task", (mission_summary.get("training_task_progress") or {}).get("tasks") or []),
+        ("policy", (mission_summary.get("policy_progress") or {}).get("tasks") or []),
+    ]
     action_counts: dict[str, int] = {}
     task_recovery: list[dict[str, Any]] = []
     blocked_reasons: list[str] = []
 
-    for task in task_items:
-        if not isinstance(task, dict):
-            continue
-        status = str(task.get("status") or "")
-        if status not in {"pending", "partial", "unsupported"}:
-            continue
-        missing_actions = [str(action) for action in task.get("missing_actions") or [] if str(action)]
-        unsupported_actions = [str(action) for action in task.get("unsupported_actions") or [] if str(action)]
-        for action in missing_actions:
-            action_counts[action] = action_counts.get(action, 0) + 1
-        blocked_reason = str(task.get("blocked_reason") or "")
-        if blocked_reason and blocked_reason not in blocked_reasons:
-            blocked_reasons.append(blocked_reason)
-        task_recovery.append(
-            {
-                "id": task.get("id"),
-                "action": task.get("action"),
-                "status": status,
-                "priority": task.get("priority"),
-                "missing_actions": missing_actions,
-                "unsupported_actions": unsupported_actions,
-                "blocked_reason": blocked_reason,
-            }
-        )
+    for source, task_items in recovery_sources:
+        for task in task_items:
+            if not isinstance(task, dict):
+                continue
+            status = str(task.get("status") or "")
+            if status not in {"pending", "partial", "unsupported"}:
+                continue
+            missing_actions = [str(action) for action in task.get("missing_actions") or [] if str(action)]
+            unsupported_actions = [str(action) for action in task.get("unsupported_actions") or [] if str(action)]
+            for action in missing_actions:
+                action_counts[action] = action_counts.get(action, 0) + 1
+            blocked_reason = str(task.get("blocked_reason") or "")
+            if blocked_reason and blocked_reason not in blocked_reasons:
+                blocked_reasons.append(blocked_reason)
+            task_recovery.append(
+                {
+                    "id": task.get("id"),
+                    "source": source,
+                    "action": task.get("action"),
+                    "status": status,
+                    "priority": task.get("priority"),
+                    "missing_actions": missing_actions,
+                    "unsupported_actions": unsupported_actions,
+                    "blocked_reason": blocked_reason,
+                }
+            )
 
     if not task_recovery:
         return {
@@ -1054,6 +1069,7 @@ def _build_showdown_round_recovery(round_summary: dict[str, Any]) -> dict[str, A
             "actions": [],
             "action_counts": {},
             "task_count": 0,
+            "policy_count": 0,
             "tasks": [],
             "blocked_reasons": [],
             "recommendation": "No recovery action is needed from this round.",
@@ -1061,9 +1077,11 @@ def _build_showdown_round_recovery(round_summary: dict[str, Any]) -> dict[str, A
 
     actions = sorted(action_counts, key=lambda action: (-action_counts[action], action))
     unsupported_count = sum(1 for task in task_recovery if task["status"] == "unsupported")
+    policy_count = sum(1 for task in task_recovery if task.get("source") == "policy")
+    task_count = len(task_recovery) - policy_count
     if unsupported_count == len(task_recovery):
         status = "unsupported"
-        recommendation = "Add supported mappings for unsupported training tasks before the next chain."
+        recommendation = "Add supported mappings for unsupported training or policy actions before the next chain."
     elif actions:
         status = "resume"
         recommendation = f"Resume the next chain with {', '.join(actions[:4])} before broadening the mission."
@@ -1075,7 +1093,8 @@ def _build_showdown_round_recovery(round_summary: dict[str, Any]) -> dict[str, A
         "status": status,
         "actions": actions,
         "action_counts": action_counts,
-        "task_count": len(task_recovery),
+        "task_count": task_count,
+        "policy_count": policy_count,
         "tasks": task_recovery,
         "blocked_reasons": blocked_reasons,
         "recommendation": recommendation,
@@ -1087,6 +1106,7 @@ def _build_showdown_training_chain_recovery(rounds: list[dict[str, Any]]) -> dic
     blocked_reasons: list[str] = []
     round_recovery: list[dict[str, Any]] = []
     task_count = 0
+    policy_count = 0
 
     for round_item in rounds:
         recovery = round_item.get("recovery") or _build_showdown_round_recovery(round_item)
@@ -1097,6 +1117,7 @@ def _build_showdown_training_chain_recovery(rounds: list[dict[str, Any]]) -> dic
             if reason_text and reason_text not in blocked_reasons:
                 blocked_reasons.append(reason_text)
         task_count += int(recovery.get("task_count") or 0)
+        policy_count += int(recovery.get("policy_count") or 0)
         if recovery.get("status") != "clear":
             round_recovery.append(
                 {
@@ -1104,6 +1125,7 @@ def _build_showdown_training_chain_recovery(rounds: list[dict[str, Any]]) -> dic
                     "status": recovery.get("status"),
                     "actions": recovery.get("actions") or [],
                     "task_count": recovery.get("task_count") or 0,
+                    "policy_count": recovery.get("policy_count") or 0,
                 }
             )
 
@@ -1126,6 +1148,7 @@ def _build_showdown_training_chain_recovery(rounds: list[dict[str, Any]]) -> dic
         "actions": actions,
         "action_counts": action_counts,
         "task_count": task_count,
+        "policy_count": policy_count,
         "rounds": round_recovery,
         "blocked_reasons": blocked_reasons,
         "recommendation": recommendation,
@@ -2062,6 +2085,70 @@ def _build_showdown_training_task_progress(
     *,
     stop_reason: str | None,
 ) -> dict[str, Any]:
+    action_items = [
+        {
+            "id": task.get("id"),
+            "action": str(task.get("action") or "").strip().lower(),
+            "priority": task.get("priority"),
+            "stage": task.get("stage"),
+            "evidence": task.get("evidence"),
+            "done_when": task.get("done_when"),
+        }
+        for task in training_tasks
+    ]
+    return _build_showdown_action_progress(
+        action_items,
+        steps,
+        stop_reason=stop_reason,
+        empty_recommendation="No training tasks were attached to this mission.",
+        complete_recommendation="All mapped training tasks were observed in the supervisor steps.",
+        partial_recommendation="Continue or review the next mission to finish pending task actions.",
+        unsupported_recommendation="Training tasks need supported action mappings before the supervisor can execute them.",
+        pending_recommendation="Supervisor stopped before the mapped training tasks were executed.",
+    )
+
+
+def _build_showdown_policy_action_progress(
+    policy_actions: list[str],
+    steps: list[dict[str, Any]],
+    *,
+    stop_reason: str | None,
+) -> dict[str, Any]:
+    action_items = [
+        {
+            "id": f"policy_{index + 1}_{action}",
+            "action": str(action).strip().lower(),
+            "priority": "normal",
+            "stage": "policy",
+            "evidence": "Policy evaluation selected this action for the mission.",
+            "done_when": "The mapped supervisor action is observed without error.",
+        }
+        for index, action in enumerate(policy_actions)
+        if str(action).strip()
+    ]
+    return _build_showdown_action_progress(
+        action_items,
+        steps,
+        stop_reason=stop_reason,
+        empty_recommendation="No policy actions were attached to this mission.",
+        complete_recommendation="All mapped policy actions were observed in the supervisor steps.",
+        partial_recommendation="Resume or continue the next mission to finish pending policy actions.",
+        unsupported_recommendation="Policy actions need supported action mappings before the supervisor can execute them.",
+        pending_recommendation="Supervisor stopped before the mapped policy actions were executed.",
+    )
+
+
+def _build_showdown_action_progress(
+    action_items: list[dict[str, Any]],
+    steps: list[dict[str, Any]],
+    *,
+    stop_reason: str | None,
+    empty_recommendation: str,
+    complete_recommendation: str,
+    partial_recommendation: str,
+    unsupported_recommendation: str,
+    pending_recommendation: str,
+) -> dict[str, Any]:
     successful_actions = [
         str(step.get("action") or "")
         for step in steps
@@ -2075,8 +2162,10 @@ def _build_showdown_training_task_progress(
     error_step = next((step for step in steps if step.get("error")), None)
     task_results: list[dict[str, Any]] = []
 
-    for task in training_tasks:
+    for task in action_items:
         action = str(task.get("action") or "").strip().lower()
+        if not action:
+            continue
         executable, unsupported = _map_showdown_training_actions([action])
         executed = [item for item in executable if item in successful_actions]
         missing = [item for item in executable if item not in successful_actions]
@@ -2122,19 +2211,19 @@ def _build_showdown_training_task_progress(
 
     if not task_count:
         status = "none"
-        recommendation = "No training tasks were attached to this mission."
+        recommendation = empty_recommendation
     elif completed_count == task_count:
         status = "completed"
-        recommendation = "All mapped training tasks were observed in the supervisor steps."
+        recommendation = complete_recommendation
     elif completed_count or partial_count:
         status = "partial"
-        recommendation = "Continue or review the next mission to finish pending task actions."
+        recommendation = partial_recommendation
     elif unsupported_count == task_count:
         status = "unsupported"
-        recommendation = "Training tasks need supported action mappings before the supervisor can execute them."
+        recommendation = unsupported_recommendation
     else:
         status = "pending"
-        recommendation = "Supervisor stopped before the mapped training tasks were executed."
+        recommendation = pending_recommendation
 
     return {
         "status": status,

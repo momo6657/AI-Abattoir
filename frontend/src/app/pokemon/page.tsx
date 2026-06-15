@@ -870,6 +870,7 @@ export default function PokemonBattlePage() {
     ['Phase 58', '新 training-chain 会继承同训练师/格式的历史 recovery actions，支持跨链续跑'],
     ['Phase 59', '学习档案输出长期 policy evaluation，在探索、稳定和利用之间自动切换策略'],
     ['Phase 60', '自主任务读取 policy evaluation，按收集、稳定、探索和利用阶段规划目标与动作边界'],
+    ['Phase 61', '自主任务回写 policy action progress，并将未完成策略动作纳入训练链恢复队列'],
   ];
 
   return (
@@ -2021,7 +2022,7 @@ export default function PokemonBattlePage() {
                         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                           <span className="text-[10px] font-semibold uppercase text-violet-200">Policy driver</span>
                           <span className="rounded bg-black/30 px-2 py-0.5 text-[10px] text-gray-200">
-                            {showdownSession.last_mission_summary.policy_evaluation.phase || 'policy'} · {showdownSession.last_mission_summary.action_plan_source || 'preset'}
+                            {showdownSession.last_mission_summary.policy_evaluation.phase || 'policy'} · {showdownSession.last_mission_summary.policy_status || showdownSession.last_mission_summary.action_plan_source || 'preset'}
                           </span>
                         </div>
                         <div className="grid grid-cols-2 gap-2">
@@ -2042,6 +2043,21 @@ export default function PokemonBattlePage() {
                         {showdownSession.last_mission_summary.executable_policy_actions?.length ? (
                           <div className="mt-2 break-words rounded border border-violet-500/20 bg-black/20 p-2 text-[10px] leading-4 text-violet-100">
                             Policy executable: {showdownSession.last_mission_summary.executable_policy_actions.join(' / ')}
+                          </div>
+                        ) : null}
+                        {showdownSession.last_mission_summary.policy_progress ? (
+                          <div className="mt-2 rounded border border-violet-500/20 bg-black/20 p-2">
+                            <div className="grid grid-cols-4 gap-1">
+                              <Metric label="Done" value={showdownSession.last_mission_summary.policy_completed_count ?? 0} compact />
+                              <Metric label="Partial" value={showdownSession.last_mission_summary.policy_partial_count ?? 0} compact />
+                              <Metric label="Pending" value={showdownSession.last_mission_summary.policy_pending_count ?? 0} compact />
+                              <Metric label="Blocked" value={showdownSession.last_mission_summary.policy_unsupported_count ?? 0} compact />
+                            </div>
+                            {showdownSession.last_mission_summary.policy_progress.recommendation ? (
+                              <div className="mt-2 break-words text-[10px] leading-4 text-gray-300">
+                                {showdownSession.last_mission_summary.policy_progress.recommendation}
+                              </div>
+                            ) : null}
                           </div>
                         ) : null}
                       </div>

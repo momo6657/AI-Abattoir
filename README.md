@@ -191,6 +191,7 @@ Abattoir（竞技场）是一个让 AI 展现真实能力的地方。在这里�
 - Showdown 经验教训：学习档案会沉淀 `learning_lessons` 和 `training_tasks`，把胜负、击倒差、模式表现和弱决策转成下一轮可执行训练任务
 - Showdown 长期策略评估：学习档案输出 `policy_evaluation`，在收集数据、稳定弱项、探索样本不足模式和利用最佳模式之间切换
 - Showdown 策略驱动任务：`mission_goal=auto` 会读取 `policy_evaluation.next_experiment`，把探索/稳定/利用阶段转成任务目标和可执行动作边界
+- Showdown 策略执行回执：自主任务会记录 `policy_progress`，并把未完成的 policy actions 纳入训练链恢复队列
 - Showdown 任务驱动自主训练：`auto` 自主任务会优先读取 `training_tasks`，把任务动作翻译成 supervisor 可执行白名单并记录任务来源
 - Showdown 任务执行回执：自主任务摘要会记录 `training_task_progress`，按 completed/partial/pending/unsupported 展示任务动作是否被 supervisor 实际执行
 - Showdown 训练链恢复队列：`training-chain` 会汇总每轮未完成训练任务，生成 `recovery.actions`，提示下一轮优先补齐的 supervisor 动作
@@ -604,7 +605,7 @@ AI-Abattoir/
 | GET | `/api/pokemon/showdown/tactical-briefing` | 生成下一局 Showdown 战术简报，包含自动队伍、学习档案、开局计划、风险控制和可启动任务请求 |
 | GET | `/api/pokemon/showdown/sessions/{id}/matchup-briefing` | 根据已同步房间预览和场上状态生成对手 Matchup 简报，可选联网检索对手阵容知识 |
 | POST | `/api/pokemon/showdown/mission/plan` | 预览下一轮 Showdown 自主任务，返回可启动的 mission 请求预设、目标来源、队伍审计、实战就绪计划、策略评估、训练任务和可执行计划动作 |
-| POST | `/api/pokemon/showdown/mission` | 创建 Showdown 自主任务，并按 `auto/prepare/queue/ladder/learn` 目标运行有限监督循环，返回策略评估、任务训练计划、训练任务、任务执行回执、建队审计、实战就绪计划、目标推荐来源和可执行计划动作 |
+| POST | `/api/pokemon/showdown/mission` | 创建 Showdown 自主任务，并按 `auto/prepare/queue/ladder/learn` 目标运行有限监督循环，返回策略评估、policy 执行回执、任务训练计划、训练任务、任务执行回执、建队审计、实战就绪计划、目标推荐来源和可执行计划动作 |
 | POST | `/api/pokemon/showdown/training-chain` | 连续执行多轮 Showdown 自主任务，每轮先读取学习计划再执行 mission，并汇总 Mastery 分数、停止原因和未完成训练任务恢复队列；无手动动作白名单时，下一轮会自动应用上一轮 `recovery.actions`，新链默认会通过 `resume_recovery=true` 继承历史未完成恢复动作 |
 | POST | `/api/pokemon/showdown/sessions` | 创建 Showdown 自动会话状态机，缺省队伍时自动建队，`mode=auto` 时按学习档案选择策略模式，可用 `auto_accept_challenges` 自动接受同格式挑战，或用 `auto_research_team` 自动检索整队知识 |
 | GET | `/api/pokemon/showdown/sessions` | 列出 Showdown 自动会话 |
@@ -878,6 +879,7 @@ alembic history
 - [x] 宝可梦 Showdown training-chain 跨链继承历史恢复动作，支持长期续跑
 - [x] 宝可梦 Showdown 学习档案长期策略评估，自动切换收集、稳定、探索和利用阶段
 - [x] 宝可梦 Showdown 自主任务读取 policy evaluation，按策略阶段规划任务目标和 supervisor 动作边界
+- [x] 宝可梦 Showdown 自主任务 policy action 执行回执，并把未完成策略动作纳入 training-chain recovery
 - [ ] Pokemon Showdown 真实登录和天梯实战
 - [ ] 宝可梦完整多格式战斗策略（单打、随机战、不同世代规则）
 - [ ] 宝可梦强化学习闭环与长期策略优化

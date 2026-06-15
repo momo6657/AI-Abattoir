@@ -1233,13 +1233,15 @@ async def test_showdown_training_chain_runs_adaptive_planned_rounds(setup_db, db
     assert data["progress"]["battle_delta"] == 0
     assert data["progress"]["direction"] == "unchanged"
     assert data["recovery"]["status"] == "resume"
-    assert data["recovery"]["action_counts"]["connect"] == 4
-    assert data["recovery"]["action_counts"]["autopilot"] == 2
+    assert data["recovery"]["action_counts"]["connect"] == 8
+    assert data["recovery"]["action_counts"]["autopilot"] == 4
+    assert data["recovery"]["policy_count"] == 6
     assert data["recovery"]["rounds"][-1]["status"] == "resume"
     assert data["training_chain_summary"]["chain_number"] == 1
     assert data["training_chain_summary"]["completed_rounds"] == 2
     assert data["training_chain_summary"]["progress"]["after_mastery_score"] == data["mastery_score"]
     assert data["training_chain_summary"]["recovery"]["actions"][0] == "connect"
+    assert data["training_chain_summary"]["recovery"]["policy_count"] == 6
     assert data["training_chain_summary"]["rounds"][-1]["planned_goal"] == "ladder"
     assert data["training_chain_summary"]["rounds"][-1]["recovery_status"] == "resume"
     assert data["final_session"]["last_training_chain_summary"]["completed_rounds"] == 2
@@ -1465,6 +1467,9 @@ async def test_showdown_mission_auto_goal_uses_policy_evaluation(setup_db, db, c
     assert data["mission_summary"]["action_plan_source"] == "custom"
     assert data["mission_summary"]["policy_evaluation"]["phase"] == "explore"
     assert data["mission_summary"]["policy_actions"] == ["start_search", "autopilot", "analyze"]
+    assert data["mission_summary"]["policy_status"] == "partial"
+    assert data["mission_summary"]["policy_progress"]["executed_actions"] == ["start_search"]
+    assert data["mission_summary"]["policy_progress"]["tasks"][0]["status"] == "partial"
     assert data["mission_summary"]["training_plan_actions"] == ["start_search", "autopilot", "analyze", "new_session"]
     assert data["mission_summary"]["executable_plan_actions"] == [
         "connect",
@@ -1487,6 +1492,7 @@ async def test_showdown_mission_auto_goal_uses_policy_evaluation(setup_db, db, c
     assert tasks_by_action["autopilot"]["status"] == "partial"
     assert "autopilot" in tasks_by_action["autopilot"]["missing_actions"]
     assert data["session"]["last_mission_summary"]["mission_goal_source"] == "policy_evaluation"
+    assert data["session"]["last_mission_summary"]["policy_status"] == "partial"
     assert data["session"]["last_mission_summary"]["training_task_status"] == "partial"
 
     await client.delete(f"/api/pokemon/showdown/sessions/{session_id}")
@@ -1648,6 +1654,25 @@ def test_showdown_training_task_progress_tracks_completed_partial_and_pending_ta
     assert by_id["custom"]["status"] == "unsupported"
 
 
+def test_showdown_policy_action_progress_tracks_partial_policy_actions():
+    progress = pokemon_api._build_showdown_policy_action_progress(
+        ["start_search", "autopilot", "analyze"],
+        [{"action": "start_search"}],
+        stop_reason="max_actions",
+    )
+
+    assert progress["status"] == "partial"
+    assert progress["completed_count"] == 0
+    assert progress["partial_count"] == 2
+    assert progress["pending_count"] == 1
+    assert progress["executed_actions"] == ["start_search"]
+    tasks_by_action = {task["action"]: task for task in progress["tasks"]}
+    assert tasks_by_action["start_search"]["missing_actions"] == ["connect", "flush_pending"]
+    assert tasks_by_action["autopilot"]["status"] == "partial"
+    assert "autopilot" in tasks_by_action["autopilot"]["missing_actions"]
+    assert tasks_by_action["analyze"]["status"] == "pending"
+
+
 def test_showdown_auto_policy_maps_abstract_training_actions():
     payload = ShowdownSessionMissionRequest(
         username="WeakPolicyBot",
@@ -1782,6 +1807,45 @@ def test_showdown_training_chain_recovery_aggregates_missing_task_actions():
     assert recovery["rounds"][0]["round"] == 1
     assert set(recovery["rounds"][1]["actions"]) == {"connect", "flush_pending", "autopilot"}
     assert "max_actions" in recovery["blocked_reasons"][0]
+
+
+def test_showdown_round_recovery_includes_policy_progress_actions():
+    recovery = pokemon_api._build_showdown_round_recovery(
+        {
+            "round": 1,
+            "mission_summary": {
+                "policy_progress": {
+                    "tasks": [
+                        {
+                            "id": "policy_1_start_search",
+                            "action": "start_search",
+                            "status": "partial",
+                            "priority": "normal",
+                            "missing_actions": ["connect", "flush_pending"],
+                            "unsupported_actions": [],
+                            "blocked_reason": "Mission stopped with max_actions.",
+                        },
+                        {
+                            "id": "policy_2_autopilot",
+                            "action": "autopilot",
+                            "status": "pending",
+                            "priority": "normal",
+                            "missing_actions": ["connect", "flush_pending", "start_search", "autopilot"],
+                            "unsupported_actions": [],
+                            "blocked_reason": "Mission stopped with max_actions.",
+                        },
+                    ],
+                },
+            },
+        }
+    )
+
+    assert recovery["status"] == "resume"
+    assert recovery["policy_count"] == 2
+    assert recovery["task_count"] == 0
+    assert recovery["action_counts"]["connect"] == 2
+    assert recovery["actions"][0] == "connect"
+    assert {task["source"] for task in recovery["tasks"]} == {"policy"}
 
 
 def test_showdown_recovery_action_source_respects_custom_allowed_actions():
