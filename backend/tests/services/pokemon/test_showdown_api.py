@@ -1947,6 +1947,98 @@ def test_showdown_recovery_action_source_applies_resume_actions():
     assert source["actions"] == ["connect", "flush_pending"]
 
 
+def test_showdown_recovery_action_source_expands_stuck_recovery_actions():
+    recovery = {
+        "status": "resume",
+        "actions": ["autopilot"],
+        "previous_effectiveness": {
+            "status": "stuck",
+            "still_pending_actions": ["autopilot"],
+        },
+    }
+
+    source = pokemon_api._build_showdown_recovery_action_source(
+        recovery,
+        custom_allowed_actions=None,
+    )
+
+    assert source["status"] == "expanded"
+    assert source["base_actions"] == ["autopilot"]
+    assert source["effectiveness_status"] == "stuck"
+    assert source["actions"] == ["connect", "flush_pending", "start_search", "run_once", "autopilot", "analyze"]
+
+
+@pytest.mark.asyncio
+async def test_showdown_training_chain_expands_stuck_previous_chain_recovery(setup_db, client):
+    previous = pokemon_api.pokemon_showdown_session_service.create_session(
+        username="StuckCarryBot",
+        team=None,
+        battle_format="gen9randombattle",
+    )
+    pokemon_api.pokemon_showdown_session_service.store_training_chain_summary(
+        previous.session_id,
+        {
+            "username": "StuckCarryBot",
+            "battle_format": "gen9randombattle",
+            "showdown_format": "gen9randombattle",
+            "requested_rounds": 2,
+            "completed_rounds": 2,
+            "stop_reason": "round_limit",
+            "mastery_score": 10,
+            "progress": {"direction": "unchanged", "battle_delta": 0},
+            "recovery": {
+                "status": "resume",
+                "actions": ["autopilot"],
+                "action_counts": {"autopilot": 1},
+                "task_count": 1,
+                "rounds": [{"round": 2, "status": "resume", "actions": ["autopilot"], "task_count": 1}],
+                "blocked_reasons": [],
+                "recommendation": "Resume autopilot.",
+            },
+            "recovery_effectiveness": {
+                "status": "stuck",
+                "still_pending_actions": ["autopilot"],
+                "applied_count": 1,
+                "recovered_count": 0,
+            },
+            "rounds": [],
+        },
+    )
+
+    response = await client.post(
+        "/api/pokemon/showdown/training-chain",
+        json={
+            "username": "StuckCarryBot",
+            "battle_format": "gen9randombattle",
+            "mode": "auto",
+            "mission_goal": "auto",
+            "rounds": 1,
+            "max_actions": 1,
+            "send_commands": False,
+            "stop_on_finished": False,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["rounds"][0]["recovery_action_source"]["status"] == "expanded"
+    assert data["rounds"][0]["recovery_action_source"]["source"] == "previous_training_chain_recovery"
+    assert data["rounds"][0]["recovery_action_source"]["base_actions"] == ["autopilot"]
+    assert data["rounds"][0]["planned_actions"] == [
+        "connect",
+        "flush_pending",
+        "start_search",
+        "run_once",
+        "autopilot",
+        "analyze",
+    ]
+    assert data["training_chain_summary"]["rounds"][0]["recovery_action_source"]["status"] == "expanded"
+
+    await client.delete(f"/api/pokemon/showdown/sessions/{previous.session_id}")
+    for round_item in data["rounds"]:
+        await client.delete(f"/api/pokemon/showdown/sessions/{round_item['session_id']}")
+
+
 @pytest.mark.asyncio
 async def test_showdown_mission_rejects_invalid_supervisor_limit(setup_db, client):
     response = await client.post(

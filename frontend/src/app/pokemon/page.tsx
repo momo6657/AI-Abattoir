@@ -872,6 +872,7 @@ export default function PokemonBattlePage() {
     ['Phase 60', '自主任务读取 policy evaluation，按收集、稳定、探索和利用阶段规划目标与动作边界'],
     ['Phase 61', '自主任务回写 policy action progress，并将未完成策略动作纳入训练链恢复队列'],
     ['Phase 62', '训练链追踪 recovery burn-down，判断恢复动作是否清除、卡住或产生新队列'],
+    ['Phase 63', 'stuck recovery 会自动扩展下一轮动作边界，避免训练链反复卡在同一恢复队列'],
   ];
 
   return (
@@ -1672,7 +1673,7 @@ export default function PokemonBattlePage() {
                         ) : null}
                         {round.recovery_action_source?.actions?.length ? (
                           <span className="basis-full truncate text-[10px] text-emerald-100">
-                            applied ({round.recovery_action_source.source || 'recovery'}): {round.recovery_action_source.actions.slice(0, 4).join(' / ')}
+                            {round.recovery_action_source.status || 'recovery'} ({round.recovery_action_source.source || 'recovery'}): {round.recovery_action_source.actions.slice(0, 4).join(' / ')}
                           </span>
                         ) : null}
                         {round.recovery_effectiveness ? (

@@ -812,7 +812,10 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
             round_summary["recovery"],
         )
         rounds.append(round_summary)
-        previous_recovery = round_summary["recovery"]
+        previous_recovery = _build_showdown_next_recovery_seed(
+            round_summary["recovery"],
+            round_summary["recovery_effectiveness"],
+        )
         recovery_source = "previous_round_recovery"
 
         if payload.mastery_score_target is not None and latest_mastery_score >= payload.mastery_score_target:
@@ -1002,6 +1005,18 @@ def _build_showdown_recovery_action_source(
             "reason": "Previous recovery state did not expose executable resume actions.",
         }
 
+    effectiveness = previous_recovery.get("previous_effectiveness") or previous_recovery.get("recovery_effectiveness") or {}
+    expanded_actions = _expand_showdown_stuck_recovery_actions(actions, effectiveness)
+    if expanded_actions != list(dict.fromkeys(actions)):
+        return {
+            "status": "expanded",
+            "source": source,
+            "actions": expanded_actions,
+            "base_actions": list(dict.fromkeys(actions)),
+            "effectiveness_status": effectiveness.get("status"),
+            "reason": "Previous recovery actions were stuck or partial, so the next round broadened the action allow-list.",
+        }
+
     return {
         "status": "applied",
         "source": source,
@@ -1028,10 +1043,52 @@ def _find_showdown_training_chain_resume_recovery(username: str, battle_format: 
             continue
         seeded = dict(recovery)
         seeded["actions"] = actions
+        seeded["previous_effectiveness"] = summary.get("recovery_effectiveness")
         seeded["chain_number"] = summary.get("chain_number")
         seeded["session_id"] = snapshot.get("session_id")
         return seeded
     return None
+
+
+def _build_showdown_next_recovery_seed(recovery: dict[str, Any], effectiveness: dict[str, Any]) -> dict[str, Any]:
+    seeded = dict(recovery)
+    seeded["previous_effectiveness"] = effectiveness
+    return seeded
+
+
+def _expand_showdown_stuck_recovery_actions(actions: list[str], effectiveness: dict[str, Any] | None) -> list[str]:
+    base_actions = list(dict.fromkeys(str(action) for action in actions if str(action)))
+    status = str((effectiveness or {}).get("status") or "")
+    still_pending = [
+        str(action)
+        for action in (effectiveness or {}).get("still_pending_actions") or []
+        if str(action)
+    ]
+    if status not in {"stuck", "partial"} or not still_pending:
+        return base_actions
+
+    expanded: list[str] = []
+
+    def add(action: str) -> None:
+        if action and action not in expanded:
+            expanded.append(action)
+
+    for action in base_actions:
+        if action in {"start_search", "autopilot", "run_once"}:
+            add("connect")
+            add("flush_pending")
+        if action == "autopilot":
+            add("start_search")
+            add("run_once")
+        if action == "analyze":
+            add("autopilot")
+        add(action)
+
+    if "autopilot" in still_pending and "analyze" not in expanded:
+        add("analyze")
+    if {"connect", "flush_pending", "start_search"}.intersection(still_pending):
+        add("autopilot")
+    return expanded
 
 
 def _build_showdown_round_recovery(round_summary: dict[str, Any]) -> dict[str, Any]:
