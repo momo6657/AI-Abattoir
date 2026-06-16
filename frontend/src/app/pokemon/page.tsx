@@ -90,12 +90,14 @@ export default function PokemonBattlePage() {
   const [showdownAutoResearch, setShowdownAutoResearch] = useState(false);
   const [showdownRunLimit, setShowdownRunLimit] = useState(10);
   const [showdownChainRounds, setShowdownChainRounds] = useState(2);
+  const [showdownLoopChains, setShowdownLoopChains] = useState(3);
   const [showdownMode, setShowdownMode] = useState<'auto' | 'balanced' | 'aggressive' | 'defensive'>('auto');
   const [showdownMissionGoal, setShowdownMissionGoal] = useState<'auto' | 'prepare' | 'queue' | 'ladder' | 'learn'>('auto');
   const [showdownMissionPlan, setShowdownMissionPlan] = useState<any>(null);
   const [showdownTacticalBriefing, setShowdownTacticalBriefing] = useState<any>(null);
   const [showdownMatchupBriefing, setShowdownMatchupBriefing] = useState<any>(null);
   const [showdownTrainingChain, setShowdownTrainingChain] = useState<any>(null);
+  const [showdownTrainingLoop, setShowdownTrainingLoop] = useState<any>(null);
   const [showdownPlan, setShowdownPlan] = useState<any>(null);
   const [showdownSession, setShowdownSession] = useState<any>(null);
   const [showdownAnalysis, setShowdownAnalysis] = useState<any>(null);
@@ -133,6 +135,7 @@ export default function PokemonBattlePage() {
     null;
   const showdownPolicyEvaluation = activeShowdownLearning?.policy_evaluation || null;
   const activeShowdownTrainingChain = showdownTrainingChain || showdownSession?.last_training_chain_summary || null;
+  const activeShowdownTrainingLoop = showdownTrainingLoop || null;
   const activeTrainingChainTrend = showdownSession?.training_chain_trend || showdownTrainingChain?.final_session?.training_chain_trend || null;
   const activeLiveReadiness = showdownSession?.live_readiness || null;
 
@@ -163,6 +166,7 @@ export default function PokemonBattlePage() {
     setShowdownTacticalBriefing(null);
     setShowdownMatchupBriefing(null);
     setShowdownTrainingChain(null);
+    setShowdownTrainingLoop(null);
     setShowdownRunSummary(null);
     setShowdownTeamKnowledge([]);
     setShowdownTeamKnowledgeSummary(null);
@@ -499,6 +503,30 @@ export default function PokemonBattlePage() {
       refreshShowdownMastery();
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '启动 Showdown 训练链失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runShowdownTrainingLoop() {
+    setBusy(true);
+    setError(null);
+    try {
+      resetShowdownState();
+      const response = (await pokemonApi.runShowdownTrainingLoop(buildShowdownMissionPayload({
+        rounds: Math.min(10, Math.max(1, showdownChainRounds)),
+        chain_limit: Math.min(6, Math.max(1, showdownLoopChains)),
+      }))).data;
+      const lastChain = [...(response.chains || [])].reverse()[0];
+      setShowdownTrainingLoop(response);
+      setShowdownTrainingChain(lastChain || null);
+      applyShowdownSession(response.final_session || lastChain?.final_session);
+      setShowdownLearning(response.final_session?.learning_profile || lastChain?.final_session?.learning_profile || null);
+      setShowdownAnalysis(response.final_session?.analysis || lastChain?.final_session?.analysis || null);
+      addMessage(`Training loop ${response.completed_chains}/${response.requested_chain_limit}: ${response.stop_reason} · ${response.total_completed_rounds || 0} round(s).`);
+      refreshShowdownMastery();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '启动 Showdown 训练循环失败');
     } finally {
       setBusy(false);
     }
@@ -876,6 +904,7 @@ export default function PokemonBattlePage() {
     ['Phase 63', 'stuck recovery 会自动扩展下一轮动作边界，避免训练链反复卡在同一恢复队列'],
     ['Phase 64', '训练链输出 health/intervention 摘要，驱动继续训练、恢复扩展或补样本'],
     ['Phase 65', '训练链把 health/intervention 转成下一轮可执行 preset，前端可一键继续训练'],
+    ['Phase 66', '训练循环自动消费 next_training_chain preset，按上限连续续跑直到阻断或达成上限'],
   ];
 
   return (
@@ -1149,7 +1178,7 @@ export default function PokemonBattlePage() {
               </button>
             </div>
 
-            <div className="mt-3 grid grid-cols-[minmax(0,1fr)_88px_88px] gap-2">
+            <div className="mt-3 grid grid-cols-[minmax(0,1fr)_80px_80px_80px] gap-2">
               <label className="text-xs text-gray-500">
                 Username
                 <input
@@ -1177,6 +1206,17 @@ export default function PokemonBattlePage() {
                   max={50}
                   value={showdownRunLimit}
                   onChange={(event) => setShowdownRunLimit(Math.max(1, Math.min(50, Number(event.target.value) || 1)))}
+                  className="mt-1 w-full rounded-md border border-border bg-black/30 px-3 py-2 text-sm normal-case text-gray-100 outline-none focus:border-accent"
+                />
+              </label>
+              <label className="text-xs text-gray-500">
+                Chains
+                <input
+                  type="number"
+                  min={1}
+                  max={6}
+                  value={showdownLoopChains}
+                  onChange={(event) => setShowdownLoopChains(Math.max(1, Math.min(6, Number(event.target.value) || 1)))}
                   className="mt-1 w-full rounded-md border border-border bg-black/30 px-3 py-2 text-sm normal-case text-gray-100 outline-none focus:border-accent"
                 />
               </label>
@@ -1271,6 +1311,9 @@ export default function PokemonBattlePage() {
               </button>
               <button onClick={() => runShowdownTrainingChain()} disabled={busy} className="btn-primary disabled:opacity-50">
                 训练链
+              </button>
+              <button onClick={runShowdownTrainingLoop} disabled={busy} className="btn-primary disabled:opacity-50">
+                训练循环
               </button>
               <button onClick={startShowdownSearch} disabled={busy} className="btn-primary disabled:opacity-50">
                 搜索天梯
@@ -1561,6 +1604,39 @@ export default function PokemonBattlePage() {
                 {(showdownMissionPlan.unsupported_task_actions || []).length ? (
                   <div className="mt-2 break-words rounded border border-amber-500/30 bg-amber-500/10 p-2 text-[10px] text-amber-100">
                     Unsupported task: {showdownMissionPlan.unsupported_task_actions.join(' / ')}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {activeShowdownTrainingLoop ? (
+              <div className="mt-3 rounded-md border border-lime-500/30 bg-lime-500/10 p-3 text-xs leading-5 text-gray-300">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[10px] font-semibold uppercase text-lime-200">Training loop</span>
+                  <span className="rounded bg-black/30 px-2 py-0.5 text-[10px] text-lime-100">
+                    {activeShowdownTrainingLoop.completed_chains}/{activeShowdownTrainingLoop.requested_chain_limit} · {activeShowdownTrainingLoop.stop_reason}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <Metric label="Chains" value={activeShowdownTrainingLoop.completed_chains || 0} compact />
+                  <Metric label="Rounds" value={activeShowdownTrainingLoop.total_completed_rounds || 0} compact />
+                  <Metric label="Next" value={activeShowdownTrainingLoop.next_training_chain?.intervention || '-'} compact />
+                </div>
+                {activeShowdownTrainingLoop.final_training_health?.recommendation ? (
+                  <div className="mt-2 break-words rounded border border-lime-500/20 bg-black/20 p-2 text-[10px] leading-4 text-lime-100">
+                    {activeShowdownTrainingLoop.final_training_health.recommendation}
+                  </div>
+                ) : null}
+                {activeShowdownTrainingLoop.chains?.length ? (
+                  <div className="mt-2 space-y-1.5">
+                    {activeShowdownTrainingLoop.chains.slice(-4).map((chain: any) => (
+                      <div key={`loop-chain-${chain.loop_index}`} className="flex flex-wrap items-center justify-between gap-2 rounded border border-border bg-black/20 px-2 py-1">
+                        <span className="text-gray-200">#{chain.loop_index} {chain.training_health?.status || '-'}</span>
+                        <span className="text-[10px] text-gray-500">
+                          {chain.completed_rounds}/{chain.requested_rounds} · {chain.stop_reason} · {chain.next_training_chain?.intervention || 'none'}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 ) : null}
               </div>

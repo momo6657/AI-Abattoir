@@ -1312,6 +1312,103 @@ async def test_showdown_training_chain_applies_previous_recovery_actions(setup_d
 
 
 @pytest.mark.asyncio
+async def test_showdown_training_loop_continues_from_next_chain_preset(setup_db, db, monkeypatch):
+    calls = []
+
+    async def fake_training_chain(payload, chain_db):
+        calls.append(payload)
+        chain_index = len(calls)
+        next_request = (
+            {
+                "username": payload.username,
+                "battle_format": payload.battle_format,
+                "mode": payload.mode,
+                "mission_goal": "auto",
+                "rounds": 1,
+                "max_actions": 1,
+                "allowed_actions": ["analyze"],
+                "send_commands": False,
+                "stop_on_finished": False,
+            }
+            if chain_index == 1
+            else None
+        )
+        return {
+            "requested_rounds": payload.rounds,
+            "completed_rounds": 1,
+            "stop_reason": "round_limit",
+            "mastery_score": 12.5 * chain_index,
+            "progress": {"direction": "improved"},
+            "recovery": {"status": "clear", "actions": []},
+            "recovery_effectiveness": {"status": "cleared"},
+            "training_health": {
+                "status": "healthy" if chain_index == 1 else "blocked",
+                "next_intervention": "continue_chain" if chain_index == 1 else "review_blockers",
+                "recommendation": "Continue bounded loop." if chain_index == 1 else "Review blocker before continuing.",
+            },
+            "next_training_chain": {
+                "intervention": "continue_chain" if chain_index == 1 else "review_blockers",
+                "can_auto_continue": chain_index == 1,
+                "request": next_request,
+            },
+            "training_chain_summary": {"chain_index": chain_index},
+            "final_session": {
+                "session_id": f"loop-{chain_index}",
+                "battle_format": payload.battle_format,
+            },
+        }
+
+    monkeypatch.setattr(pokemon_api, "run_showdown_training_chain", fake_training_chain)
+
+    data = await pokemon_api.run_showdown_training_loop(
+        pokemon_api.ShowdownTrainingLoopRequest(
+            username="LoopBot",
+            battle_format="gen9randombattle",
+            mode="auto",
+            mission_goal="auto",
+            rounds=1,
+            chain_limit=3,
+            max_actions=1,
+            allowed_actions=["start_search"],
+            login_password="secret",
+            send_commands=False,
+            stop_on_finished=False,
+        ),
+        db,
+    )
+
+    assert len(calls) == 2
+    assert calls[0].allowed_actions == ["start_search"]
+    assert calls[0].login_password == "secret"
+    assert calls[1].allowed_actions == ["analyze"]
+    assert calls[1].login_password is None
+    assert data["requested_chain_limit"] == 3
+    assert data["completed_chains"] == 2
+    assert data["total_completed_rounds"] == 2
+    assert data["stop_reason"] == "blocked_intervention"
+    assert data["chains"][0]["loop_index"] == 1
+    assert data["chains"][1]["loop_index"] == 2
+    assert data["chains"][0]["next_training_chain"]["request"]
+    assert data["final_training_health"]["next_intervention"] == "review_blockers"
+
+
+@pytest.mark.asyncio
+async def test_showdown_training_loop_rejects_invalid_chain_limit(setup_db, client):
+    response = await client.post(
+        "/api/pokemon/showdown/training-loop",
+        json={
+            "username": "LoopBot",
+            "battle_format": "gen9randombattle",
+            "rounds": 1,
+            "chain_limit": 0,
+        },
+    )
+
+    assert response.status_code == 400
+    assert "chain_limit must be between 1 and 6" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_showdown_training_chain_resumes_recovery_from_previous_chain(setup_db, client):
     previous = pokemon_api.pokemon_showdown_session_service.create_session(
         username="CarryBot",

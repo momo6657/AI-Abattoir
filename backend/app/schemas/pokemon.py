@@ -278,3 +278,14 @@ class ShowdownTrainingChainRequest(ShowdownSessionMissionRequest):
         True,
         description="Stop the chain when a round executes no supervisor actions.",
     )
+
+
+class ShowdownTrainingLoopRequest(ShowdownTrainingChainRequest):
+    chain_limit: int = Field(
+        3,
+        description="Maximum training-chain continuations to execute in one autonomous loop.",
+    )
+    stop_on_blocked: bool = Field(
+        True,
+        description="Stop the loop when training health says the next chain requires manual blocker review.",
+    )

@@ -29,6 +29,7 @@ from app.schemas.pokemon import (
     ShowdownSessionRunRequest,
     ShowdownSessionSupervisorRequest,
     ShowdownTrainingChainRequest,
+    ShowdownTrainingLoopRequest,
 )
 from app.models.pokemon import (
     PokemonSpecies,
@@ -907,6 +908,70 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
         "next_training_chain": next_training_chain,
         "training_chain_summary": training_chain_summary,
         "rounds": rounds,
+    }
+
+
+@router.post("/showdown/training-loop")
+async def run_showdown_training_loop(payload: ShowdownTrainingLoopRequest, db: AsyncSession = Depends(get_db)):
+    """Run bounded training chains and automatically continue from each chain's next preset."""
+    if payload.chain_limit < 1 or payload.chain_limit > 6:
+        raise HTTPException(status_code=400, detail="chain_limit must be between 1 and 6.")
+
+    chain_payload = ShowdownTrainingChainRequest(
+        **payload.model_dump(exclude={"chain_limit", "stop_on_blocked"})
+    )
+    chains: list[dict[str, Any]] = []
+    stop_reason = "chain_limit"
+    for index in range(payload.chain_limit):
+        chain_result = await run_showdown_training_chain(chain_payload, db)
+        chains.append(
+            {
+                "loop_index": index + 1,
+                "requested_rounds": chain_result["requested_rounds"],
+                "completed_rounds": chain_result["completed_rounds"],
+                "stop_reason": chain_result["stop_reason"],
+                "mastery_score": chain_result.get("mastery_score"),
+                "progress": chain_result.get("progress"),
+                "recovery": chain_result.get("recovery"),
+                "recovery_effectiveness": chain_result.get("recovery_effectiveness"),
+                "training_health": chain_result.get("training_health"),
+                "next_training_chain": chain_result.get("next_training_chain"),
+                "training_chain_summary": chain_result.get("training_chain_summary"),
+                "final_session": chain_result.get("final_session"),
+            }
+        )
+        next_chain = chain_result.get("next_training_chain") or {}
+        next_request = next_chain.get("request")
+        if chain_result["stop_reason"] == "error":
+            stop_reason = "chain_error"
+            break
+        if payload.stop_on_blocked and not next_chain.get("can_auto_continue", False):
+            stop_reason = "blocked_intervention"
+            break
+        if not next_request:
+            stop_reason = "no_next_training_chain"
+            break
+        if payload.mastery_score_target is not None and (chain_result.get("mastery_score") or 0) >= payload.mastery_score_target:
+            stop_reason = "mastery_score_target"
+            break
+        chain_payload = ShowdownTrainingChainRequest(**next_request)
+    else:
+        stop_reason = "chain_limit"
+
+    final_chain = chains[-1] if chains else {}
+    final_session = final_chain.get("final_session") or {}
+    total_completed_rounds = sum(int(chain.get("completed_rounds") or 0) for chain in chains)
+    return {
+        "username": payload.username,
+        "battle_format": final_session.get("battle_format") or payload.battle_format,
+        "requested_chain_limit": payload.chain_limit,
+        "completed_chains": len(chains),
+        "total_completed_rounds": total_completed_rounds,
+        "stop_reason": stop_reason,
+        "final_session": final_session or None,
+        "final_training_health": final_chain.get("training_health"),
+        "next_training_chain": final_chain.get("next_training_chain"),
+        "chains": chains,
     }
 
 
