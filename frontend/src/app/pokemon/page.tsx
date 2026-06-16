@@ -873,6 +873,7 @@ export default function PokemonBattlePage() {
     ['Phase 61', '自主任务回写 policy action progress，并将未完成策略动作纳入训练链恢复队列'],
     ['Phase 62', '训练链追踪 recovery burn-down，判断恢复动作是否清除、卡住或产生新队列'],
     ['Phase 63', 'stuck recovery 会自动扩展下一轮动作边界，避免训练链反复卡在同一恢复队列'],
+    ['Phase 64', '训练链输出 health/intervention 摘要，驱动继续训练、恢复扩展或补样本'],
   ];
 
   return (
@@ -1652,6 +1653,34 @@ export default function PokemonBattlePage() {
                         {activeShowdownTrainingChain.recovery_effectiveness.still_pending_actions.slice(0, 8).map((action: string) => (
                           <span key={`chain-recovery-still-${action}`} className="rounded border border-cyan-500/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-cyan-100">
                             still:{action}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                {activeShowdownTrainingChain.training_health ? (
+                  <div className="mt-2 rounded border border-amber-500/25 bg-amber-500/10 p-2">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[10px] font-semibold uppercase text-amber-100">Training health</span>
+                      <span className="rounded bg-black/30 px-2 py-0.5 text-[10px] text-amber-100">
+                        {activeShowdownTrainingChain.training_health.status} · {activeShowdownTrainingChain.training_health.next_intervention}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Metric label="Risk" value={activeShowdownTrainingChain.training_health.risk || '-'} compact />
+                      <Metric label="Actions" value={activeShowdownTrainingChain.training_health.priority_actions?.length ?? 0} compact />
+                    </div>
+                    {activeShowdownTrainingChain.training_health.recommendation ? (
+                      <div className="mt-2 break-words text-[10px] leading-4 text-gray-300">
+                        {activeShowdownTrainingChain.training_health.recommendation}
+                      </div>
+                    ) : null}
+                    {activeShowdownTrainingChain.training_health.priority_actions?.length ? (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {activeShowdownTrainingChain.training_health.priority_actions.slice(0, 8).map((action: string) => (
+                          <span key={`chain-health-action-${action}`} className="rounded border border-amber-500/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-amber-100">
+                            {action}
                           </span>
                         ))}
                       </div>

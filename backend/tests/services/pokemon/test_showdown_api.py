@@ -1233,6 +1233,9 @@ async def test_showdown_training_chain_runs_adaptive_planned_rounds(setup_db, db
     assert data["progress"]["battle_delta"] == 0
     assert data["progress"]["direction"] == "unchanged"
     assert data["recovery"]["status"] == "resume"
+    assert data["training_health"]["status"] == "recovering"
+    assert data["training_health"]["next_intervention"] == "resume_recovery"
+    assert "connect" in data["training_health"]["priority_actions"]
     assert data["recovery"]["action_counts"]["connect"] == 8
     assert data["recovery"]["action_counts"]["autopilot"] == 4
     assert data["recovery"]["policy_count"] == 6
@@ -1242,10 +1245,12 @@ async def test_showdown_training_chain_runs_adaptive_planned_rounds(setup_db, db
     assert data["training_chain_summary"]["progress"]["after_mastery_score"] == data["mastery_score"]
     assert data["training_chain_summary"]["recovery"]["actions"][0] == "connect"
     assert data["training_chain_summary"]["recovery"]["policy_count"] == 6
+    assert data["training_chain_summary"]["training_health"]["next_intervention"] == "resume_recovery"
     assert data["training_chain_summary"]["rounds"][-1]["planned_goal"] == "ladder"
     assert data["training_chain_summary"]["rounds"][-1]["recovery_status"] == "resume"
     assert data["final_session"]["last_training_chain_summary"]["completed_rounds"] == 2
     assert data["final_session"]["last_training_chain_summary"]["recovery"]["status"] == "resume"
+    assert data["final_session"]["last_training_chain_summary"]["training_health"]["status"] == "recovering"
     assert data["final_session"]["training_chain_history_count"] == 1
     assert data["final_session"]["training_chain_trend"]["chain_count"] == 1
     assert data["final_session"]["training_chain_trend"]["direction"] in {"flat", "improving"}
@@ -1922,6 +1927,40 @@ def test_showdown_training_chain_recovery_effectiveness_summarizes_rounds():
     assert summary["still_pending_actions"] == ["autopilot"]
 
 
+def test_showdown_training_chain_health_recommends_recovery_resume():
+    health = pokemon_api._build_showdown_training_chain_health(
+        progress={"direction": "unchanged", "battle_delta": 0},
+        recovery={"status": "resume", "actions": ["connect", "autopilot"]},
+        recovery_effectiveness={"status": "none", "still_pending_actions": []},
+        rounds=[{"round": 1}],
+    )
+
+    assert health["status"] == "recovering"
+    assert health["next_intervention"] == "resume_recovery"
+    assert health["risk"] == "medium"
+    assert health["priority_actions"] == ["connect", "autopilot"]
+    assert "recovery:resume" in health["signals"]
+
+
+def test_showdown_training_chain_health_prioritizes_stuck_recovery():
+    health = pokemon_api._build_showdown_training_chain_health(
+        progress={"direction": "unchanged", "battle_delta": 0},
+        recovery={"status": "resume", "actions": ["connect", "autopilot"]},
+        recovery_effectiveness={
+            "status": "stuck",
+            "stuck_rounds": 1,
+            "still_pending_actions": ["autopilot"],
+        },
+        rounds=[{"round": 1}, {"round": 2}],
+    )
+
+    assert health["status"] == "stuck"
+    assert health["next_intervention"] == "expand_recovery"
+    assert health["risk"] == "high"
+    assert health["priority_actions"][0] == "autopilot"
+    assert "stuck_rounds:1" in health["signals"]
+
+
 def test_showdown_recovery_action_source_respects_custom_allowed_actions():
     recovery = {"status": "resume", "actions": ["connect", "flush_pending", "connect"]}
 
@@ -2032,6 +2071,9 @@ async def test_showdown_training_chain_expands_stuck_previous_chain_recovery(set
         "autopilot",
         "analyze",
     ]
+    assert data["training_health"]["status"] == "recovering"
+    assert data["training_health"]["next_intervention"] == "resume_recovery"
+    assert data["training_health"]["priority_actions"]
     assert data["training_chain_summary"]["rounds"][0]["recovery_action_source"]["status"] == "expanded"
 
     await client.delete(f"/api/pokemon/showdown/sessions/{previous.session_id}")

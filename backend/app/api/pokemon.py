@@ -838,6 +838,12 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
     )
     recovery = _build_showdown_training_chain_recovery(rounds)
     recovery_effectiveness = _build_showdown_training_chain_recovery_effectiveness(rounds)
+    training_health = _build_showdown_training_chain_health(
+        progress=progress,
+        recovery=recovery,
+        recovery_effectiveness=recovery_effectiveness,
+        rounds=rounds,
+    )
     training_chain_summary = None
     if final_session and final_session.get("session_id"):
         training_chain_summary = pokemon_showdown_session_service.store_training_chain_summary(
@@ -855,6 +861,7 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
                 "initial_recovery": initial_recovery,
                 "recovery": recovery,
                 "recovery_effectiveness": recovery_effectiveness,
+                "training_health": training_health,
                 "last_goal": rounds[-1]["planned_goal"] if rounds else None,
                 "last_goal_source": rounds[-1]["planned_goal_source"] if rounds else None,
                 "rounds": [
@@ -890,6 +897,7 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
         "initial_recovery": initial_recovery,
         "recovery": recovery,
         "recovery_effectiveness": recovery_effectiveness,
+        "training_health": training_health,
         "training_chain_summary": training_chain_summary,
         "rounds": rounds,
     }
@@ -972,6 +980,130 @@ def _build_showdown_training_chain_progress(
         "direction": direction,
         "improved": score_delta > 0,
         "recommendation": recommendation,
+    }
+
+
+def _build_showdown_training_chain_health(
+    *,
+    progress: dict[str, Any] | None,
+    recovery: dict[str, Any] | None,
+    recovery_effectiveness: dict[str, Any] | None,
+    rounds: list[dict[str, Any]],
+) -> dict[str, Any]:
+    progress = progress or {}
+    recovery = recovery or {}
+    recovery_effectiveness = recovery_effectiveness or {}
+    recovery_status = str(recovery.get("status") or "none")
+    effectiveness_status = str(recovery_effectiveness.get("status") or "none")
+    progress_direction = str(progress.get("direction") or "unknown")
+    battle_delta = int(progress.get("battle_delta") or 0)
+    stuck_rounds = int(recovery_effectiveness.get("stuck_rounds") or 0)
+    still_pending_actions = [
+        str(action)
+        for action in recovery_effectiveness.get("still_pending_actions") or []
+        if str(action)
+    ]
+    recovery_actions = [
+        str(action)
+        for action in recovery.get("actions") or []
+        if str(action)
+    ]
+    fallback_live_actions = ["connect", "flush_pending", "start_search", "autopilot", "analyze"]
+
+    signals = [
+        f"rounds:{len(rounds)}",
+        f"progress:{progress_direction}",
+        f"battle_delta:{battle_delta}",
+        f"recovery:{recovery_status}",
+        f"recovery_effectiveness:{effectiveness_status}",
+    ]
+    if stuck_rounds:
+        signals.append(f"stuck_rounds:{stuck_rounds}")
+
+    if not rounds:
+        return {
+            "status": "blocked",
+            "next_intervention": "review_blockers",
+            "risk": "high",
+            "priority_actions": ["review_blockers"],
+            "signals": signals,
+            "recommendation": "No training round completed; inspect mission setup, format readiness, and supervisor blockers before continuing.",
+        }
+
+    if effectiveness_status == "stuck" or stuck_rounds > 0:
+        priority_actions = list(dict.fromkeys(still_pending_actions + recovery_actions + fallback_live_actions))[:8]
+        return {
+            "status": "stuck",
+            "next_intervention": "expand_recovery",
+            "risk": "high",
+            "priority_actions": priority_actions,
+            "signals": signals,
+            "recommendation": "Recovery actions are repeating without clearing; broaden the next action allow-list and inspect supervisor blockers.",
+        }
+
+    if recovery_status == "blocked":
+        blocked_reasons = [
+            str(reason)
+            for reason in recovery.get("blocked_reasons") or []
+            if str(reason)
+        ]
+        return {
+            "status": "blocked",
+            "next_intervention": "review_blockers",
+            "risk": "high",
+            "priority_actions": blocked_reasons[:5] or ["review_blockers"],
+            "signals": signals,
+            "recommendation": "Recovery is blocked; review the reported blockers before starting another autonomous chain.",
+        }
+
+    if recovery_status == "resume":
+        priority_actions = list(dict.fromkeys(still_pending_actions + recovery_actions))[:8]
+        return {
+            "status": "recovering",
+            "next_intervention": "resume_recovery",
+            "risk": "medium",
+            "priority_actions": priority_actions,
+            "signals": signals,
+            "recommendation": "Resume the unfinished recovery actions before widening the training objective.",
+        }
+
+    if progress_direction == "improved":
+        return {
+            "status": "improving",
+            "next_intervention": "continue_chain",
+            "risk": "low",
+            "priority_actions": [],
+            "signals": signals,
+            "recommendation": "Mastery is rising; continue the current training chain while monitoring recovery drift.",
+        }
+
+    if battle_delta == 0:
+        return {
+            "status": "sample_needed",
+            "next_intervention": "run_live_battle",
+            "risk": "medium",
+            "priority_actions": fallback_live_actions,
+            "signals": signals,
+            "recommendation": "No new completed battle sample was recorded; run a live battle or resume automation to generate evidence.",
+        }
+
+    if progress_direction in {"sampled", "declined"}:
+        return {
+            "status": "stable",
+            "next_intervention": "analyze_samples",
+            "risk": "medium",
+            "priority_actions": ["analyze"],
+            "signals": signals,
+            "recommendation": "New samples are available; analyze decisions and matchup lessons before extending the chain.",
+        }
+
+    return {
+        "status": "stable",
+        "next_intervention": "continue_chain",
+        "risk": "low",
+        "priority_actions": [],
+        "signals": signals,
+        "recommendation": "Training chain is stable; continue with the current objective and monitor progress.",
     }
 
 
