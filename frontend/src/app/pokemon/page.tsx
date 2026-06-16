@@ -477,12 +477,12 @@ export default function PokemonBattlePage() {
     }
   }
 
-  async function runShowdownTrainingChain() {
+  async function runShowdownTrainingChain(plannedRequest?: Record<string, unknown>) {
     setBusy(true);
     setError(null);
     try {
       resetShowdownState();
-      const response = (await pokemonApi.runShowdownTrainingChain(buildShowdownMissionPayload({
+      const response = (await pokemonApi.runShowdownTrainingChain(buildShowdownMissionPayload(plannedRequest || {
         rounds: Math.min(10, Math.max(1, showdownChainRounds)),
       }))).data;
       setShowdownTrainingChain(response);
@@ -494,7 +494,8 @@ export default function PokemonBattlePage() {
         ? ` · recovery ${response.recovery.status}${response.recovery.actions?.length ? `/${response.recovery.actions.length}` : ''}`
         : '';
       const resumedSummary = response.initial_recovery?.actions?.length ? ' · resumed history' : '';
-      addMessage(`Training chain ${response.completed_rounds}/${response.requested_rounds}: ${response.stop_reason} · ${lastRound?.planned_goal || 'auto'}${recoverySummary}${resumedSummary}.`);
+      const nextSummary = response.next_training_chain?.intervention ? ` · next ${response.next_training_chain.intervention}` : '';
+      addMessage(`Training chain ${response.completed_rounds}/${response.requested_rounds}: ${response.stop_reason} · ${lastRound?.planned_goal || 'auto'}${recoverySummary}${resumedSummary}${nextSummary}.`);
       refreshShowdownMastery();
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '启动 Showdown 训练链失败');
@@ -874,6 +875,7 @@ export default function PokemonBattlePage() {
     ['Phase 62', '训练链追踪 recovery burn-down，判断恢复动作是否清除、卡住或产生新队列'],
     ['Phase 63', 'stuck recovery 会自动扩展下一轮动作边界，避免训练链反复卡在同一恢复队列'],
     ['Phase 64', '训练链输出 health/intervention 摘要，驱动继续训练、恢复扩展或补样本'],
+    ['Phase 65', '训练链把 health/intervention 转成下一轮可执行 preset，前端可一键继续训练'],
   ];
 
   return (
@@ -1267,7 +1269,7 @@ export default function PokemonBattlePage() {
               >
                 按计划启动
               </button>
-              <button onClick={runShowdownTrainingChain} disabled={busy} className="btn-primary disabled:opacity-50">
+              <button onClick={() => runShowdownTrainingChain()} disabled={busy} className="btn-primary disabled:opacity-50">
                 训练链
               </button>
               <button onClick={startShowdownSearch} disabled={busy} className="btn-primary disabled:opacity-50">
@@ -1685,6 +1687,42 @@ export default function PokemonBattlePage() {
                         ))}
                       </div>
                     ) : null}
+                  </div>
+                ) : null}
+                {activeShowdownTrainingChain.next_training_chain ? (
+                  <div className="mt-2 rounded border border-orange-500/25 bg-orange-500/10 p-2">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[10px] font-semibold uppercase text-orange-100">Next chain</span>
+                      <span className="rounded bg-black/30 px-2 py-0.5 text-[10px] text-orange-100">
+                        {activeShowdownTrainingChain.next_training_chain.intervention} · {activeShowdownTrainingChain.next_training_chain.can_auto_continue ? 'ready' : 'blocked'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <Metric label="Goal" value={activeShowdownTrainingChain.next_training_chain.request?.mission_goal || '-'} compact />
+                      <Metric label="Rounds" value={activeShowdownTrainingChain.next_training_chain.request?.rounds ?? '-'} compact />
+                      <Metric label="Actions" value={activeShowdownTrainingChain.next_training_chain.request?.allowed_actions?.length ?? 'auto'} compact />
+                    </div>
+                    {activeShowdownTrainingChain.next_training_chain.recommendation ? (
+                      <div className="mt-2 break-words text-[10px] leading-4 text-gray-300">
+                        {activeShowdownTrainingChain.next_training_chain.recommendation}
+                      </div>
+                    ) : null}
+                    {activeShowdownTrainingChain.next_training_chain.request?.allowed_actions?.length ? (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {activeShowdownTrainingChain.next_training_chain.request.allowed_actions.slice(0, 8).map((action: string) => (
+                          <span key={`next-chain-action-${action}`} className="rounded border border-orange-500/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-orange-100">
+                            {action}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                    <button
+                      onClick={() => runShowdownTrainingChain(activeShowdownTrainingChain.next_training_chain.request)}
+                      disabled={busy || !activeShowdownTrainingChain.next_training_chain.request}
+                      className="mt-2 w-full rounded border border-orange-500/30 bg-orange-500/10 px-3 py-2 text-xs text-orange-100 transition hover:bg-orange-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Run next
+                    </button>
                   </div>
                 ) : null}
                 {activeShowdownTrainingChain.rounds?.length ? (

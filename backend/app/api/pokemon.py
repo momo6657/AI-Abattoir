@@ -844,6 +844,11 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
         recovery_effectiveness=recovery_effectiveness,
         rounds=rounds,
     )
+    next_training_chain = _build_showdown_next_training_chain(
+        payload=payload,
+        format_info=format_info,
+        training_health=training_health,
+    )
     training_chain_summary = None
     if final_session and final_session.get("session_id"):
         training_chain_summary = pokemon_showdown_session_service.store_training_chain_summary(
@@ -862,6 +867,7 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
                 "recovery": recovery,
                 "recovery_effectiveness": recovery_effectiveness,
                 "training_health": training_health,
+                "next_training_chain": next_training_chain,
                 "last_goal": rounds[-1]["planned_goal"] if rounds else None,
                 "last_goal_source": rounds[-1]["planned_goal_source"] if rounds else None,
                 "rounds": [
@@ -898,6 +904,7 @@ async def run_showdown_training_chain(payload: ShowdownTrainingChainRequest, db:
         "recovery": recovery,
         "recovery_effectiveness": recovery_effectiveness,
         "training_health": training_health,
+        "next_training_chain": next_training_chain,
         "training_chain_summary": training_chain_summary,
         "rounds": rounds,
     }
@@ -1008,7 +1015,7 @@ def _build_showdown_training_chain_health(
         for action in recovery.get("actions") or []
         if str(action)
     ]
-    fallback_live_actions = ["connect", "flush_pending", "start_search", "autopilot", "analyze"]
+    fallback_live_actions = ["connect", "flush_pending", "start_search", "run_once", "autopilot", "analyze"]
 
     signals = [
         f"rounds:{len(rounds)}",
@@ -1105,6 +1112,96 @@ def _build_showdown_training_chain_health(
         "signals": signals,
         "recommendation": "Training chain is stable; continue with the current objective and monitor progress.",
     }
+
+
+def _build_showdown_next_training_chain(
+    *,
+    payload: ShowdownTrainingChainRequest,
+    format_info,
+    training_health: dict[str, Any],
+) -> dict[str, Any]:
+    intervention = str(training_health.get("next_intervention") or "continue_chain")
+    priority_actions = [
+        str(action)
+        for action in training_health.get("priority_actions") or []
+        if str(action)
+    ]
+    goal_by_intervention = {
+        "continue_chain": "auto",
+        "run_live_battle": "ladder",
+        "resume_recovery": "auto",
+        "expand_recovery": "ladder",
+        "review_blockers": "prepare",
+        "analyze_samples": "learn",
+    }
+    rounds_by_intervention = {
+        "continue_chain": payload.rounds,
+        "run_live_battle": max(2, min(payload.rounds, 3)),
+        "resume_recovery": 1,
+        "expand_recovery": 1,
+        "review_blockers": 1,
+        "analyze_samples": 1,
+    }
+    actions_by_intervention = {
+        "continue_chain": None,
+        "run_live_battle": priority_actions or ["connect", "flush_pending", "start_search", "run_once", "autopilot", "analyze"],
+        "resume_recovery": priority_actions,
+        "expand_recovery": priority_actions or ["connect", "flush_pending", "start_search", "run_once", "autopilot", "analyze"],
+        "review_blockers": None,
+        "analyze_samples": priority_actions or ["analyze"],
+    }
+    can_auto_continue = intervention != "review_blockers"
+    allowed_actions = actions_by_intervention.get(intervention)
+    max_actions = min(20, max(1, payload.max_actions, len(allowed_actions or [])))
+    request = None
+    if can_auto_continue:
+        request = {
+            "username": payload.username,
+            "battle_format": format_info.id,
+            "mode": payload.mode,
+            "mission_goal": goal_by_intervention.get(intervention, "auto"),
+            "rounds": rounds_by_intervention.get(intervention, payload.rounds),
+            "max_actions": max_actions,
+            "max_messages": max(payload.max_messages, max_actions),
+            "allowed_actions": allowed_actions,
+            "auto_login": payload.auto_login,
+            "auto_accept_challenges": payload.auto_accept_challenges,
+            "auto_research_team": payload.auto_research_team,
+            "auto_search": intervention in {"run_live_battle", "expand_recovery", "continue_chain"},
+            "send_commands": payload.send_commands,
+            "stop_on_finished": payload.stop_on_finished,
+            "stop_on_error": payload.stop_on_error,
+            "stop_on_new_session": payload.stop_on_new_session,
+            "resume_recovery": intervention in {"resume_recovery", "expand_recovery", "continue_chain"},
+            "stop_on_no_progress": payload.stop_on_no_progress,
+            "mastery_score_target": payload.mastery_score_target,
+            "max_results": payload.max_results,
+        }
+
+    return {
+        "source": "training_health",
+        "intervention": intervention,
+        "can_auto_continue": can_auto_continue,
+        "request": request,
+        "blocked_reason": None if can_auto_continue else training_health.get("recommendation"),
+        "recommendation": _describe_showdown_next_training_chain(intervention, allowed_actions),
+    }
+
+
+def _describe_showdown_next_training_chain(intervention: str, allowed_actions: list[str] | None) -> str:
+    if intervention == "resume_recovery":
+        return "Run one focused chain that resumes unfinished recovery actions."
+    if intervention == "expand_recovery":
+        return "Run one focused chain with a broadened action allow-list to break recovery drift."
+    if intervention == "run_live_battle":
+        return "Run live-battle automation to collect a completed battle sample."
+    if intervention == "analyze_samples":
+        return "Run a focused analysis chain before extending live training."
+    if intervention == "review_blockers":
+        return "Review blockers manually before launching another autonomous chain."
+    if allowed_actions:
+        return "Continue training with the recommended focused action set."
+    return "Continue the adaptive training chain with automatic planning."
 
 
 def _build_showdown_recovery_action_source(

@@ -1236,6 +1236,11 @@ async def test_showdown_training_chain_runs_adaptive_planned_rounds(setup_db, db
     assert data["training_health"]["status"] == "recovering"
     assert data["training_health"]["next_intervention"] == "resume_recovery"
     assert "connect" in data["training_health"]["priority_actions"]
+    assert data["next_training_chain"]["intervention"] == "resume_recovery"
+    assert data["next_training_chain"]["can_auto_continue"] is True
+    assert data["next_training_chain"]["request"]["rounds"] == 1
+    assert "connect" in data["next_training_chain"]["request"]["allowed_actions"]
+    assert "login_password" not in data["next_training_chain"]["request"]
     assert data["recovery"]["action_counts"]["connect"] == 8
     assert data["recovery"]["action_counts"]["autopilot"] == 4
     assert data["recovery"]["policy_count"] == 6
@@ -1246,11 +1251,13 @@ async def test_showdown_training_chain_runs_adaptive_planned_rounds(setup_db, db
     assert data["training_chain_summary"]["recovery"]["actions"][0] == "connect"
     assert data["training_chain_summary"]["recovery"]["policy_count"] == 6
     assert data["training_chain_summary"]["training_health"]["next_intervention"] == "resume_recovery"
+    assert data["training_chain_summary"]["next_training_chain"]["request"]["rounds"] == 1
     assert data["training_chain_summary"]["rounds"][-1]["planned_goal"] == "ladder"
     assert data["training_chain_summary"]["rounds"][-1]["recovery_status"] == "resume"
     assert data["final_session"]["last_training_chain_summary"]["completed_rounds"] == 2
     assert data["final_session"]["last_training_chain_summary"]["recovery"]["status"] == "resume"
     assert data["final_session"]["last_training_chain_summary"]["training_health"]["status"] == "recovering"
+    assert data["final_session"]["last_training_chain_summary"]["next_training_chain"]["intervention"] == "resume_recovery"
     assert data["final_session"]["training_chain_history_count"] == 1
     assert data["final_session"]["training_chain_trend"]["chain_count"] == 1
     assert data["final_session"]["training_chain_trend"]["direction"] in {"flat", "improving"}
@@ -1959,6 +1966,62 @@ def test_showdown_training_chain_health_prioritizes_stuck_recovery():
     assert health["risk"] == "high"
     assert health["priority_actions"][0] == "autopilot"
     assert "stuck_rounds:1" in health["signals"]
+
+
+def test_showdown_next_training_chain_builds_live_sample_request():
+    payload = pokemon_api.ShowdownTrainingChainRequest(
+        username="NextBot",
+        battle_format="gen9randombattle",
+        mode="auto",
+        mission_goal="auto",
+        rounds=5,
+        max_actions=2,
+        login_password="secret",
+    )
+    format_info = pokemon_api.pokemon_format_catalog.get("gen9randombattle")
+
+    next_chain = pokemon_api._build_showdown_next_training_chain(
+        payload=payload,
+        format_info=format_info,
+        training_health={
+            "next_intervention": "run_live_battle",
+            "priority_actions": ["connect", "start_search", "autopilot"],
+            "recommendation": "Run a live battle.",
+        },
+    )
+
+    assert next_chain["can_auto_continue"] is True
+    assert next_chain["intervention"] == "run_live_battle"
+    assert next_chain["request"]["mission_goal"] == "ladder"
+    assert next_chain["request"]["rounds"] == 3
+    assert next_chain["request"]["max_actions"] == 3
+    assert next_chain["request"]["allowed_actions"] == ["connect", "start_search", "autopilot"]
+    assert "login_password" not in next_chain["request"]
+
+
+def test_showdown_next_training_chain_blocks_review_request():
+    payload = pokemon_api.ShowdownTrainingChainRequest(
+        username="BlockedBot",
+        battle_format="gen9randombattle",
+        mode="auto",
+        mission_goal="auto",
+        rounds=2,
+    )
+    format_info = pokemon_api.pokemon_format_catalog.get("gen9randombattle")
+
+    next_chain = pokemon_api._build_showdown_next_training_chain(
+        payload=payload,
+        format_info=format_info,
+        training_health={
+            "next_intervention": "review_blockers",
+            "priority_actions": ["review_blockers"],
+            "recommendation": "Review blockers.",
+        },
+    )
+
+    assert next_chain["can_auto_continue"] is False
+    assert next_chain["request"] is None
+    assert next_chain["blocked_reason"] == "Review blockers."
 
 
 def test_showdown_recovery_action_source_respects_custom_allowed_actions():
