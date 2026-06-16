@@ -201,6 +201,7 @@ export const pokemonApi = {
   startShowdownMission: (data: Record<string, unknown>) => api.post("/pokemon/showdown/mission", data),
   runShowdownTrainingChain: (data: Record<string, unknown>) => api.post("/pokemon/showdown/training-chain", data),
   runShowdownTrainingLoop: (data: Record<string, unknown>) => api.post("/pokemon/showdown/training-loop", data),
+  planShowdownTrainingProgram: (data: Record<string, unknown>) => api.post("/pokemon/showdown/training-program/plan", data),
   runShowdownTrainingProgram: (data: Record<string, unknown>) => api.post("/pokemon/showdown/training-program", data),
   startShowdownSearch: (sessionId: string) => api.post(`/pokemon/showdown/sessions/${sessionId}/search`),
   cancelShowdownSearch: (sessionId: string) => api.post(`/pokemon/showdown/sessions/${sessionId}/cancel-search`),

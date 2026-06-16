@@ -1465,6 +1465,45 @@ async def test_showdown_training_program_rotates_across_formats(setup_db, db, mo
 
 
 @pytest.mark.asyncio
+async def test_showdown_training_program_plan_builds_safe_curriculum(setup_db, db, client):
+    await pokemon_showdown_learning_store.record_session(
+        db,
+        session_id="program-plan-ou",
+        username="ProgramPlanBot",
+        battle_format="gen9ou",
+        showdown_format="gen9ou",
+        mode="balanced",
+        analysis={"status": "win", "reward": 120.0, "turns": 8, "faints_for": 3, "faints_against": 1},
+        decisions=[{"decision_type": "move", "reward": 20}],
+    )
+
+    response = await client.post(
+        "/api/pokemon/showdown/training-program/plan",
+        json={
+            "username": "ProgramPlanBot",
+            "battle_format": "gen9randombattle",
+            "formats": ["gen9randombattle", "gen9ou", "gen9ou"],
+            "format_limit": 3,
+            "chain_limit": 2,
+            "rounds": 1,
+            "login_password": "secret",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["planned_format_count"] == 2
+    assert data["priority_formats"] == ["gen9randombattle", "gen9ou"]
+    assert data["status"] == "needs_samples"
+    assert data["no_sample_formats"] == ["gen9randombattle"]
+    assert data["total_existing_samples"] == 1
+    assert data["program_request"]["formats"] == ["gen9randombattle", "gen9ou"]
+    assert data["program_request"]["battle_format"] == "gen9randombattle"
+    assert data["program_request"]["chain_limit"] == 2
+    assert "login_password" not in data["program_request"]
+
+
+@pytest.mark.asyncio
 async def test_showdown_training_program_rejects_invalid_format_limit(setup_db, client):
     response = await client.post(
         "/api/pokemon/showdown/training-program",

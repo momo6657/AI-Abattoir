@@ -984,10 +984,7 @@ async def run_showdown_training_loop(payload: ShowdownTrainingLoopRequest, db: A
 @router.post("/showdown/training-program")
 async def run_showdown_training_program(payload: ShowdownTrainingProgramRequest, db: AsyncSession = Depends(get_db)):
     """Run a bounded multi-format Showdown training curriculum."""
-    if payload.format_limit < 1 or payload.format_limit > 4:
-        raise HTTPException(status_code=400, detail="format_limit must be between 1 and 4.")
-    if payload.chain_limit < 1 or payload.chain_limit > 6:
-        raise HTTPException(status_code=400, detail="chain_limit must be between 1 and 6.")
+    _validate_showdown_training_program_payload(payload)
 
     try:
         curriculum = await _build_showdown_training_program_curriculum(payload, db)
@@ -1045,6 +1042,30 @@ async def run_showdown_training_program(payload: ShowdownTrainingProgramRequest,
     }
 
 
+@router.post("/showdown/training-program/plan")
+async def plan_showdown_training_program(payload: ShowdownTrainingProgramRequest, db: AsyncSession = Depends(get_db)):
+    """Preview the multi-format training curriculum without running battles."""
+    _validate_showdown_training_program_payload(payload)
+    try:
+        curriculum = await _build_showdown_training_program_curriculum(payload, db)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _build_showdown_training_program_plan(payload, curriculum)
+
+
+def _validate_showdown_training_program_payload(payload: ShowdownTrainingProgramRequest) -> None:
+    if payload.format_limit < 1 or payload.format_limit > 4:
+        raise HTTPException(status_code=400, detail="format_limit must be between 1 and 4.")
+    if payload.chain_limit < 1 or payload.chain_limit > 6:
+        raise HTTPException(status_code=400, detail="chain_limit must be between 1 and 6.")
+    if payload.rounds < 1 or payload.rounds > 10:
+        raise HTTPException(status_code=400, detail="rounds must be between 1 and 10.")
+    if payload.max_actions < 1 or payload.max_actions > 20:
+        raise HTTPException(status_code=400, detail="max_actions must be between 1 and 20.")
+    if payload.mastery_score_target is not None and payload.mastery_score_target < 0:
+        raise HTTPException(status_code=400, detail="mastery_score_target must be greater than or equal to 0.")
+
+
 async def _build_showdown_training_program_curriculum(
     payload: ShowdownTrainingProgramRequest,
     db: AsyncSession,
@@ -1088,6 +1109,46 @@ async def _build_showdown_training_program_curriculum(
     if not explicit_order:
         items.sort(key=lambda item: (item["sample_count"] > 0, item["mastery_score"], item["order"]))
     return items[:payload.format_limit]
+
+
+def _build_showdown_training_program_plan(
+    payload: ShowdownTrainingProgramRequest,
+    curriculum: list[dict[str, Any]],
+) -> dict[str, Any]:
+    priority_formats = [item["format"]["id"] for item in curriculum]
+    no_sample_formats = [item["format"]["id"] for item in curriculum if item["reason"] == "no_samples"]
+    below_target_formats = [item["format"]["id"] for item in curriculum if item["reason"] == "below_mastery_target"]
+    total_samples = sum(int(item.get("sample_count") or 0) for item in curriculum)
+    lowest_mastery = min((float(item.get("mastery_score") or 0) for item in curriculum), default=0.0)
+    if no_sample_formats:
+        status = "needs_samples"
+        recommendation = "Start with formats that have no battle samples so the agent can broaden baseline coverage."
+    elif below_target_formats:
+        status = "below_target"
+        recommendation = "Prioritize formats below the mastery target before rotating stable formats."
+    else:
+        status = "rotation"
+        recommendation = "Rotate formats to keep the multi-format policy fresh."
+
+    program_request = payload.model_dump(exclude={"login_assertion", "login_password"})
+    if priority_formats:
+        program_request["formats"] = priority_formats
+        program_request["battle_format"] = priority_formats[0]
+
+    return {
+        "username": payload.username,
+        "requested_format_limit": payload.format_limit,
+        "planned_format_count": len(curriculum),
+        "total_existing_samples": total_samples,
+        "lowest_mastery_score": round(lowest_mastery, 2),
+        "status": status,
+        "recommendation": recommendation,
+        "priority_formats": priority_formats,
+        "no_sample_formats": no_sample_formats,
+        "below_target_formats": below_target_formats,
+        "curriculum": curriculum,
+        "program_request": program_request,
+    }
 
 
 def _build_showdown_training_program_health(format_results: list[dict[str, Any]]) -> dict[str, Any]:
