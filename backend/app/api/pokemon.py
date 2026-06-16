@@ -1050,6 +1050,7 @@ async def plan_showdown_training_program(payload: ShowdownTrainingProgramRequest
         curriculum = await _build_showdown_training_program_curriculum(payload, db)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    curriculum = await _attach_showdown_training_program_mission_previews(payload, curriculum, db)
     return _build_showdown_training_program_plan(payload, curriculum)
 
 
@@ -1111,6 +1112,127 @@ async def _build_showdown_training_program_curriculum(
     return items[:payload.format_limit]
 
 
+async def _attach_showdown_training_program_mission_previews(
+    payload: ShowdownTrainingProgramRequest,
+    curriculum: list[dict[str, Any]],
+    db: AsyncSession,
+) -> list[dict[str, Any]]:
+    preview_payload = payload.model_dump(
+        exclude={
+            "formats",
+            "format_limit",
+            "chain_limit",
+            "rounds",
+            "resume_recovery",
+            "mastery_score_target",
+            "stop_on_no_progress",
+            "stop_on_blocked",
+            "login_assertion",
+            "login_password",
+        }
+    )
+    augmented: list[dict[str, Any]] = []
+    for item in curriculum:
+        format_id = item["format"]["id"]
+        mission_payload = ShowdownSessionMissionRequest(
+            **{
+                **preview_payload,
+                "battle_format": format_id,
+            }
+        )
+        mission_plan = await plan_showdown_mission(mission_payload, db)
+        augmented.append(
+            {
+                **item,
+                "mission_preview": _compact_showdown_training_program_mission_preview(mission_plan),
+            }
+        )
+    return augmented
+
+
+def _compact_showdown_training_program_mission_preview(mission_plan: dict[str, Any]) -> dict[str, Any]:
+    team_audit = mission_plan.get("team_audit") or {}
+    live_readiness = mission_plan.get("live_readiness") or {}
+    return {
+        "mission_goal": mission_plan.get("mission_goal"),
+        "mission_goal_source": mission_plan.get("mission_goal_source"),
+        "mission_goal_reason": mission_plan.get("mission_goal_reason"),
+        "action_plan_source": mission_plan.get("action_plan_source"),
+        "allowed_actions": mission_plan.get("allowed_actions") or [],
+        "executable_plan_actions": mission_plan.get("executable_plan_actions") or [],
+        "executable_task_actions": mission_plan.get("executable_task_actions") or [],
+        "executable_policy_actions": mission_plan.get("executable_policy_actions") or [],
+        "unsupported_plan_actions": mission_plan.get("unsupported_plan_actions") or [],
+        "unsupported_task_actions": mission_plan.get("unsupported_task_actions") or [],
+        "unsupported_policy_actions": mission_plan.get("unsupported_policy_actions") or [],
+        "training_task_count": len(mission_plan.get("training_tasks") or []),
+        "readiness_status": mission_plan.get("readiness_status"),
+        "readiness_score": mission_plan.get("readiness_score"),
+        "readiness_actions": mission_plan.get("readiness_actions") or [],
+        "require_live_readiness": bool(mission_plan.get("require_live_readiness")),
+        "team_audit_status": team_audit.get("status"),
+        "team_audit_score": team_audit.get("score"),
+        "team_audit_gaps": mission_plan.get("team_audit_gaps") or team_audit.get("gaps") or [],
+        "team_audit_actions": mission_plan.get("team_audit_actions") or [],
+        "team_source": mission_plan.get("team_source"),
+        "team_reason": mission_plan.get("team_reason"),
+        "team_species": mission_plan.get("team_species") or [],
+        "live_readiness_checks": live_readiness.get("checks") or [],
+    }
+
+
+def _summarize_showdown_training_program_mission_previews(curriculum: list[dict[str, Any]]) -> dict[str, Any]:
+    high_risk_formats: list[str] = []
+    blocked_format_count = 0
+    executable_action_count = 0
+    training_task_count = 0
+    for item in curriculum:
+        preview = item.get("mission_preview") or {}
+        format_id = item["format"]["id"]
+        executable_actions = list(
+            dict.fromkeys(
+                [
+                    *(preview.get("executable_plan_actions") or []),
+                    *(preview.get("executable_task_actions") or []),
+                    *(preview.get("executable_policy_actions") or []),
+                ]
+            )
+        )
+        unsupported_actions = [
+            *(preview.get("unsupported_plan_actions") or []),
+            *(preview.get("unsupported_task_actions") or []),
+            *(preview.get("unsupported_policy_actions") or []),
+        ]
+        readiness_blocked = preview.get("readiness_status") == "blocked"
+        team_blocked = preview.get("team_audit_status") == "blocked"
+        blocked = readiness_blocked or team_blocked
+        if blocked:
+            blocked_format_count += 1
+        if blocked or unsupported_actions:
+            high_risk_formats.append(format_id)
+        executable_action_count += len(executable_actions)
+        training_task_count += int(preview.get("training_task_count") or 0)
+
+    if blocked_format_count:
+        preview_status = "blocked"
+        preview_recommendation = "Review blocked format readiness or team audit before running the multi-format program."
+    elif high_risk_formats:
+        preview_status = "watch"
+        preview_recommendation = "Program can be previewed, but unsupported training actions need follow-up after execution."
+    else:
+        preview_status = "ready"
+        preview_recommendation = "Every planned format has a first-mission preview with no blocked readiness or team audit risk."
+
+    return {
+        "preview_status": preview_status,
+        "preview_recommendation": preview_recommendation,
+        "high_risk_formats": high_risk_formats,
+        "blocked_format_count": blocked_format_count,
+        "executable_action_count": executable_action_count,
+        "training_task_count": training_task_count,
+    }
+
+
 def _build_showdown_training_program_plan(
     payload: ShowdownTrainingProgramRequest,
     curriculum: list[dict[str, Any]],
@@ -1135,6 +1257,7 @@ def _build_showdown_training_program_plan(
         program_request["formats"] = priority_formats
         program_request["battle_format"] = priority_formats[0]
 
+    preview_summary = _summarize_showdown_training_program_mission_previews(curriculum)
     return {
         "username": payload.username,
         "requested_format_limit": payload.format_limit,
@@ -1146,6 +1269,7 @@ def _build_showdown_training_program_plan(
         "priority_formats": priority_formats,
         "no_sample_formats": no_sample_formats,
         "below_target_formats": below_target_formats,
+        **preview_summary,
         "curriculum": curriculum,
         "program_request": program_request,
     }

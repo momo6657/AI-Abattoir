@@ -1501,6 +1501,14 @@ async def test_showdown_training_program_plan_builds_safe_curriculum(setup_db, d
     assert data["program_request"]["battle_format"] == "gen9randombattle"
     assert data["program_request"]["chain_limit"] == 2
     assert "login_password" not in data["program_request"]
+    assert data["preview_status"] in {"ready", "watch", "blocked"}
+    assert isinstance(data["high_risk_formats"], list)
+    assert isinstance(data["executable_action_count"], int)
+    assert data["training_task_count"] >= 0
+    assert [item["format"]["id"] for item in data["curriculum"]] == ["gen9randombattle", "gen9ou"]
+    assert all(item["mission_preview"]["mission_goal"] for item in data["curriculum"])
+    assert data["curriculum"][0]["mission_preview"]["allowed_actions"]
+    assert "login_password" not in data["curriculum"][0]["mission_preview"]
 
 
 @pytest.mark.asyncio

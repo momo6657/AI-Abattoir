@@ -973,6 +973,7 @@ export default function PokemonBattlePage() {
     ['Phase 66', '训练循环自动消费 next_training_chain preset，按上限连续续跑直到阻断或达成上限'],
     ['Phase 67', '多格式训练计划按 curriculum 轮转多个 Showdown 格式，汇总 program health 并生成下一轮 preset'],
     ['Phase 68', '多格式训练支持 plan 预览和 program preset 续跑，执行前能审查 curriculum、样本和格式优先级'],
+    ['Phase 69', '多格式 program plan 注入首轮 mission preview，执行前展示 readiness、team audit 和可执行动作风险'],
   ];
 
   return (
@@ -1712,9 +1713,19 @@ export default function PokemonBattlePage() {
                   <Metric label="Samples" value={activeShowdownTrainingProgramPlan.total_existing_samples || 0} compact />
                   <Metric label="Lowest" value={Number(activeShowdownTrainingProgramPlan.lowest_mastery_score || 0).toFixed(0)} compact />
                 </div>
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  <Metric label="Preview" value={activeShowdownTrainingProgramPlan.preview_status || 'n/a'} compact />
+                  <Metric label="Risk" value={(activeShowdownTrainingProgramPlan.high_risk_formats || []).length} compact />
+                  <Metric label="Actions" value={activeShowdownTrainingProgramPlan.executable_action_count || 0} compact />
+                </div>
                 {activeShowdownTrainingProgramPlan.recommendation ? (
                   <div className="mt-2 break-words rounded border border-sky-500/20 bg-black/20 p-2 text-[10px] leading-4 text-sky-100">
                     {activeShowdownTrainingProgramPlan.recommendation}
+                  </div>
+                ) : null}
+                {activeShowdownTrainingProgramPlan.preview_recommendation ? (
+                  <div className="mt-2 break-words rounded border border-sky-500/20 bg-black/20 p-2 text-[10px] leading-4 text-sky-100">
+                    {activeShowdownTrainingProgramPlan.preview_recommendation}
                   </div>
                 ) : null}
                 {activeShowdownTrainingProgramPlan.priority_formats?.length ? (
@@ -1724,6 +1735,53 @@ export default function PokemonBattlePage() {
                         {formatId}
                       </span>
                     ))}
+                  </div>
+                ) : null}
+                {activeShowdownTrainingProgramPlan.curriculum?.length ? (
+                  <div className="mt-2 space-y-2">
+                    {activeShowdownTrainingProgramPlan.curriculum.map((item: any) => {
+                      const preview = item.mission_preview || {};
+                      const executableActions = Array.from(new Set([
+                        ...(preview.executable_plan_actions || []),
+                        ...(preview.executable_task_actions || []),
+                        ...(preview.executable_policy_actions || []),
+                      ]));
+                      const unsupportedActions = [
+                        ...(preview.unsupported_plan_actions || []),
+                        ...(preview.unsupported_task_actions || []),
+                        ...(preview.unsupported_policy_actions || []),
+                      ];
+                      return (
+                        <div key={`program-plan-preview-${item.format?.id}`} className="rounded border border-sky-500/20 bg-black/20 p-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-semibold text-sky-100">{item.format?.id}</span>
+                            <span className="rounded bg-black/30 px-1.5 py-0.5 text-[10px] text-sky-100">
+                              {preview.mission_goal || 'mission'} · {preview.action_plan_source || 'preset'}
+                            </span>
+                          </div>
+                          <div className="mt-1 grid grid-cols-3 gap-2">
+                            <Metric label="Ready" value={preview.readiness_status || 'n/a'} compact />
+                            <Metric label="Team" value={preview.team_audit_status || preview.team_source || 'n/a'} compact />
+                            <Metric label="Tasks" value={preview.training_task_count || 0} compact />
+                          </div>
+                          {executableActions.length ? (
+                            <div className="mt-1 break-words text-[10px] leading-4 text-emerald-100">
+                              Exec: {executableActions.join(' / ')}
+                            </div>
+                          ) : null}
+                          {unsupportedActions.length ? (
+                            <div className="mt-1 break-words text-[10px] leading-4 text-amber-100">
+                              Unsupported: {unsupportedActions.join(' / ')}
+                            </div>
+                          ) : null}
+                          {preview.team_audit_gaps?.length ? (
+                            <div className="mt-1 break-words text-[10px] leading-4 text-amber-100">
+                              Gaps: {preview.team_audit_gaps.join(' / ')}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : null}
               </div>
