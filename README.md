@@ -202,6 +202,7 @@ Abattoir（竞技场）是一个让 AI 展现真实能力的地方。在这里�
 - Showdown 训练链健康摘要：`training_health` 汇总进步、恢复和 burn-down 信号，给出 continue、resume、expand 或 run_live_battle 等下一步干预建议
 - Showdown 训练链续跑预设：`next_training_chain` 会把 health/intervention 转成无密码的下一轮 `training-chain` 请求，前端可一键继续训练
 - Showdown 训练循环：`training-loop` 会自动消费 `next_training_chain.request` 连续续跑多条训练链，直到达到上限、报错或需要人工审查
+- Showdown 多格式训练计划：`training-program` 会按 curriculum 轮转多个格式运行训练循环，汇总 program health 并生成无密码下一轮 preset
 - Showdown 即时学习回写：完成对战后会把最新学习档案同步回当前会话快照，前端策略面板可直接使用新样本
 - Showdown 训练复盘：学习档案会输出训练重点，提示低胜率、击倒劣势、低奖励模式和需要审计的决策类型
 - Showdown 自适应策略：创建会话时可使用 `mode=auto`，系统会读取学习档案并选择当前格式下收益最高的策略模式
@@ -613,6 +614,7 @@ AI-Abattoir/
 | POST | `/api/pokemon/showdown/mission` | 创建 Showdown 自主任务，并按 `auto/prepare/queue/ladder/learn` 目标运行有限监督循环，返回策略评估、policy 执行回执、任务训练计划、训练任务、任务执行回执、建队审计、实战就绪计划、目标推荐来源和可执行计划动作 |
 | POST | `/api/pokemon/showdown/training-chain` | 连续执行多轮 Showdown 自主任务，每轮先读取学习计划再执行 mission，并汇总 Mastery 分数、停止原因、未完成训练任务恢复队列、`recovery_effectiveness`、`training_health` 和 `next_training_chain` 续跑预设；无手动动作白名单时，下一轮会自动应用上一轮 `recovery.actions`，并在 stuck/partial 时自动扩展动作边界；新链默认会通过 `resume_recovery=true` 继承历史未完成恢复动作 |
 | POST | `/api/pokemon/showdown/training-loop` | 按 `chain_limit` 自动连续执行多条 `training-chain`，每条链结束后读取 `next_training_chain.request` 续跑，返回链级健康摘要、总完成轮数、最终会话和停止原因 |
+| POST | `/api/pokemon/showdown/training-program` | 按 `formats` 或自动 curriculum 选择多个 Showdown 格式，逐格式运行 `training-loop`，汇总 program health、跨格式训练轮数和下一轮多格式 preset |
 | POST | `/api/pokemon/showdown/sessions` | 创建 Showdown 自动会话状态机，缺省队伍时自动建队，`mode=auto` 时按学习档案选择策略模式，可用 `auto_accept_challenges` 自动接受同格式挑战，或用 `auto_research_team` 自动检索整队知识 |
 | GET | `/api/pokemon/showdown/sessions` | 列出 Showdown 自动会话 |
 | POST | `/api/pokemon/showdown/sessions/{id}/search` | 为会话生成并记录天梯搜索命令 |
@@ -891,6 +893,7 @@ alembic history
 - [x] 宝可梦 Showdown training-chain health/intervention 摘要，驱动继续训练、恢复扩展或补样本
 - [x] 宝可梦 Showdown training-chain 下一轮可执行 preset 和前端一键续跑
 - [x] 宝可梦 Showdown training-loop 自动消费下一轮 preset，连续续跑多条训练链
+- [x] 宝可梦 Showdown training-program 多格式训练计划，轮转多个格式并生成下一轮 preset
 - [ ] Pokemon Showdown 真实登录和天梯实战
 - [ ] 宝可梦完整多格式战斗策略（单打、随机战、不同世代规则）
 - [ ] 宝可梦强化学习闭环与长期策略优化

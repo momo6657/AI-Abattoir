@@ -289,3 +289,14 @@ class ShowdownTrainingLoopRequest(ShowdownTrainingChainRequest):
         True,
         description="Stop the loop when training health says the next chain requires manual blocker review.",
     )
+
+
+class ShowdownTrainingProgramRequest(ShowdownTrainingLoopRequest):
+    formats: Optional[List[str]] = Field(
+        None,
+        description="Optional ordered Showdown/local format IDs to rotate through. Defaults to the active format plus the catalog.",
+    )
+    format_limit: int = Field(
+        4,
+        description="Maximum number of formats to train in one autonomous multi-format program.",
+    )

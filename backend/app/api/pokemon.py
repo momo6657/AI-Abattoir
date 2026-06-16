@@ -30,6 +30,7 @@ from app.schemas.pokemon import (
     ShowdownSessionSupervisorRequest,
     ShowdownTrainingChainRequest,
     ShowdownTrainingLoopRequest,
+    ShowdownTrainingProgramRequest,
 )
 from app.models.pokemon import (
     PokemonSpecies,
@@ -969,9 +970,214 @@ async def run_showdown_training_loop(payload: ShowdownTrainingLoopRequest, db: A
         "total_completed_rounds": total_completed_rounds,
         "stop_reason": stop_reason,
         "final_session": final_session or None,
+        "final_mastery_score": final_chain.get("mastery_score"),
+        "final_progress": final_chain.get("progress"),
+        "final_recovery": final_chain.get("recovery"),
+        "final_recovery_effectiveness": final_chain.get("recovery_effectiveness"),
         "final_training_health": final_chain.get("training_health"),
+        "final_training_chain_summary": final_chain.get("training_chain_summary"),
         "next_training_chain": final_chain.get("next_training_chain"),
         "chains": chains,
+    }
+
+
+@router.post("/showdown/training-program")
+async def run_showdown_training_program(payload: ShowdownTrainingProgramRequest, db: AsyncSession = Depends(get_db)):
+    """Run a bounded multi-format Showdown training curriculum."""
+    if payload.format_limit < 1 or payload.format_limit > 4:
+        raise HTTPException(status_code=400, detail="format_limit must be between 1 and 4.")
+    if payload.chain_limit < 1 or payload.chain_limit > 6:
+        raise HTTPException(status_code=400, detail="chain_limit must be between 1 and 6.")
+
+    try:
+        curriculum = await _build_showdown_training_program_curriculum(payload, db)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    loop_payload_data = payload.model_dump(exclude={"formats", "format_limit"})
+    format_results: list[dict[str, Any]] = []
+    stop_reason = "format_limit"
+    for item in curriculum:
+        format_id = item["format"]["id"]
+        loop_result = await run_showdown_training_loop(
+            ShowdownTrainingLoopRequest(**{**loop_payload_data, "battle_format": format_id}),
+            db,
+        )
+        after_mastery = loop_result.get("final_mastery_score")
+        before_mastery = item.get("mastery_score")
+        mastery_delta = None
+        if after_mastery is not None and before_mastery is not None:
+            mastery_delta = round(float(after_mastery) - float(before_mastery), 2)
+        result = {
+            "format": item["format"],
+            "curriculum_reason": item["reason"],
+            "before_learning_profile": item["learning_profile"],
+            "before_mastery_score": before_mastery,
+            "after_mastery_score": after_mastery,
+            "mastery_score_delta": mastery_delta,
+            "completed_chains": loop_result.get("completed_chains", 0),
+            "completed_rounds": loop_result.get("total_completed_rounds", 0),
+            "stop_reason": loop_result.get("stop_reason"),
+            "final_training_health": loop_result.get("final_training_health"),
+            "next_training_chain": loop_result.get("next_training_chain"),
+            "loop": loop_result,
+        }
+        format_results.append(result)
+        if loop_result.get("stop_reason") == "chain_error":
+            stop_reason = "format_error"
+            break
+    else:
+        stop_reason = "format_limit"
+
+    program_health = _build_showdown_training_program_health(format_results)
+    next_training_program = _build_showdown_next_training_program(payload, program_health)
+    return {
+        "username": payload.username,
+        "requested_format_limit": payload.format_limit,
+        "completed_formats": len(format_results),
+        "total_completed_chains": sum(int(item.get("completed_chains") or 0) for item in format_results),
+        "total_completed_rounds": sum(int(item.get("completed_rounds") or 0) for item in format_results),
+        "stop_reason": stop_reason,
+        "curriculum": curriculum,
+        "program_health": program_health,
+        "next_training_program": next_training_program,
+        "formats": format_results,
+    }
+
+
+async def _build_showdown_training_program_curriculum(
+    payload: ShowdownTrainingProgramRequest,
+    db: AsyncSession,
+) -> list[dict[str, Any]]:
+    raw_formats = payload.formats
+    explicit_order = bool(raw_formats)
+    if not raw_formats:
+        raw_formats = [payload.battle_format, *[item.id for item in pokemon_format_catalog.list_formats()]]
+
+    seen: set[str] = set()
+    items: list[dict[str, Any]] = []
+    for index, candidate in enumerate(raw_formats):
+        format_info = pokemon_format_catalog.get(candidate)
+        if format_info.id in seen:
+            continue
+        seen.add(format_info.id)
+        profile = await pokemon_showdown_learning_store.profile(
+            db,
+            username=payload.username,
+            battle_format=format_info.id,
+        )
+        mastery_score = pokemon_showdown_learning_store.score_profile(profile)
+        battles = int(profile.get("battles") or 0)
+        if battles <= 0:
+            reason = "no_samples"
+        elif payload.mastery_score_target is not None and mastery_score < payload.mastery_score_target:
+            reason = "below_mastery_target"
+        else:
+            reason = "rotation"
+        items.append(
+            {
+                "format": format_info.to_dict(),
+                "learning_profile": profile,
+                "mastery_score": mastery_score,
+                "sample_count": battles,
+                "reason": reason,
+                "order": index,
+            }
+        )
+
+    if not explicit_order:
+        items.sort(key=lambda item: (item["sample_count"] > 0, item["mastery_score"], item["order"]))
+    return items[:payload.format_limit]
+
+
+def _build_showdown_training_program_health(format_results: list[dict[str, Any]]) -> dict[str, Any]:
+    if not format_results:
+        return {
+            "status": "empty",
+            "manual_review_required": False,
+            "priority_formats": [],
+            "blocked_formats": [],
+            "error_formats": [],
+            "improved_formats": [],
+            "declined_formats": [],
+            "recommendation": "No formats were selected for training.",
+        }
+
+    blocked_formats = [
+        item["format"]["id"]
+        for item in format_results
+        if item.get("stop_reason") == "blocked_intervention"
+    ]
+    error_formats = [
+        item["format"]["id"]
+        for item in format_results
+        if item.get("stop_reason") in {"chain_error", "format_error"}
+    ]
+    improved_formats = [
+        item["format"]["id"]
+        for item in format_results
+        if (item.get("mastery_score_delta") or 0) > 0
+    ]
+    declined_formats = [
+        item["format"]["id"]
+        for item in format_results
+        if (item.get("mastery_score_delta") or 0) < 0
+    ]
+    priority_formats = [
+        item["format"]["id"]
+        for item in sorted(
+            format_results,
+            key=lambda entry: (
+                entry.get("stop_reason") not in {"chain_limit", "mastery_score_target"},
+                float(entry.get("after_mastery_score") or entry.get("before_mastery_score") or 0),
+            ),
+        )
+    ]
+
+    manual_review_required = bool(blocked_formats or error_formats)
+    if error_formats:
+        status = "error"
+        recommendation = "Resolve format errors before continuing the multi-format training program."
+    elif blocked_formats:
+        status = "blocked"
+        recommendation = "Review blocked formats, then resume the generated training program preset."
+    elif declined_formats:
+        status = "watch"
+        recommendation = "Continue the curriculum, but inspect declined formats for policy or team regressions."
+    else:
+        status = "training"
+        recommendation = "Continue rotating through the selected formats to broaden battle coverage."
+
+    return {
+        "status": status,
+        "manual_review_required": manual_review_required,
+        "priority_formats": priority_formats,
+        "blocked_formats": blocked_formats,
+        "error_formats": error_formats,
+        "improved_formats": improved_formats,
+        "declined_formats": declined_formats,
+        "trained_format_count": len(format_results),
+        "recommendation": recommendation,
+    }
+
+
+def _build_showdown_next_training_program(
+    payload: ShowdownTrainingProgramRequest,
+    program_health: dict[str, Any],
+) -> dict[str, Any]:
+    priority_formats = list(program_health.get("priority_formats") or [])[:payload.format_limit]
+    can_auto_continue = bool(priority_formats) and not bool(program_health.get("manual_review_required"))
+    request = None
+    if can_auto_continue:
+        request = payload.model_dump(exclude={"login_assertion", "login_password"})
+        request["formats"] = priority_formats
+        request["battle_format"] = priority_formats[0]
+    return {
+        "can_auto_continue": can_auto_continue,
+        "formats": priority_formats,
+        "blocked_formats": program_health.get("blocked_formats") or [],
+        "error_formats": program_health.get("error_formats") or [],
+        "request": request,
     }
 
 

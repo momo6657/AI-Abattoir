@@ -1409,6 +1409,78 @@ async def test_showdown_training_loop_rejects_invalid_chain_limit(setup_db, clie
 
 
 @pytest.mark.asyncio
+async def test_showdown_training_program_rotates_across_formats(setup_db, db, monkeypatch):
+    calls = []
+
+    async def fake_training_loop(payload, loop_db):
+        calls.append(payload)
+        index = len(calls)
+        return {
+            "username": payload.username,
+            "battle_format": payload.battle_format,
+            "requested_chain_limit": payload.chain_limit,
+            "completed_chains": payload.chain_limit,
+            "total_completed_rounds": payload.chain_limit,
+            "stop_reason": "chain_limit",
+            "final_session": {"session_id": f"program-{index}", "battle_format": payload.battle_format},
+            "final_mastery_score": 100.0 + index,
+            "final_progress": {"direction": "improved"},
+            "final_training_health": {"status": "healthy", "next_intervention": "continue_chain"},
+            "next_training_chain": {
+                "intervention": "continue_chain",
+                "can_auto_continue": True,
+                "request": {"username": payload.username, "battle_format": payload.battle_format},
+            },
+            "chains": [],
+        }
+
+    monkeypatch.setattr(pokemon_api, "run_showdown_training_loop", fake_training_loop)
+
+    data = await pokemon_api.run_showdown_training_program(
+        pokemon_api.ShowdownTrainingProgramRequest(
+            username="ProgramBot",
+            battle_format="gen9randombattle",
+            formats=["gen9randombattle", "gen9ou"],
+            format_limit=2,
+            chain_limit=2,
+            rounds=1,
+            login_password="secret",
+            send_commands=False,
+        ),
+        db,
+    )
+
+    assert [call.battle_format for call in calls] == ["gen9randombattle", "gen9ou"]
+    assert data["completed_formats"] == 2
+    assert data["total_completed_chains"] == 4
+    assert data["total_completed_rounds"] == 4
+    assert data["stop_reason"] == "format_limit"
+    assert data["formats"][0]["format"]["id"] == "gen9randombattle"
+    assert data["formats"][1]["format"]["id"] == "gen9ou"
+    assert data["program_health"]["status"] == "training"
+    assert data["program_health"]["priority_formats"] == ["gen9randombattle", "gen9ou"]
+    assert data["next_training_program"]["can_auto_continue"] is True
+    assert data["next_training_program"]["request"]["formats"] == ["gen9randombattle", "gen9ou"]
+    assert "login_password" not in data["next_training_program"]["request"]
+
+
+@pytest.mark.asyncio
+async def test_showdown_training_program_rejects_invalid_format_limit(setup_db, client):
+    response = await client.post(
+        "/api/pokemon/showdown/training-program",
+        json={
+            "username": "ProgramBot",
+            "battle_format": "gen9randombattle",
+            "rounds": 1,
+            "format_limit": 0,
+        },
+    )
+
+    assert response.status_code == 400
+    assert "format_limit must be between 1 and 4" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_showdown_training_chain_resumes_recovery_from_previous_chain(setup_db, client):
     previous = pokemon_api.pokemon_showdown_session_service.create_session(
         username="CarryBot",

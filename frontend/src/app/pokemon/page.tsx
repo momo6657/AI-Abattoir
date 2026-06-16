@@ -91,6 +91,7 @@ export default function PokemonBattlePage() {
   const [showdownRunLimit, setShowdownRunLimit] = useState(10);
   const [showdownChainRounds, setShowdownChainRounds] = useState(2);
   const [showdownLoopChains, setShowdownLoopChains] = useState(3);
+  const [showdownProgramFormats, setShowdownProgramFormats] = useState('gen9randombattle, gen9ou');
   const [showdownMode, setShowdownMode] = useState<'auto' | 'balanced' | 'aggressive' | 'defensive'>('auto');
   const [showdownMissionGoal, setShowdownMissionGoal] = useState<'auto' | 'prepare' | 'queue' | 'ladder' | 'learn'>('auto');
   const [showdownMissionPlan, setShowdownMissionPlan] = useState<any>(null);
@@ -98,6 +99,7 @@ export default function PokemonBattlePage() {
   const [showdownMatchupBriefing, setShowdownMatchupBriefing] = useState<any>(null);
   const [showdownTrainingChain, setShowdownTrainingChain] = useState<any>(null);
   const [showdownTrainingLoop, setShowdownTrainingLoop] = useState<any>(null);
+  const [showdownTrainingProgram, setShowdownTrainingProgram] = useState<any>(null);
   const [showdownPlan, setShowdownPlan] = useState<any>(null);
   const [showdownSession, setShowdownSession] = useState<any>(null);
   const [showdownAnalysis, setShowdownAnalysis] = useState<any>(null);
@@ -136,6 +138,7 @@ export default function PokemonBattlePage() {
   const showdownPolicyEvaluation = activeShowdownLearning?.policy_evaluation || null;
   const activeShowdownTrainingChain = showdownTrainingChain || showdownSession?.last_training_chain_summary || null;
   const activeShowdownTrainingLoop = showdownTrainingLoop || null;
+  const activeShowdownTrainingProgram = showdownTrainingProgram || null;
   const activeTrainingChainTrend = showdownSession?.training_chain_trend || showdownTrainingChain?.final_session?.training_chain_trend || null;
   const activeLiveReadiness = showdownSession?.live_readiness || null;
 
@@ -167,6 +170,7 @@ export default function PokemonBattlePage() {
     setShowdownMatchupBriefing(null);
     setShowdownTrainingChain(null);
     setShowdownTrainingLoop(null);
+    setShowdownTrainingProgram(null);
     setShowdownRunSummary(null);
     setShowdownTeamKnowledge([]);
     setShowdownTeamKnowledgeSummary(null);
@@ -415,6 +419,14 @@ export default function PokemonBattlePage() {
     };
   }
 
+  function parseShowdownProgramFormats() {
+    return showdownProgramFormats
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 4);
+  }
+
   async function previewShowdownMissionPlan() {
     setBusy(true);
     setError(null);
@@ -527,6 +539,36 @@ export default function PokemonBattlePage() {
       refreshShowdownMastery();
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || '启动 Showdown 训练循环失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runShowdownTrainingProgram() {
+    setBusy(true);
+    setError(null);
+    try {
+      resetShowdownState();
+      const formats = parseShowdownProgramFormats();
+      const response = (await pokemonApi.runShowdownTrainingProgram(buildShowdownMissionPayload({
+        formats: formats.length ? formats : undefined,
+        format_limit: Math.max(1, Math.min(4, formats.length || 4)),
+        rounds: Math.min(10, Math.max(1, showdownChainRounds)),
+        chain_limit: Math.min(6, Math.max(1, showdownLoopChains)),
+      }))).data;
+      const lastFormat = [...(response.formats || [])].reverse()[0];
+      const lastLoop = lastFormat?.loop || null;
+      const lastChain = [...(lastLoop?.chains || [])].reverse()[0];
+      setShowdownTrainingProgram(response);
+      setShowdownTrainingLoop(lastLoop);
+      setShowdownTrainingChain(lastChain || null);
+      applyShowdownSession(lastLoop?.final_session || lastChain?.final_session);
+      setShowdownLearning(lastLoop?.final_session?.learning_profile || lastChain?.final_session?.learning_profile || null);
+      setShowdownAnalysis(lastLoop?.final_session?.analysis || lastChain?.final_session?.analysis || null);
+      addMessage(`Training program ${response.completed_formats}/${response.requested_format_limit}: ${response.stop_reason} · ${response.total_completed_rounds || 0} round(s).`);
+      refreshShowdownMastery();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '启动 Showdown 多格式训练失败');
     } finally {
       setBusy(false);
     }
@@ -905,6 +947,7 @@ export default function PokemonBattlePage() {
     ['Phase 64', '训练链输出 health/intervention 摘要，驱动继续训练、恢复扩展或补样本'],
     ['Phase 65', '训练链把 health/intervention 转成下一轮可执行 preset，前端可一键继续训练'],
     ['Phase 66', '训练循环自动消费 next_training_chain preset，按上限连续续跑直到阻断或达成上限'],
+    ['Phase 67', '多格式训练计划按 curriculum 轮转多个 Showdown 格式，汇总 program health 并生成下一轮 preset'],
   ];
 
   return (
@@ -1260,6 +1303,15 @@ export default function PokemonBattlePage() {
                 className="h-4 w-4 accent-accent"
               />
             </label>
+            <label className="mt-2 text-xs text-gray-500">
+              Program formats
+              <input
+                value={showdownProgramFormats}
+                onChange={(event) => setShowdownProgramFormats(event.target.value)}
+                className="mt-1 w-full rounded-md border border-border bg-black/30 px-3 py-2 text-sm normal-case text-gray-100 outline-none focus:border-accent"
+                placeholder="gen9randombattle, gen9ou"
+              />
+            </label>
 
             <div className="mt-3 grid grid-cols-4 gap-1 rounded-md border border-border bg-black/20 p-1">
               {(['auto', 'balanced', 'aggressive', 'defensive'] as const).map((mode) => (
@@ -1314,6 +1366,9 @@ export default function PokemonBattlePage() {
               </button>
               <button onClick={runShowdownTrainingLoop} disabled={busy} className="btn-primary disabled:opacity-50">
                 训练循环
+              </button>
+              <button onClick={runShowdownTrainingProgram} disabled={busy} className="btn-primary disabled:opacity-50">
+                多格式训练
               </button>
               <button onClick={startShowdownSearch} disabled={busy} className="btn-primary disabled:opacity-50">
                 搜索天梯
@@ -1604,6 +1659,48 @@ export default function PokemonBattlePage() {
                 {(showdownMissionPlan.unsupported_task_actions || []).length ? (
                   <div className="mt-2 break-words rounded border border-amber-500/30 bg-amber-500/10 p-2 text-[10px] text-amber-100">
                     Unsupported task: {showdownMissionPlan.unsupported_task_actions.join(' / ')}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {activeShowdownTrainingProgram ? (
+              <div className="mt-3 rounded-md border border-cyan-500/30 bg-cyan-500/10 p-3 text-xs leading-5 text-gray-300">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[10px] font-semibold uppercase text-cyan-200">Training program</span>
+                  <span className="rounded bg-black/30 px-2 py-0.5 text-[10px] text-cyan-100">
+                    {activeShowdownTrainingProgram.completed_formats}/{activeShowdownTrainingProgram.requested_format_limit} · {activeShowdownTrainingProgram.stop_reason}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <Metric label="Formats" value={activeShowdownTrainingProgram.completed_formats || 0} compact />
+                  <Metric label="Chains" value={activeShowdownTrainingProgram.total_completed_chains || 0} compact />
+                  <Metric label="Rounds" value={activeShowdownTrainingProgram.total_completed_rounds || 0} compact />
+                </div>
+                {activeShowdownTrainingProgram.program_health?.recommendation ? (
+                  <div className="mt-2 break-words rounded border border-cyan-500/20 bg-black/20 p-2 text-[10px] leading-4 text-cyan-100">
+                    {activeShowdownTrainingProgram.program_health.status}: {activeShowdownTrainingProgram.program_health.recommendation}
+                  </div>
+                ) : null}
+                {activeShowdownTrainingProgram.next_training_program?.formats?.length ? (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {activeShowdownTrainingProgram.next_training_program.formats.map((formatId: string) => (
+                      <span key={`program-next-${formatId}`} className="rounded border border-cyan-500/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-cyan-100">
+                        next:{formatId}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {activeShowdownTrainingProgram.formats?.length ? (
+                  <div className="mt-2 space-y-1.5">
+                    {activeShowdownTrainingProgram.formats.slice(-4).map((item: any) => (
+                      <div key={`program-format-${item.format?.id}`} className="flex flex-wrap items-center justify-between gap-2 rounded border border-border bg-black/20 px-2 py-1">
+                        <span className="text-gray-200">{item.format?.name_zh || item.format?.id}</span>
+                        <span className="text-[10px] text-gray-500">
+                          {item.completed_chains || 0} chain(s) · {item.stop_reason} · Δ{item.mastery_score_delta ?? '-'}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 ) : null}
               </div>
