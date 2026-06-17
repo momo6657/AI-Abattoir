@@ -300,3 +300,18 @@ class ShowdownTrainingProgramRequest(ShowdownTrainingLoopRequest):
         4,
         description="Maximum number of formats to train in one autonomous multi-format program.",
     )
+
+
+class ShowdownTrainingProgramPipelineRequest(ShowdownTrainingProgramRequest):
+    stage_limit: int = Field(
+        3,
+        description="Maximum bounded program stages to execute: initial program, recovery preset, and after-recovery resume.",
+    )
+    auto_recover: bool = Field(
+        True,
+        description="When true, execute a generated recovery_request after a blocked program stage.",
+    )
+    auto_resume_after_recovery: bool = Field(
+        True,
+        description="When true, execute after_recovery_request after the recovery stage completes.",
+    )

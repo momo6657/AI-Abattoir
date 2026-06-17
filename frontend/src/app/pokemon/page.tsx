@@ -101,6 +101,7 @@ export default function PokemonBattlePage() {
   const [showdownTrainingLoop, setShowdownTrainingLoop] = useState<any>(null);
   const [showdownTrainingProgramPlan, setShowdownTrainingProgramPlan] = useState<any>(null);
   const [showdownTrainingProgram, setShowdownTrainingProgram] = useState<any>(null);
+  const [showdownTrainingProgramPipeline, setShowdownTrainingProgramPipeline] = useState<any>(null);
   const [showdownPlan, setShowdownPlan] = useState<any>(null);
   const [showdownSession, setShowdownSession] = useState<any>(null);
   const [showdownAnalysis, setShowdownAnalysis] = useState<any>(null);
@@ -141,6 +142,7 @@ export default function PokemonBattlePage() {
   const activeShowdownTrainingLoop = showdownTrainingLoop || null;
   const activeShowdownTrainingProgramPlan = showdownTrainingProgramPlan || null;
   const activeShowdownTrainingProgram = showdownTrainingProgram || null;
+  const activeShowdownTrainingProgramPipeline = showdownTrainingProgramPipeline || null;
   const activeTrainingChainTrend = showdownSession?.training_chain_trend || showdownTrainingChain?.final_session?.training_chain_trend || null;
   const activeLiveReadiness = showdownSession?.live_readiness || null;
 
@@ -174,6 +176,7 @@ export default function PokemonBattlePage() {
     setShowdownTrainingLoop(null);
     setShowdownTrainingProgramPlan(null);
     setShowdownTrainingProgram(null);
+    setShowdownTrainingProgramPipeline(null);
     setShowdownRunSummary(null);
     setShowdownTeamKnowledge([]);
     setShowdownTeamKnowledgeSummary(null);
@@ -598,6 +601,35 @@ export default function PokemonBattlePage() {
     }
   }
 
+  async function runShowdownTrainingProgramPipeline(plannedRequest?: Record<string, unknown>) {
+    setBusy(true);
+    setError(null);
+    try {
+      resetShowdownState();
+      const response = (await pokemonApi.runShowdownTrainingProgramPipeline(buildShowdownProgramPayload({
+        ...(plannedRequest || {}),
+        stage_limit: 3,
+      }))).data;
+      const finalProgram = response.final_result || null;
+      const lastFormat = [...(finalProgram?.formats || [])].reverse()[0];
+      const lastLoop = lastFormat?.loop || null;
+      const lastChain = [...(lastLoop?.chains || [])].reverse()[0];
+      setShowdownTrainingProgramPipeline(response);
+      setShowdownTrainingProgram(finalProgram);
+      setShowdownTrainingLoop(lastLoop);
+      setShowdownTrainingChain(lastChain || null);
+      applyShowdownSession(lastLoop?.final_session || lastChain?.final_session);
+      setShowdownLearning(lastLoop?.final_session?.learning_profile || lastChain?.final_session?.learning_profile || null);
+      setShowdownAnalysis(lastLoop?.final_session?.analysis || lastChain?.final_session?.analysis || null);
+      addMessage(`Training pipeline ${response.completed_stages}/${response.requested_stage_limit}: ${response.pipeline_health?.status || response.stop_reason}.`);
+      refreshShowdownMastery();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '启动 Showdown 多格式流水线失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function runShowdownSessionStep() {
     if (!showdownPayload.trim()) return;
     setBusy(true);
@@ -977,6 +1009,7 @@ export default function PokemonBattlePage() {
     ['Phase 70', '多格式训练执行前应用 preflight gate，blocked 格式会跳过并进入 program health 人工审查'],
     ['Phase 71', 'preflight blocked 时生成 recovery program preset，先恢复 readiness/team audit 再继续多格式训练'],
     ['Phase 72', 'recovery preset 同时生成恢复后续跑请求，blocked 格式修复后可回到原多格式 curriculum'],
+    ['Phase 73', '多格式训练 pipeline 自动串联 program、recovery 和恢复后续跑阶段，减少人工连续点击'],
   ];
 
   return (
@@ -1409,6 +1442,9 @@ export default function PokemonBattlePage() {
               <button onClick={() => runShowdownTrainingProgram()} disabled={busy} className="btn-primary disabled:opacity-50">
                 多格式训练
               </button>
+              <button onClick={() => runShowdownTrainingProgramPipeline()} disabled={busy} className="btn-primary disabled:opacity-50">
+                多格式流水线
+              </button>
               <button onClick={startShowdownSearch} disabled={busy} className="btn-primary disabled:opacity-50">
                 搜索天梯
               </button>
@@ -1785,6 +1821,36 @@ export default function PokemonBattlePage() {
                         </div>
                       );
                     })}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {activeShowdownTrainingProgramPipeline ? (
+              <div className="mt-3 rounded-md border border-violet-500/30 bg-violet-500/10 p-3 text-xs leading-5 text-gray-300">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[10px] font-semibold uppercase text-violet-200">Training pipeline</span>
+                  <span className="rounded bg-black/30 px-2 py-0.5 text-[10px] text-violet-100">
+                    {activeShowdownTrainingProgramPipeline.completed_stages}/{activeShowdownTrainingProgramPipeline.requested_stage_limit} · {activeShowdownTrainingProgramPipeline.pipeline_health?.status || activeShowdownTrainingProgramPipeline.stop_reason}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <Metric label="Stages" value={activeShowdownTrainingProgramPipeline.completed_stages || 0} compact />
+                  <Metric label="Blocked" value={activeShowdownTrainingProgramPipeline.pipeline_health?.blocked_stage_count || 0} compact />
+                  <Metric label="Resumed" value={activeShowdownTrainingProgramPipeline.pipeline_health?.resumed_after_recovery ? 'yes' : 'no'} compact />
+                </div>
+                {activeShowdownTrainingProgramPipeline.pipeline_health?.recommendation ? (
+                  <div className="mt-2 break-words rounded border border-violet-500/20 bg-black/20 p-2 text-[10px] leading-4 text-violet-100">
+                    {activeShowdownTrainingProgramPipeline.pipeline_health.recommendation}
+                  </div>
+                ) : null}
+                {activeShowdownTrainingProgramPipeline.stage_types?.length ? (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {activeShowdownTrainingProgramPipeline.stage_types.map((stageType: string, index: number) => (
+                      <span key={`program-pipeline-stage-${index}-${stageType}`} className="rounded border border-violet-500/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-violet-100">
+                        {index + 1}:{stageType}
+                      </span>
+                    ))}
                   </div>
                 ) : null}
               </div>

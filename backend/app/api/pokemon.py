@@ -30,6 +30,7 @@ from app.schemas.pokemon import (
     ShowdownSessionSupervisorRequest,
     ShowdownTrainingChainRequest,
     ShowdownTrainingLoopRequest,
+    ShowdownTrainingProgramPipelineRequest,
     ShowdownTrainingProgramRequest,
 )
 from app.models.pokemon import (
@@ -1079,6 +1080,67 @@ async def run_showdown_training_program(payload: ShowdownTrainingProgramRequest,
     }
 
 
+@router.post("/showdown/training-program/pipeline")
+async def run_showdown_training_program_pipeline(
+    payload: ShowdownTrainingProgramPipelineRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Run a bounded multi-stage training program, recovery, and resume pipeline."""
+    _validate_showdown_training_program_payload(payload)
+    if payload.stage_limit < 1 or payload.stage_limit > 5:
+        raise HTTPException(status_code=400, detail="stage_limit must be between 1 and 5.")
+
+    current_payload = _build_showdown_training_program_request_from_pipeline(payload)
+    current_stage_type = "program"
+    pending_after_recovery_request: dict[str, Any] | None = None
+    stages: list[dict[str, Any]] = []
+    stop_reason = "stage_limit"
+
+    for index in range(payload.stage_limit):
+        result = await run_showdown_training_program(current_payload, db)
+        safe_request = current_payload.model_dump(exclude={"login_assertion", "login_password"})
+        stages.append(
+            {
+                "stage_index": index + 1,
+                "stage_type": current_stage_type,
+                "request": safe_request,
+                "result": result,
+            }
+        )
+        next_training_program = result.get("next_training_program") or {}
+        if current_stage_type == "program" and payload.auto_recover and next_training_program.get("recovery_request"):
+            pending_after_recovery_request = next_training_program.get("after_recovery_request")
+            current_payload = ShowdownTrainingProgramRequest(**next_training_program["recovery_request"])
+            current_stage_type = "recovery"
+            continue
+        if (
+            current_stage_type == "recovery"
+            and payload.auto_resume_after_recovery
+            and pending_after_recovery_request
+        ):
+            current_payload = ShowdownTrainingProgramRequest(**pending_after_recovery_request)
+            current_stage_type = "after_recovery"
+            pending_after_recovery_request = None
+            continue
+        stop_reason = "no_next_stage"
+        break
+
+    final_stage = stages[-1] if stages else None
+    final_result = final_stage.get("result") if final_stage else None
+    return {
+        "username": payload.username,
+        "requested_stage_limit": payload.stage_limit,
+        "completed_stages": len(stages),
+        "stop_reason": stop_reason,
+        "auto_recover": payload.auto_recover,
+        "auto_resume_after_recovery": payload.auto_resume_after_recovery,
+        "stage_types": [stage["stage_type"] for stage in stages],
+        "final_result": final_result,
+        "pipeline_health": _build_showdown_training_program_pipeline_health(stages, stop_reason),
+        "stages": stages,
+    }
+
+
 @router.post("/showdown/training-program/plan")
 async def plan_showdown_training_program(payload: ShowdownTrainingProgramRequest, db: AsyncSession = Depends(get_db)):
     """Preview the multi-format training curriculum without running battles."""
@@ -1102,6 +1164,67 @@ def _validate_showdown_training_program_payload(payload: ShowdownTrainingProgram
         raise HTTPException(status_code=400, detail="max_actions must be between 1 and 20.")
     if payload.mastery_score_target is not None and payload.mastery_score_target < 0:
         raise HTTPException(status_code=400, detail="mastery_score_target must be greater than or equal to 0.")
+
+
+def _build_showdown_training_program_request_from_pipeline(
+    payload: ShowdownTrainingProgramPipelineRequest,
+) -> ShowdownTrainingProgramRequest:
+    return ShowdownTrainingProgramRequest(
+        **payload.model_dump(
+            exclude={
+                "stage_limit",
+                "auto_recover",
+                "auto_resume_after_recovery",
+            }
+        )
+    )
+
+
+def _build_showdown_training_program_pipeline_health(
+    stages: list[dict[str, Any]],
+    stop_reason: str,
+) -> dict[str, Any]:
+    if not stages:
+        return {
+            "status": "empty",
+            "manual_review_required": False,
+            "blocked_stage_count": 0,
+            "recovered": False,
+            "resumed_after_recovery": False,
+            "recommendation": "No training program stages were executed.",
+        }
+    stage_types = [str(stage.get("stage_type") or "") for stage in stages]
+    final_result = stages[-1].get("result") or {}
+    final_health = final_result.get("program_health") or {}
+    blocked_stage_count = sum(
+        1
+        for stage in stages
+        if ((stage.get("result") or {}).get("program_health") or {}).get("status") == "blocked"
+    )
+    recovered = "recovery" in stage_types
+    resumed_after_recovery = "after_recovery" in stage_types
+    manual_review_required = bool(final_health.get("manual_review_required"))
+    if resumed_after_recovery and not final_health.get("manual_review_required"):
+        status = "resumed"
+        recommendation = "Recovery completed and the program returned to the multi-format curriculum."
+    elif recovered:
+        status = "recovered"
+        recommendation = "Recovery stage completed; inspect the next preset before continuing."
+    elif blocked_stage_count:
+        status = "blocked"
+        recommendation = "Pipeline stopped on blocked preflight; run or inspect the generated recovery preset."
+    else:
+        status = "complete" if stop_reason == "no_next_stage" else "running"
+        recommendation = "Pipeline completed the available autonomous stages."
+    return {
+        "status": status,
+        "manual_review_required": manual_review_required,
+        "blocked_stage_count": blocked_stage_count,
+        "recovered": recovered,
+        "resumed_after_recovery": resumed_after_recovery,
+        "final_program_status": final_health.get("status"),
+        "recommendation": recommendation,
+    }
 
 
 async def _build_showdown_training_program_curriculum(

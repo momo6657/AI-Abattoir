@@ -1549,6 +1549,88 @@ async def test_showdown_training_program_stops_on_preflight_blocked(setup_db, db
 
 
 @pytest.mark.asyncio
+async def test_showdown_training_program_pipeline_recovers_and_resumes(setup_db, db, monkeypatch):
+    calls = []
+
+    async def fake_training_program(payload, program_db):
+        calls.append(payload)
+        if len(calls) == 1:
+            return {
+                "stop_reason": "preflight_blocked",
+                "program_health": {
+                    "status": "blocked",
+                    "manual_review_required": True,
+                    "recommendation": "recover first",
+                },
+                "next_training_program": {
+                    "can_auto_continue": False,
+                    "can_auto_recover": True,
+                    "can_resume_after_recovery": True,
+                    "recovery_request": {
+                        "username": payload.username,
+                        "battle_format": "gen9randombattle",
+                        "formats": ["gen9randombattle"],
+                        "format_limit": 1,
+                        "chain_limit": 1,
+                        "rounds": 1,
+                        "mission_goal": "auto",
+                        "allowed_actions": ["connect"],
+                        "stop_on_blocked": False,
+                    },
+                    "after_recovery_request": {
+                        "username": payload.username,
+                        "battle_format": "gen9randombattle",
+                        "formats": ["gen9randombattle", "gen9ou"],
+                        "format_limit": 2,
+                        "chain_limit": 2,
+                        "rounds": 1,
+                        "stop_on_blocked": True,
+                    },
+                },
+            }
+        return {
+            "stop_reason": "format_limit",
+            "program_health": {
+                "status": "training",
+                "manual_review_required": False,
+                "recommendation": "continue",
+            },
+            "next_training_program": {},
+        }
+
+    monkeypatch.setattr(pokemon_api, "run_showdown_training_program", fake_training_program)
+
+    data = await pokemon_api.run_showdown_training_program_pipeline(
+        pokemon_api.ShowdownTrainingProgramPipelineRequest(
+            username="PipelineBot",
+            battle_format="gen9randombattle",
+            formats=["gen9randombattle", "gen9ou"],
+            format_limit=2,
+            chain_limit=2,
+            rounds=1,
+            stage_limit=3,
+            login_password="secret",
+            send_commands=False,
+        ),
+        db,
+    )
+
+    assert [call.battle_format for call in calls] == ["gen9randombattle", "gen9randombattle", "gen9randombattle"]
+    assert calls[1].allowed_actions == ["connect"]
+    assert calls[1].stop_on_blocked is False
+    assert calls[2].formats == ["gen9randombattle", "gen9ou"]
+    assert calls[2].stop_on_blocked is True
+    assert data["completed_stages"] == 3
+    assert data["stop_reason"] == "no_next_stage"
+    assert data["stage_types"] == ["program", "recovery", "after_recovery"]
+    assert data["pipeline_health"]["status"] == "resumed"
+    assert data["pipeline_health"]["recovered"] is True
+    assert data["pipeline_health"]["resumed_after_recovery"] is True
+    assert "login_password" not in data["stages"][0]["request"]
+    assert data["final_result"]["program_health"]["status"] == "training"
+
+
+@pytest.mark.asyncio
 async def test_showdown_training_program_plan_builds_safe_curriculum(setup_db, db, client):
     await pokemon_showdown_learning_store.record_session(
         db,
