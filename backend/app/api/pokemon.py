@@ -990,12 +990,43 @@ async def run_showdown_training_program(payload: ShowdownTrainingProgramRequest,
         curriculum = await _build_showdown_training_program_curriculum(payload, db)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    curriculum = await _attach_showdown_training_program_mission_previews(payload, curriculum, db)
 
     loop_payload_data = payload.model_dump(exclude={"formats", "format_limit"})
     format_results: list[dict[str, Any]] = []
     stop_reason = "format_limit"
     for item in curriculum:
         format_id = item["format"]["id"]
+        mission_preview = item.get("mission_preview") or {}
+        preflight_blockers = _resolve_showdown_training_program_preflight_blockers(mission_preview)
+        preflight_status = _resolve_showdown_training_program_preflight_status(mission_preview)
+        if preflight_blockers and payload.stop_on_blocked:
+            format_results.append(
+                {
+                    "format": item["format"],
+                    "curriculum_reason": item["reason"],
+                    "before_learning_profile": item["learning_profile"],
+                    "before_mastery_score": item.get("mastery_score"),
+                    "after_mastery_score": item.get("mastery_score"),
+                    "mastery_score_delta": 0,
+                    "completed_chains": 0,
+                    "completed_rounds": 0,
+                    "stop_reason": "preflight_blocked",
+                    "skipped": True,
+                    "preflight_status": preflight_status,
+                    "preflight_blockers": preflight_blockers,
+                    "mission_preview": mission_preview,
+                    "final_training_health": {
+                        "status": "blocked",
+                        "manual_review_required": True,
+                        "recommendation": "Resolve preflight readiness or team audit blockers before running this format.",
+                    },
+                    "next_training_chain": None,
+                    "loop": None,
+                }
+            )
+            stop_reason = "preflight_blocked"
+            break
         loop_result = await run_showdown_training_loop(
             ShowdownTrainingLoopRequest(**{**loop_payload_data, "battle_format": format_id}),
             db,
@@ -1015,6 +1046,10 @@ async def run_showdown_training_program(payload: ShowdownTrainingProgramRequest,
             "completed_chains": loop_result.get("completed_chains", 0),
             "completed_rounds": loop_result.get("total_completed_rounds", 0),
             "stop_reason": loop_result.get("stop_reason"),
+            "skipped": False,
+            "preflight_status": preflight_status,
+            "preflight_blockers": preflight_blockers,
+            "mission_preview": mission_preview,
             "final_training_health": loop_result.get("final_training_health"),
             "next_training_chain": loop_result.get("next_training_chain"),
             "loop": loop_result,
@@ -1031,7 +1066,9 @@ async def run_showdown_training_program(payload: ShowdownTrainingProgramRequest,
     return {
         "username": payload.username,
         "requested_format_limit": payload.format_limit,
-        "completed_formats": len(format_results),
+        "evaluated_formats": len(format_results),
+        "completed_formats": sum(1 for item in format_results if not item.get("skipped")),
+        "skipped_formats": sum(1 for item in format_results if item.get("skipped")),
         "total_completed_chains": sum(int(item.get("completed_chains") or 0) for item in format_results),
         "total_completed_rounds": sum(int(item.get("completed_rounds") or 0) for item in format_results),
         "stop_reason": stop_reason,
@@ -1233,6 +1270,28 @@ def _summarize_showdown_training_program_mission_previews(curriculum: list[dict[
     }
 
 
+def _resolve_showdown_training_program_preflight_blockers(mission_preview: dict[str, Any]) -> list[str]:
+    blockers: list[str] = []
+    if mission_preview.get("readiness_status") == "blocked":
+        blockers.append("live_readiness")
+    if mission_preview.get("team_audit_status") == "blocked":
+        blockers.append("team_audit")
+    return blockers
+
+
+def _resolve_showdown_training_program_preflight_status(mission_preview: dict[str, Any]) -> str:
+    if _resolve_showdown_training_program_preflight_blockers(mission_preview):
+        return "blocked"
+    unsupported_actions = [
+        *(mission_preview.get("unsupported_plan_actions") or []),
+        *(mission_preview.get("unsupported_task_actions") or []),
+        *(mission_preview.get("unsupported_policy_actions") or []),
+    ]
+    if unsupported_actions:
+        return "watch"
+    return "ready"
+
+
 def _build_showdown_training_program_plan(
     payload: ShowdownTrainingProgramRequest,
     curriculum: list[dict[str, Any]],
@@ -1291,7 +1350,7 @@ def _build_showdown_training_program_health(format_results: list[dict[str, Any]]
     blocked_formats = [
         item["format"]["id"]
         for item in format_results
-        if item.get("stop_reason") == "blocked_intervention"
+        if item.get("stop_reason") in {"blocked_intervention", "preflight_blocked"}
     ]
     error_formats = [
         item["format"]["id"]
@@ -1341,7 +1400,9 @@ def _build_showdown_training_program_health(format_results: list[dict[str, Any]]
         "error_formats": error_formats,
         "improved_formats": improved_formats,
         "declined_formats": declined_formats,
-        "trained_format_count": len(format_results),
+        "trained_format_count": sum(1 for item in format_results if not item.get("skipped")),
+        "evaluated_format_count": len(format_results),
+        "skipped_format_count": sum(1 for item in format_results if item.get("skipped")),
         "recommendation": recommendation,
     }
 

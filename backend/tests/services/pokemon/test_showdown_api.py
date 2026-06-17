@@ -1452,16 +1452,80 @@ async def test_showdown_training_program_rotates_across_formats(setup_db, db, mo
 
     assert [call.battle_format for call in calls] == ["gen9randombattle", "gen9ou"]
     assert data["completed_formats"] == 2
+    assert data["evaluated_formats"] == 2
+    assert data["skipped_formats"] == 0
     assert data["total_completed_chains"] == 4
     assert data["total_completed_rounds"] == 4
     assert data["stop_reason"] == "format_limit"
     assert data["formats"][0]["format"]["id"] == "gen9randombattle"
     assert data["formats"][1]["format"]["id"] == "gen9ou"
+    assert data["formats"][0]["preflight_status"] in {"ready", "watch", "blocked"}
+    assert data["formats"][0]["mission_preview"]["mission_goal"]
     assert data["program_health"]["status"] == "training"
     assert data["program_health"]["priority_formats"] == ["gen9randombattle", "gen9ou"]
+    assert data["program_health"]["trained_format_count"] == 2
     assert data["next_training_program"]["can_auto_continue"] is True
     assert data["next_training_program"]["request"]["formats"] == ["gen9randombattle", "gen9ou"]
     assert "login_password" not in data["next_training_program"]["request"]
+
+
+@pytest.mark.asyncio
+async def test_showdown_training_program_stops_on_preflight_blocked(setup_db, db, monkeypatch):
+    calls = []
+
+    async def fake_training_loop(payload, loop_db):
+        calls.append(payload)
+        return {"stop_reason": "chain_limit"}
+
+    async def fake_attach_previews(payload, curriculum, preview_db):
+        return [
+            {
+                **item,
+                "mission_preview": {
+                    "mission_goal": "ladder",
+                    "allowed_actions": ["connect"],
+                    "readiness_status": "blocked",
+                    "team_audit_status": "ready",
+                    "unsupported_plan_actions": [],
+                    "unsupported_task_actions": [],
+                    "unsupported_policy_actions": [],
+                    "training_task_count": 0,
+                },
+            }
+            for item in curriculum
+        ]
+
+    monkeypatch.setattr(pokemon_api, "run_showdown_training_loop", fake_training_loop)
+    monkeypatch.setattr(pokemon_api, "_attach_showdown_training_program_mission_previews", fake_attach_previews)
+
+    data = await pokemon_api.run_showdown_training_program(
+        pokemon_api.ShowdownTrainingProgramRequest(
+            username="ProgramBlockedBot",
+            battle_format="gen9randombattle",
+            formats=["gen9randombattle"],
+            format_limit=1,
+            chain_limit=2,
+            rounds=1,
+            stop_on_blocked=True,
+            send_commands=False,
+        ),
+        db,
+    )
+
+    assert calls == []
+    assert data["stop_reason"] == "preflight_blocked"
+    assert data["evaluated_formats"] == 1
+    assert data["completed_formats"] == 0
+    assert data["skipped_formats"] == 1
+    assert data["formats"][0]["skipped"] is True
+    assert data["formats"][0]["preflight_status"] == "blocked"
+    assert data["formats"][0]["preflight_blockers"] == ["live_readiness"]
+    assert data["program_health"]["status"] == "blocked"
+    assert data["program_health"]["manual_review_required"] is True
+    assert data["program_health"]["blocked_formats"] == ["gen9randombattle"]
+    assert data["program_health"]["trained_format_count"] == 0
+    assert data["program_health"]["skipped_format_count"] == 1
+    assert data["next_training_program"]["can_auto_continue"] is False
 
 
 @pytest.mark.asyncio

@@ -974,6 +974,7 @@ export default function PokemonBattlePage() {
     ['Phase 67', '多格式训练计划按 curriculum 轮转多个 Showdown 格式，汇总 program health 并生成下一轮 preset'],
     ['Phase 68', '多格式训练支持 plan 预览和 program preset 续跑，执行前能审查 curriculum、样本和格式优先级'],
     ['Phase 69', '多格式 program plan 注入首轮 mission preview，执行前展示 readiness、team audit 和可执行动作风险'],
+    ['Phase 70', '多格式训练执行前应用 preflight gate，blocked 格式会跳过并进入 program health 人工审查'],
   ];
 
   return (
@@ -1809,6 +1810,11 @@ export default function PokemonBattlePage() {
                   <Metric label="Chains" value={activeShowdownTrainingProgram.total_completed_chains || 0} compact />
                   <Metric label="Rounds" value={activeShowdownTrainingProgram.total_completed_rounds || 0} compact />
                 </div>
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  <Metric label="Checked" value={activeShowdownTrainingProgram.evaluated_formats || activeShowdownTrainingProgram.completed_formats || 0} compact />
+                  <Metric label="Skipped" value={activeShowdownTrainingProgram.skipped_formats || 0} compact />
+                  <Metric label="Blocked" value={(activeShowdownTrainingProgram.program_health?.blocked_formats || []).length} compact />
+                </div>
                 {activeShowdownTrainingProgram.program_health?.recommendation ? (
                   <div className="mt-2 break-words rounded border border-cyan-500/20 bg-black/20 p-2 text-[10px] leading-4 text-cyan-100">
                     {activeShowdownTrainingProgram.program_health.status}: {activeShowdownTrainingProgram.program_health.recommendation}
@@ -1827,10 +1833,18 @@ export default function PokemonBattlePage() {
                   <div className="mt-2 space-y-1.5">
                     {activeShowdownTrainingProgram.formats.slice(-4).map((item: any) => (
                       <div key={`program-format-${item.format?.id}`} className="flex flex-wrap items-center justify-between gap-2 rounded border border-border bg-black/20 px-2 py-1">
-                        <span className="text-gray-200">{item.format?.name_zh || item.format?.id}</span>
-                        <span className="text-[10px] text-gray-500">
-                          {item.completed_chains || 0} chain(s) · {item.stop_reason} · Δ{item.mastery_score_delta ?? '-'}
-                        </span>
+                        <div className="min-w-0">
+                          <div className="truncate text-gray-200">{item.format?.name_zh || item.format?.id}</div>
+                          <div className="mt-0.5 text-[10px] text-gray-500">
+                            preflight:{item.preflight_status || 'n/a'} · {item.skipped ? 'skipped' : `${item.completed_chains || 0} chain(s)`}
+                          </div>
+                        </div>
+                        <div className="text-right text-[10px] text-gray-500">
+                          <div>{item.stop_reason} · Δ{item.mastery_score_delta ?? '-'}</div>
+                          {item.preflight_blockers?.length ? (
+                            <div className="text-amber-100">{item.preflight_blockers.join(' / ')}</div>
+                          ) : null}
+                        </div>
                       </div>
                     ))}
                   </div>
