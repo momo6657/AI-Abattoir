@@ -1127,6 +1127,8 @@ async def run_showdown_training_program_pipeline(
 
     final_stage = stages[-1] if stages else None
     final_result = final_stage.get("result") if final_stage else None
+    pipeline_health = _build_showdown_training_program_pipeline_health(stages, stop_reason)
+    autonomous_trace = _build_showdown_training_program_autonomous_trace(stages, pipeline_health, stop_reason)
     return {
         "username": payload.username,
         "requested_stage_limit": payload.stage_limit,
@@ -1136,7 +1138,9 @@ async def run_showdown_training_program_pipeline(
         "auto_resume_after_recovery": payload.auto_resume_after_recovery,
         "stage_types": [stage["stage_type"] for stage in stages],
         "final_result": final_result,
-        "pipeline_health": _build_showdown_training_program_pipeline_health(stages, stop_reason),
+        "pipeline_health": pipeline_health,
+        "autonomous_trace": autonomous_trace,
+        "next_action": _build_showdown_training_program_pipeline_next_action(stages, pipeline_health, stop_reason),
         "stages": stages,
     }
 
@@ -1224,6 +1228,156 @@ def _build_showdown_training_program_pipeline_health(
         "resumed_after_recovery": resumed_after_recovery,
         "final_program_status": final_health.get("status"),
         "recommendation": recommendation,
+    }
+
+
+def _build_showdown_training_program_autonomous_trace(
+    stages: list[dict[str, Any]],
+    pipeline_health: dict[str, Any],
+    stop_reason: str,
+) -> list[dict[str, Any]]:
+    trace = []
+    for index, stage in enumerate(stages):
+        result = stage.get("result") or {}
+        health = result.get("program_health") or {}
+        next_stage = stages[index + 1] if index + 1 < len(stages) else None
+        next_training_program = result.get("next_training_program") or {}
+        decision = _build_showdown_training_program_stage_decision(
+            health=health,
+            next_stage_type=str(next_stage.get("stage_type")) if next_stage else None,
+            next_training_program=next_training_program,
+            is_final_stage=next_stage is None,
+            pipeline_health=pipeline_health,
+            stop_reason=stop_reason,
+        )
+        trace.append(
+            {
+                "stage_index": stage.get("stage_index"),
+                "stage_type": stage.get("stage_type"),
+                "program_status": health.get("status"),
+                "manual_review_required": bool(health.get("manual_review_required")),
+                "stop_reason": result.get("stop_reason"),
+                "completed_formats": result.get("completed_formats", 0),
+                "skipped_formats": result.get("skipped_formats", 0),
+                "priority_formats": health.get("priority_formats") or [],
+                "blocked_formats": health.get("blocked_formats") or [],
+                "decision": decision,
+            }
+        )
+    return trace
+
+
+def _build_showdown_training_program_stage_decision(
+    *,
+    health: dict[str, Any],
+    next_stage_type: str | None,
+    next_training_program: dict[str, Any],
+    is_final_stage: bool,
+    pipeline_health: dict[str, Any],
+    stop_reason: str,
+) -> dict[str, Any]:
+    if next_stage_type == "recovery":
+        return {
+            "action": "auto_recover",
+            "reason": "Blocked preflight produced a recovery preset and auto recovery is enabled.",
+        }
+    if next_stage_type == "after_recovery":
+        return {
+            "action": "auto_resume_after_recovery",
+            "reason": "Recovery completed and the saved after-recovery request can resume the curriculum.",
+        }
+    if bool(health.get("manual_review_required")):
+        return {
+            "action": "manual_review",
+            "reason": health.get("recommendation") or "The final stage still requires operator review.",
+        }
+    if is_final_stage and next_training_program.get("request"):
+        return {
+            "action": "ready_for_next_program",
+            "reason": "The final stage generated a safe next training request.",
+        }
+    if is_final_stage and stop_reason == "stage_limit":
+        return {
+            "action": "stage_limit_reached",
+            "reason": "The bounded pipeline stopped at stage_limit before exhausting follow-up work.",
+        }
+    if pipeline_health.get("status") in {"resumed", "complete"}:
+        return {
+            "action": "complete",
+            "reason": pipeline_health.get("recommendation") or "The autonomous pipeline completed available stages.",
+        }
+    return {
+        "action": "observe",
+        "reason": health.get("recommendation") or "No additional autonomous stage was selected.",
+    }
+
+
+def _build_showdown_training_program_pipeline_next_action(
+    stages: list[dict[str, Any]],
+    pipeline_health: dict[str, Any],
+    stop_reason: str,
+) -> dict[str, Any]:
+    if not stages:
+        return {
+            "type": "idle",
+            "label": "No training stages executed.",
+            "requires_operator": False,
+            "request": None,
+        }
+    final_result = stages[-1].get("result") or {}
+    final_health = final_result.get("program_health") or {}
+    next_training_program = final_result.get("next_training_program") or {}
+    if pipeline_health.get("manual_review_required") or final_health.get("manual_review_required"):
+        return {
+            "type": "manual_review",
+            "label": "Inspect the blocked stage before continuing automation.",
+            "requires_operator": True,
+            "request": None,
+            "blocked_formats": final_health.get("blocked_formats") or [],
+        }
+    if next_training_program.get("recovery_request"):
+        return {
+            "type": "run_recovery_preset",
+            "label": "Run the generated recovery preset.",
+            "requires_operator": False,
+            "request": _sanitize_showdown_training_program_request(next_training_program.get("recovery_request")),
+        }
+    if next_training_program.get("after_recovery_request"):
+        return {
+            "type": "resume_after_recovery",
+            "label": "Resume the saved multi-format curriculum.",
+            "requires_operator": False,
+            "request": _sanitize_showdown_training_program_request(next_training_program.get("after_recovery_request")),
+        }
+    if next_training_program.get("request"):
+        return {
+            "type": "run_next_program",
+            "label": "Continue with the generated next training request.",
+            "requires_operator": False,
+            "request": _sanitize_showdown_training_program_request(next_training_program.get("request")),
+        }
+    if stop_reason == "stage_limit":
+        return {
+            "type": "increase_stage_limit_or_review",
+            "label": "Stage limit reached; review results or run another bounded pipeline.",
+            "requires_operator": False,
+            "request": None,
+        }
+    return {
+        "type": "complete",
+        "label": "No immediate follow-up action is required.",
+        "requires_operator": False,
+        "request": None,
+    }
+
+
+def _sanitize_showdown_training_program_request(request: Any) -> dict[str, Any] | None:
+    if not isinstance(request, dict):
+        return None
+    return {
+        key: value
+        for key, value in request.items()
+        if key not in {"login_assertion", "login_password"}
     }
 
 

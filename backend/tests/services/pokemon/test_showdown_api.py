@@ -1626,6 +1626,11 @@ async def test_showdown_training_program_pipeline_recovers_and_resumes(setup_db,
     assert data["pipeline_health"]["status"] == "resumed"
     assert data["pipeline_health"]["recovered"] is True
     assert data["pipeline_health"]["resumed_after_recovery"] is True
+    assert data["autonomous_trace"][0]["decision"]["action"] == "auto_recover"
+    assert data["autonomous_trace"][1]["decision"]["action"] == "auto_resume_after_recovery"
+    assert data["autonomous_trace"][2]["decision"]["action"] == "complete"
+    assert data["next_action"]["type"] == "complete"
+    assert data["next_action"]["requires_operator"] is False
     assert "login_password" not in data["stages"][0]["request"]
     assert data["final_result"]["program_health"]["status"] == "training"
 

@@ -1010,6 +1010,7 @@ export default function PokemonBattlePage() {
     ['Phase 71', 'preflight blocked 时生成 recovery program preset，先恢复 readiness/team audit 再继续多格式训练'],
     ['Phase 72', 'recovery preset 同时生成恢复后续跑请求，blocked 格式修复后可回到原多格式 curriculum'],
     ['Phase 73', '多格式训练 pipeline 自动串联 program、recovery 和恢复后续跑阶段，减少人工连续点击'],
+    ['Phase 74', 'pipeline 输出 autonomous trace 和 next action，让无人值守训练调度器能直接判断继续、恢复或人工审查'],
   ];
 
   return (
@@ -1839,9 +1840,44 @@ export default function PokemonBattlePage() {
                   <Metric label="Blocked" value={activeShowdownTrainingProgramPipeline.pipeline_health?.blocked_stage_count || 0} compact />
                   <Metric label="Resumed" value={activeShowdownTrainingProgramPipeline.pipeline_health?.resumed_after_recovery ? 'yes' : 'no'} compact />
                 </div>
+                {activeShowdownTrainingProgramPipeline.next_action ? (
+                  <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                    <div className="rounded border border-violet-500/20 bg-black/20 p-2">
+                      <div className="text-[10px] uppercase text-violet-200">Next action</div>
+                      <div className="mt-0.5 break-words text-[11px] font-semibold text-white">
+                        {activeShowdownTrainingProgramPipeline.next_action.type || 'complete'}
+                      </div>
+                      <div className="mt-1 break-words text-[10px] leading-4 text-violet-100">
+                        {activeShowdownTrainingProgramPipeline.next_action.label || 'No immediate follow-up action is required.'}
+                      </div>
+                    </div>
+                    <div className={`rounded border px-2 py-1 text-center text-[10px] font-semibold uppercase ${activeShowdownTrainingProgramPipeline.next_action.requires_operator ? 'border-amber-400/40 bg-amber-400/10 text-amber-100' : 'border-emerald-400/40 bg-emerald-400/10 text-emerald-100'}`}>
+                      {activeShowdownTrainingProgramPipeline.next_action.requires_operator ? 'review' : 'auto'}
+                    </div>
+                  </div>
+                ) : null}
                 {activeShowdownTrainingProgramPipeline.pipeline_health?.recommendation ? (
                   <div className="mt-2 break-words rounded border border-violet-500/20 bg-black/20 p-2 text-[10px] leading-4 text-violet-100">
                     {activeShowdownTrainingProgramPipeline.pipeline_health.recommendation}
+                  </div>
+                ) : null}
+                {activeShowdownTrainingProgramPipeline.autonomous_trace?.length ? (
+                  <div className="mt-2 space-y-1">
+                    {activeShowdownTrainingProgramPipeline.autonomous_trace.map((trace: any) => (
+                      <div key={`program-pipeline-trace-${trace.stage_index}-${trace.stage_type}`} className="grid gap-1 rounded border border-violet-500/20 bg-black/20 p-2 sm:grid-cols-[72px_minmax(0,1fr)]">
+                        <div className="text-[10px] font-semibold uppercase text-violet-200">
+                          {trace.stage_index}:{trace.stage_type}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="break-words text-[10px] font-semibold text-white">
+                            {trace.decision?.action || 'observe'} · {trace.program_status || trace.stop_reason || 'unknown'}
+                          </div>
+                          <div className="mt-0.5 break-words text-[10px] leading-4 text-violet-100">
+                            {trace.decision?.reason || 'No additional autonomous stage was selected.'}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 ) : null}
                 {activeShowdownTrainingProgramPipeline.stage_types?.length ? (
