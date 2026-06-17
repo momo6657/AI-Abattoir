@@ -1465,6 +1465,7 @@ async def test_showdown_training_program_rotates_across_formats(setup_db, db, mo
     assert data["program_health"]["priority_formats"] == ["gen9randombattle", "gen9ou"]
     assert data["program_health"]["trained_format_count"] == 2
     assert data["next_training_program"]["can_auto_continue"] is True
+    assert data["next_training_program"]["can_auto_recover"] is False
     assert data["next_training_program"]["request"]["formats"] == ["gen9randombattle", "gen9ou"]
     assert "login_password" not in data["next_training_program"]["request"]
 
@@ -1525,7 +1526,19 @@ async def test_showdown_training_program_stops_on_preflight_blocked(setup_db, db
     assert data["program_health"]["blocked_formats"] == ["gen9randombattle"]
     assert data["program_health"]["trained_format_count"] == 0
     assert data["program_health"]["skipped_format_count"] == 1
+    assert data["program_health"]["recovery_formats"] == ["gen9randombattle"]
+    assert data["program_health"]["recovery_actions"] == ["connect"]
     assert data["next_training_program"]["can_auto_continue"] is False
+    assert data["next_training_program"]["can_auto_recover"] is True
+    assert data["next_training_program"]["recovery_formats"] == ["gen9randombattle"]
+    assert data["next_training_program"]["recovery_actions"] == ["connect"]
+    assert data["next_training_program"]["recovery_request"]["formats"] == ["gen9randombattle"]
+    assert data["next_training_program"]["recovery_request"]["battle_format"] == "gen9randombattle"
+    assert data["next_training_program"]["recovery_request"]["chain_limit"] == 1
+    assert data["next_training_program"]["recovery_request"]["rounds"] == 1
+    assert data["next_training_program"]["recovery_request"]["allowed_actions"] == ["connect"]
+    assert data["next_training_program"]["recovery_request"]["stop_on_blocked"] is False
+    assert "login_password" not in data["next_training_program"]["recovery_request"]
 
 
 @pytest.mark.asyncio

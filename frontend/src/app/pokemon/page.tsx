@@ -975,6 +975,7 @@ export default function PokemonBattlePage() {
     ['Phase 68', '多格式训练支持 plan 预览和 program preset 续跑，执行前能审查 curriculum、样本和格式优先级'],
     ['Phase 69', '多格式 program plan 注入首轮 mission preview，执行前展示 readiness、team audit 和可执行动作风险'],
     ['Phase 70', '多格式训练执行前应用 preflight gate，blocked 格式会跳过并进入 program health 人工审查'],
+    ['Phase 71', 'preflight blocked 时生成 recovery program preset，先恢复 readiness/team audit 再继续多格式训练'],
   ];
 
   return (
@@ -1805,6 +1806,15 @@ export default function PokemonBattlePage() {
                     继续 program preset
                   </button>
                 ) : null}
+                {activeShowdownTrainingProgram.next_training_program?.recovery_request ? (
+                  <button
+                    onClick={() => runShowdownTrainingProgram(activeShowdownTrainingProgram.next_training_program.recovery_request)}
+                    disabled={busy}
+                    className="mb-2 w-full rounded border border-amber-500/30 bg-amber-500/15 px-2 py-1.5 text-[10px] font-semibold text-amber-100 transition hover:bg-amber-500/25 disabled:opacity-50"
+                  >
+                    恢复 program preset
+                  </button>
+                ) : null}
                 <div className="grid grid-cols-3 gap-2">
                   <Metric label="Formats" value={activeShowdownTrainingProgram.completed_formats || 0} compact />
                   <Metric label="Chains" value={activeShowdownTrainingProgram.total_completed_chains || 0} compact />
@@ -1825,6 +1835,20 @@ export default function PokemonBattlePage() {
                     {activeShowdownTrainingProgram.next_training_program.formats.map((formatId: string) => (
                       <span key={`program-next-${formatId}`} className="rounded border border-cyan-500/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-cyan-100">
                         next:{formatId}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {activeShowdownTrainingProgram.next_training_program?.recovery_formats?.length ? (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {activeShowdownTrainingProgram.next_training_program.recovery_formats.map((formatId: string) => (
+                      <span key={`program-recovery-${formatId}`} className="rounded border border-amber-500/30 bg-black/20 px-1.5 py-0.5 text-[10px] text-amber-100">
+                        recover:{formatId}
+                      </span>
+                    ))}
+                    {(activeShowdownTrainingProgram.next_training_program.recovery_actions || []).map((action: string) => (
+                      <span key={`program-recovery-action-${action}`} className="rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-100">
+                        {action}
                       </span>
                     ))}
                   </div>

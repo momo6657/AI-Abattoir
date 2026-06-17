@@ -1292,6 +1292,37 @@ def _resolve_showdown_training_program_preflight_status(mission_preview: dict[st
     return "ready"
 
 
+def _build_showdown_training_program_recovery_entries(format_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    for item in format_results:
+        if item.get("stop_reason") != "preflight_blocked":
+            continue
+        preview = item.get("mission_preview") or {}
+        blockers = [str(blocker) for blocker in item.get("preflight_blockers") or [] if str(blocker)]
+        actions: list[str] = []
+        if "live_readiness" in blockers:
+            actions.extend(preview.get("readiness_actions") or [])
+        if "team_audit" in blockers:
+            actions.extend(preview.get("team_audit_actions") or [])
+        if not actions:
+            actions.extend(preview.get("allowed_actions") or [])
+        if not actions and "team_audit" in blockers:
+            actions.append("research_team")
+        actions = list(dict.fromkeys(str(action) for action in actions if str(action)))
+        if not actions:
+            actions = ["research_team"]
+        entries.append(
+            {
+                "format": item["format"]["id"],
+                "blockers": blockers,
+                "actions": actions,
+                "mission_goal": preview.get("mission_goal") or "auto",
+                "reason": "Recover blocked readiness or team audit before resuming the multi-format program.",
+            }
+        )
+    return entries
+
+
 def _build_showdown_training_program_plan(
     payload: ShowdownTrainingProgramRequest,
     curriculum: list[dict[str, Any]],
@@ -1344,6 +1375,9 @@ def _build_showdown_training_program_health(format_results: list[dict[str, Any]]
             "error_formats": [],
             "improved_formats": [],
             "declined_formats": [],
+            "recovery_formats": [],
+            "recovery_actions": [],
+            "recovery_entries": [],
             "recommendation": "No formats were selected for training.",
         }
 
@@ -1379,12 +1413,24 @@ def _build_showdown_training_program_health(format_results: list[dict[str, Any]]
     ]
 
     manual_review_required = bool(blocked_formats or error_formats)
+    recovery_entries = _build_showdown_training_program_recovery_entries(format_results)
+    recovery_actions = list(
+        dict.fromkeys(
+            action
+            for entry in recovery_entries
+            for action in entry.get("actions") or []
+        )
+    )
+    recovery_formats = [entry["format"] for entry in recovery_entries]
     if error_formats:
         status = "error"
         recommendation = "Resolve format errors before continuing the multi-format training program."
     elif blocked_formats:
         status = "blocked"
-        recommendation = "Review blocked formats, then resume the generated training program preset."
+        if recovery_entries:
+            recommendation = "Run the generated recovery preset for blocked formats, then resume multi-format training."
+        else:
+            recommendation = "Review blocked formats, then resume the generated training program preset."
     elif declined_formats:
         status = "watch"
         recommendation = "Continue the curriculum, but inspect declined formats for policy or team regressions."
@@ -1400,6 +1446,9 @@ def _build_showdown_training_program_health(format_results: list[dict[str, Any]]
         "error_formats": error_formats,
         "improved_formats": improved_formats,
         "declined_formats": declined_formats,
+        "recovery_formats": recovery_formats,
+        "recovery_actions": recovery_actions,
+        "recovery_entries": recovery_entries,
         "trained_format_count": sum(1 for item in format_results if not item.get("skipped")),
         "evaluated_format_count": len(format_results),
         "skipped_format_count": sum(1 for item in format_results if item.get("skipped")),
@@ -1418,11 +1467,37 @@ def _build_showdown_next_training_program(
         request = payload.model_dump(exclude={"login_assertion", "login_password"})
         request["formats"] = priority_formats
         request["battle_format"] = priority_formats[0]
+    recovery_entries = list(program_health.get("recovery_entries") or [])
+    recovery_formats = [entry["format"] for entry in recovery_entries][:payload.format_limit]
+    recovery_actions = list(
+        dict.fromkeys(
+            action
+            for entry in recovery_entries
+            for action in entry.get("actions") or []
+        )
+    )
+    recovery_request = None
+    if recovery_formats and recovery_actions:
+        recovery_request = payload.model_dump(exclude={"login_assertion", "login_password"})
+        recovery_request["formats"] = recovery_formats
+        recovery_request["battle_format"] = recovery_formats[0]
+        recovery_request["format_limit"] = len(recovery_formats)
+        recovery_request["chain_limit"] = 1
+        recovery_request["rounds"] = 1
+        recovery_request["mission_goal"] = "auto"
+        recovery_request["allowed_actions"] = recovery_actions
+        recovery_request["stop_on_blocked"] = False
+        recovery_request["stop_on_no_progress"] = False
     return {
         "can_auto_continue": can_auto_continue,
+        "can_auto_recover": bool(recovery_request),
         "formats": priority_formats,
         "blocked_formats": program_health.get("blocked_formats") or [],
         "error_formats": program_health.get("error_formats") or [],
+        "recovery_formats": recovery_formats,
+        "recovery_actions": recovery_actions,
+        "recovery_entries": recovery_entries,
+        "recovery_request": recovery_request,
         "request": request,
     }
 
