@@ -1488,9 +1488,19 @@ def _build_showdown_next_training_program(
         recovery_request["allowed_actions"] = recovery_actions
         recovery_request["stop_on_blocked"] = False
         recovery_request["stop_on_no_progress"] = False
+    original_formats = payload.formats or [payload.battle_format]
+    after_recovery_formats = list(dict.fromkeys([*recovery_formats, *original_formats]))[:payload.format_limit]
+    after_recovery_request = None
+    if recovery_formats and after_recovery_formats:
+        after_recovery_request = payload.model_dump(exclude={"login_assertion", "login_password"})
+        after_recovery_request["formats"] = after_recovery_formats
+        after_recovery_request["battle_format"] = after_recovery_formats[0]
+        after_recovery_request["format_limit"] = len(after_recovery_formats)
+        after_recovery_request["stop_on_blocked"] = True
     return {
         "can_auto_continue": can_auto_continue,
         "can_auto_recover": bool(recovery_request),
+        "can_resume_after_recovery": bool(after_recovery_request),
         "formats": priority_formats,
         "blocked_formats": program_health.get("blocked_formats") or [],
         "error_formats": program_health.get("error_formats") or [],
@@ -1498,6 +1508,8 @@ def _build_showdown_next_training_program(
         "recovery_actions": recovery_actions,
         "recovery_entries": recovery_entries,
         "recovery_request": recovery_request,
+        "after_recovery_formats": after_recovery_formats,
+        "after_recovery_request": after_recovery_request,
         "request": request,
     }
 
