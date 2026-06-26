@@ -160,6 +160,12 @@ export const pokemonApi = {
     api.get("/pokemon/battles/history", {
       params: agentId ? { limit, agent_id: agentId } : { limit },
     }),
+  getBattleReplays: (agentId?: string, limit = 10) =>
+    api.get("/pokemon/battles/replays", {
+      params: agentId ? { agent_id: agentId, limit } : { limit },
+    }),
+  getBattleReplay: (battleId: string) =>
+    api.get(`/pokemon/battles/${battleId}/replay`),
   knowledgeSearch: (queryType: string, queryKey: string, maxResults = 5) =>
     api.get("/pokemon/knowledge/search", {
       params: { query_type: queryType, query_key: queryKey, max_results: maxResults },

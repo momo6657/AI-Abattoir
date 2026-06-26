@@ -206,6 +206,34 @@ async def get_battle_history(
     return list(result.scalars().all())
 
 
+@router.get("/battles/replays")
+async def get_battle_replays(
+    agent_id: UUID | None = None,
+    limit: int = 10,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get recent battle replays with turn-by-turn event data."""
+    from app.services.pokemon.battle_replay import pokemon_battle_replay_service
+
+    return await pokemon_battle_replay_service.get_recent_replays(
+        db, agent_id=agent_id, limit=limit
+    )
+
+
+@router.get("/battles/{battle_id}/replay")
+async def get_battle_replay(
+    battle_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get full turn-by-turn replay for a specific battle."""
+    from app.services.pokemon.battle_replay import pokemon_battle_replay_service
+
+    replay = await pokemon_battle_replay_service.get_battle_replay(db, battle_id)
+    if not replay:
+        raise HTTPException(status_code=404, detail="Battle not found or has no replay data")
+    return replay
+
+
 # Battle endpoints
 @router.post("/battles", response_model=BattleResponse, status_code=status.HTTP_201_CREATED)
 async def create_battle(
