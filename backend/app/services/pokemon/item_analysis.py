@@ -197,7 +197,7 @@ class PokemonItemAnalysis:
 
         return filtered[:5]
 
-    def get_popular_items(
+    async def get_popular_items(
         self,
         db: AsyncSession,
         battle_format: str | None = None,
