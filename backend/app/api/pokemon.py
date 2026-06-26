@@ -70,6 +70,66 @@ async def init_pokemon_data(db: AsyncSession = Depends(get_db)):
     }
 
 
+# Dashboard endpoint
+@router.get("/dashboard")
+async def get_pokemon_dashboard(
+    username: str = "PokemonBot",
+    db: AsyncSession = Depends(get_db),
+):
+    """Get comprehensive Pokemon module overview in a single call."""
+    from app.services.pokemon.elo_rating import elo_rating_service
+
+    # Species count
+    species_result = await db.execute(select(PokemonSpecies))
+    species_count = len(list(species_result.scalars().all()))
+
+    # Moves count
+    moves_result = await db.execute(select(PokemonMove))
+    moves_count = len(list(moves_result.scalars().all()))
+
+    # Recent battles
+    battles_result = await db.execute(
+        select(PokemonBattle).order_by(PokemonBattle.created_at.desc()).limit(5)
+    )
+    recent_battles = [
+        {
+            "id": str(b.id),
+            "format": b.battle_format,
+            "turns": b.turns,
+            "winner": str(b.winner) if b.winner else None,
+            "created_at": b.created_at.isoformat() if b.created_at else None,
+        }
+        for b in battles_result.scalars().all()
+    ]
+
+    # Top players
+    leaderboard = await elo_rating_service.get_pokemon_leaderboard(db, limit=5)
+
+    # Format capabilities
+    capabilities = []
+    for format_info in pokemon_format_catalog.list_formats():
+        learning_profile = await pokemon_showdown_learning_store.profile(
+            db, username=username, battle_format=format_info.id
+        )
+        capabilities.append({
+            "format_id": format_info.id,
+            "format_name": format_info.name_zh or format_info.name,
+            "showdown_format": format_info.showdown_format,
+            "battle_type": format_info.battle_type,
+            "has_team_template": format_info.template_format is not None,
+            "battles": learning_profile.battles if learning_profile else 0,
+            "wins": learning_profile.wins if learning_profile else 0,
+        })
+
+    return {
+        "species_count": species_count,
+        "moves_count": moves_count,
+        "recent_battles": recent_battles,
+        "leaderboard": leaderboard,
+        "formats": capabilities,
+    }
+
+
 # Species endpoints
 @router.get("/formats")
 async def list_pokemon_formats():
