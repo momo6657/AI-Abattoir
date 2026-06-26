@@ -190,6 +190,12 @@ export const pokemonApi = {
     }),
   getAgentPokemonRating: (agentId: string) =>
     api.get(`/pokemon/agent/${agentId}/rating`),
+  getAgentPokemonStats: (agentId: string) =>
+    api.get(`/pokemon/agent/${agentId}/stats`),
+  getGlobalPokemonStats: () =>
+    api.get("/pokemon/stats/global"),
+  getFormatPokemonStats: (battleFormat: string) =>
+    api.get(`/pokemon/stats/format/${battleFormat}`),
   listShowdownFormatCapabilities: (username = "PokemonBot", includeLearning = true) =>
     api.get("/pokemon/showdown/formats/capabilities", {
       params: { username, include_learning: includeLearning },

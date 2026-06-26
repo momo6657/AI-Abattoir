@@ -3883,6 +3883,41 @@ async def get_agent_pokemon_rating(
     }
 
 
+@router.get("/agent/{agent_id}/stats")
+async def get_agent_pokemon_stats(
+    agent_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get comprehensive Pokemon battle stats for an agent."""
+    from app.services.pokemon.stats_tracker import pokemon_stats_tracker
+
+    stats = await pokemon_stats_tracker.get_agent_stats(db, agent_id)
+    if "error" in stats:
+        raise HTTPException(status_code=404, detail=stats["error"])
+    return stats
+
+
+@router.get("/stats/global")
+async def get_pokemon_global_stats(
+    db: AsyncSession = Depends(get_db),
+):
+    """Get global Pokemon battle statistics."""
+    from app.services.pokemon.stats_tracker import pokemon_stats_tracker
+
+    return await pokemon_stats_tracker.get_global_stats(db)
+
+
+@router.get("/stats/format/{battle_format}")
+async def get_pokemon_format_stats(
+    battle_format: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get stats for a specific Pokemon battle format."""
+    from app.services.pokemon.stats_tracker import pokemon_stats_tracker
+
+    return await pokemon_stats_tracker.get_format_stats(db, battle_format)
+
+
 @router.get("/showdown/formats/capabilities")
 async def list_showdown_format_capabilities(
     username: str = "PokemonBot",
