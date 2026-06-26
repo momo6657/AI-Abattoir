@@ -196,6 +196,12 @@ export const pokemonApi = {
     api.get("/pokemon/stats/global"),
   getFormatPokemonStats: (battleFormat: string) =>
     api.get(`/pokemon/stats/format/${battleFormat}`),
+  getSpeciesUsageStats: (battleFormat?: string, limit = 20) =>
+    api.get("/pokemon/stats/species", {
+      params: battleFormat ? { battle_format: battleFormat, limit } : { limit },
+    }),
+  getSpeciesPerformance: (speciesName: string) =>
+    api.get(`/pokemon/stats/species/${encodeURIComponent(speciesName)}`),
   listShowdownFormatCapabilities: (username = "PokemonBot", includeLearning = true) =>
     api.get("/pokemon/showdown/formats/capabilities", {
       params: { username, include_learning: includeLearning },

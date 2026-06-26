@@ -3918,6 +3918,33 @@ async def get_pokemon_format_stats(
     return await pokemon_stats_tracker.get_format_stats(db, battle_format)
 
 
+@router.get("/stats/species")
+async def get_species_usage_stats(
+    battle_format: str | None = None,
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get Pokemon species usage and win rate statistics."""
+    from app.services.pokemon.species_stats import pokemon_species_stats
+
+    if limit < 1 or limit > 50:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 50.")
+    return await pokemon_species_stats.get_species_usage(
+        db, battle_format=battle_format, limit=limit
+    )
+
+
+@router.get("/stats/species/{species_name}")
+async def get_species_performance(
+    species_name: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get detailed performance stats for a specific Pokemon species."""
+    from app.services.pokemon.species_stats import pokemon_species_stats
+
+    return await pokemon_species_stats.get_species_performance(db, species_name)
+
+
 @router.get("/showdown/formats/capabilities")
 async def list_showdown_format_capabilities(
     username: str = "PokemonBot",
