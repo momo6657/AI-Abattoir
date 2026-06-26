@@ -204,6 +204,15 @@ export const pokemonApi = {
     api.get(`/pokemon/stats/species/${encodeURIComponent(speciesName)}`),
   analyzeTeam: (teamId: string) =>
     api.get(`/pokemon/teams/${teamId}/analysis`),
+  predictBattle: (player1AgentId: string, player2AgentId: string, player1TeamId?: string, player2TeamId?: string) =>
+    api.post("/pokemon/battles/predict", null, {
+      params: {
+        player1_agent_id: player1AgentId,
+        player2_agent_id: player2AgentId,
+        ...(player1TeamId ? { player1_team_id: player1TeamId } : {}),
+        ...(player2TeamId ? { player2_team_id: player2TeamId } : {}),
+      },
+    }),
   listShowdownFormatCapabilities: (username = "PokemonBot", includeLearning = true) =>
     api.get("/pokemon/showdown/formats/capabilities", {
       params: { username, include_learning: includeLearning },

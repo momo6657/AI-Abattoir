@@ -315,6 +315,26 @@ async def get_battle_replay(
     return replay
 
 
+@router.post("/battles/predict")
+async def predict_battle_outcome(
+    player1_agent_id: UUID,
+    player2_agent_id: UUID,
+    player1_team_id: UUID | None = None,
+    player2_team_id: UUID | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Predict the outcome of a battle between two agents."""
+    from app.services.pokemon.battle_prediction import pokemon_battle_prediction
+
+    prediction = await pokemon_battle_prediction.predict_battle(
+        db, player1_agent_id, player2_agent_id,
+        player1_team_id, player2_team_id
+    )
+    if "error" in prediction:
+        raise HTTPException(status_code=404, detail=prediction["error"])
+    return prediction
+
+
 # Battle endpoints
 @router.post("/battles", response_model=BattleResponse, status_code=status.HTTP_201_CREATED)
 async def create_battle(
