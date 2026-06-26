@@ -30,6 +30,7 @@ from app.schemas.pokemon import (
     ShowdownSessionSupervisorRequest,
     ShowdownTrainingChainRequest,
     ShowdownTrainingLoopRequest,
+    ShowdownTrainingProgramAutopilotRequest,
     ShowdownTrainingProgramPipelineRequest,
     ShowdownTrainingProgramRequest,
 )
@@ -1145,6 +1146,60 @@ async def run_showdown_training_program_pipeline(
     }
 
 
+@router.post("/showdown/training-program/autopilot")
+async def run_showdown_training_program_autopilot(
+    payload: ShowdownTrainingProgramAutopilotRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Run repeated bounded training pipelines by consuming next_action requests."""
+    _validate_showdown_training_program_payload(payload)
+    if payload.stage_limit < 1 or payload.stage_limit > 5:
+        raise HTTPException(status_code=400, detail="stage_limit must be between 1 and 5.")
+    if payload.cycle_limit < 1 or payload.cycle_limit > 5:
+        raise HTTPException(status_code=400, detail="cycle_limit must be between 1 and 5.")
+
+    current_payload = _build_showdown_training_program_pipeline_request_from_autopilot(payload)
+    cycles: list[dict[str, Any]] = []
+    stop_reason = "cycle_limit"
+
+    for index in range(payload.cycle_limit):
+        result = await run_showdown_training_program_pipeline(current_payload, db)
+        next_action = result.get("next_action") or {}
+        cycles.append(
+            {
+                "cycle_index": index + 1,
+                "request": current_payload.model_dump(exclude={"login_assertion", "login_password"}),
+                "result": result,
+                "next_action": next_action,
+            }
+        )
+        if payload.stop_on_manual_review and next_action.get("requires_operator"):
+            stop_reason = "manual_review_required"
+            break
+        next_request = next_action.get("request")
+        if not next_request:
+            stop_reason = str(next_action.get("type") or "complete")
+            break
+        current_payload = ShowdownTrainingProgramPipelineRequest(
+            **{
+                **next_request,
+                "stage_limit": payload.stage_limit,
+                "auto_recover": payload.auto_recover,
+                "auto_resume_after_recovery": payload.auto_resume_after_recovery,
+            }
+        )
+
+    return {
+        "username": payload.username,
+        "requested_cycle_limit": payload.cycle_limit,
+        "completed_cycles": len(cycles),
+        "stop_reason": stop_reason,
+        "final_result": cycles[-1]["result"] if cycles else None,
+        "autopilot_health": _build_showdown_training_program_autopilot_health(cycles, stop_reason),
+        "cycles": cycles,
+    }
+
+
 @router.post("/showdown/training-program/plan")
 async def plan_showdown_training_program(payload: ShowdownTrainingProgramRequest, db: AsyncSession = Depends(get_db)):
     """Preview the multi-format training curriculum without running battles."""
@@ -1182,6 +1237,67 @@ def _build_showdown_training_program_request_from_pipeline(
             }
         )
     )
+
+
+def _build_showdown_training_program_pipeline_request_from_autopilot(
+    payload: ShowdownTrainingProgramAutopilotRequest,
+) -> ShowdownTrainingProgramPipelineRequest:
+    return ShowdownTrainingProgramPipelineRequest(
+        **payload.model_dump(
+            exclude={
+                "cycle_limit",
+                "stop_on_manual_review",
+            }
+        )
+    )
+
+
+def _build_showdown_training_program_autopilot_health(
+    cycles: list[dict[str, Any]],
+    stop_reason: str,
+) -> dict[str, Any]:
+    if not cycles:
+        return {
+            "status": "empty",
+            "requires_operator": False,
+            "total_stages": 0,
+            "total_completed_rounds": 0,
+            "recommendation": "No autopilot cycles were executed.",
+        }
+    final_result = cycles[-1].get("result") or {}
+    final_next_action = cycles[-1].get("next_action") or {}
+    total_stages = sum(int((cycle.get("result") or {}).get("completed_stages") or 0) for cycle in cycles)
+    total_completed_rounds = sum(
+        int(((cycle.get("result") or {}).get("final_result") or {}).get("total_completed_rounds") or 0)
+        for cycle in cycles
+    )
+    requires_operator = bool(final_next_action.get("requires_operator"))
+    if requires_operator:
+        status = "manual_review"
+        recommendation = str(final_next_action.get("label") or "Inspect the latest cycle before continuing.")
+    elif stop_reason == "cycle_limit":
+        status = "budget_exhausted"
+        recommendation = "Cycle limit reached; review the autopilot trace before extending the training budget."
+    elif stop_reason == "complete":
+        status = "complete"
+        recommendation = "Autopilot completed all immediately available training work."
+    else:
+        status = "stopped"
+        recommendation = str(final_next_action.get("label") or "Autopilot stopped after the latest pipeline decision.")
+    return {
+        "status": status,
+        "requires_operator": requires_operator,
+        "total_cycles": len(cycles),
+        "total_stages": total_stages,
+        "total_completed_rounds": total_completed_rounds,
+        "final_next_action_type": final_next_action.get("type"),
+        "recommendation": recommendation,
+        "stage_types": [
+            stage_type
+            for cycle in cycles
+            for stage_type in ((cycle.get("result") or {}).get("stage_types") or [])
+        ],
+    }
 
 
 def _build_showdown_training_program_pipeline_health(

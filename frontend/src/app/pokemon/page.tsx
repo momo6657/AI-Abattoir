@@ -102,6 +102,7 @@ export default function PokemonBattlePage() {
   const [showdownTrainingProgramPlan, setShowdownTrainingProgramPlan] = useState<any>(null);
   const [showdownTrainingProgram, setShowdownTrainingProgram] = useState<any>(null);
   const [showdownTrainingProgramPipeline, setShowdownTrainingProgramPipeline] = useState<any>(null);
+  const [showdownTrainingProgramAutopilot, setShowdownTrainingProgramAutopilot] = useState<any>(null);
   const [showdownPlan, setShowdownPlan] = useState<any>(null);
   const [showdownSession, setShowdownSession] = useState<any>(null);
   const [showdownAnalysis, setShowdownAnalysis] = useState<any>(null);
@@ -143,6 +144,7 @@ export default function PokemonBattlePage() {
   const activeShowdownTrainingProgramPlan = showdownTrainingProgramPlan || null;
   const activeShowdownTrainingProgram = showdownTrainingProgram || null;
   const activeShowdownTrainingProgramPipeline = showdownTrainingProgramPipeline || null;
+  const activeShowdownTrainingProgramAutopilot = showdownTrainingProgramAutopilot || null;
   const activeTrainingChainTrend = showdownSession?.training_chain_trend || showdownTrainingChain?.final_session?.training_chain_trend || null;
   const activeLiveReadiness = showdownSession?.live_readiness || null;
 
@@ -177,6 +179,7 @@ export default function PokemonBattlePage() {
     setShowdownTrainingProgramPlan(null);
     setShowdownTrainingProgram(null);
     setShowdownTrainingProgramPipeline(null);
+    setShowdownTrainingProgramAutopilot(null);
     setShowdownRunSummary(null);
     setShowdownTeamKnowledge([]);
     setShowdownTeamKnowledgeSummary(null);
@@ -630,6 +633,38 @@ export default function PokemonBattlePage() {
     }
   }
 
+  async function runShowdownTrainingProgramAutopilot(plannedRequest?: Record<string, unknown>) {
+    setBusy(true);
+    setError(null);
+    try {
+      resetShowdownState();
+      const response = (await pokemonApi.runShowdownTrainingProgramAutopilot(buildShowdownProgramPayload({
+        ...(plannedRequest || {}),
+        stage_limit: 3,
+        cycle_limit: 2,
+      }))).data;
+      const finalPipeline = response.final_result || null;
+      const finalProgram = finalPipeline?.final_result || null;
+      const lastFormat = [...(finalProgram?.formats || [])].reverse()[0];
+      const lastLoop = lastFormat?.loop || null;
+      const lastChain = [...(lastLoop?.chains || [])].reverse()[0];
+      setShowdownTrainingProgramAutopilot(response);
+      setShowdownTrainingProgramPipeline(finalPipeline);
+      setShowdownTrainingProgram(finalProgram);
+      setShowdownTrainingLoop(lastLoop);
+      setShowdownTrainingChain(lastChain || null);
+      applyShowdownSession(lastLoop?.final_session || lastChain?.final_session);
+      setShowdownLearning(lastLoop?.final_session?.learning_profile || lastChain?.final_session?.learning_profile || null);
+      setShowdownAnalysis(lastLoop?.final_session?.analysis || lastChain?.final_session?.analysis || null);
+      addMessage(`Training autopilot ${response.completed_cycles}/${response.requested_cycle_limit}: ${response.autopilot_health?.status || response.stop_reason}.`);
+      refreshShowdownMastery();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || '启动 Showdown 训练自动驾驶失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function runShowdownSessionStep() {
     if (!showdownPayload.trim()) return;
     setBusy(true);
@@ -1011,6 +1046,7 @@ export default function PokemonBattlePage() {
     ['Phase 72', 'recovery preset 同时生成恢复后续跑请求，blocked 格式修复后可回到原多格式 curriculum'],
     ['Phase 73', '多格式训练 pipeline 自动串联 program、recovery 和恢复后续跑阶段，减少人工连续点击'],
     ['Phase 74', 'pipeline 输出 autonomous trace 和 next action，让无人值守训练调度器能直接判断继续、恢复或人工审查'],
+    ['Phase 75', 'training autopilot 循环消费 pipeline next action，在 cycle 预算内自动续跑多格式训练'],
   ];
 
   return (
@@ -1446,6 +1482,9 @@ export default function PokemonBattlePage() {
               <button onClick={() => runShowdownTrainingProgramPipeline()} disabled={busy} className="btn-primary disabled:opacity-50">
                 多格式流水线
               </button>
+              <button onClick={() => runShowdownTrainingProgramAutopilot()} disabled={busy} className="btn-primary disabled:opacity-50">
+                训练自动驾驶
+              </button>
               <button onClick={startShowdownSearch} disabled={busy} className="btn-primary disabled:opacity-50">
                 搜索天梯
               </button>
@@ -1822,6 +1861,44 @@ export default function PokemonBattlePage() {
                         </div>
                       );
                     })}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {activeShowdownTrainingProgramAutopilot ? (
+              <div className="mt-3 rounded-md border border-fuchsia-500/30 bg-fuchsia-500/10 p-3 text-xs leading-5 text-gray-300">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[10px] font-semibold uppercase text-fuchsia-200">Training autopilot</span>
+                  <span className="rounded bg-black/30 px-2 py-0.5 text-[10px] text-fuchsia-100">
+                    {activeShowdownTrainingProgramAutopilot.completed_cycles}/{activeShowdownTrainingProgramAutopilot.requested_cycle_limit} · {activeShowdownTrainingProgramAutopilot.autopilot_health?.status || activeShowdownTrainingProgramAutopilot.stop_reason}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <Metric label="Cycles" value={activeShowdownTrainingProgramAutopilot.completed_cycles || 0} compact />
+                  <Metric label="Stages" value={activeShowdownTrainingProgramAutopilot.autopilot_health?.total_stages || 0} compact />
+                  <Metric label="Rounds" value={activeShowdownTrainingProgramAutopilot.autopilot_health?.total_completed_rounds || 0} compact />
+                </div>
+                {activeShowdownTrainingProgramAutopilot.autopilot_health?.recommendation ? (
+                  <div className="mt-2 break-words rounded border border-fuchsia-500/20 bg-black/20 p-2 text-[10px] leading-4 text-fuchsia-100">
+                    {activeShowdownTrainingProgramAutopilot.autopilot_health.recommendation}
+                  </div>
+                ) : null}
+                {activeShowdownTrainingProgramAutopilot.cycles?.length ? (
+                  <div className="mt-2 space-y-1">
+                    {activeShowdownTrainingProgramAutopilot.cycles.map((cycle: any) => (
+                      <div key={`program-autopilot-cycle-${cycle.cycle_index}`} className="grid gap-1 rounded border border-fuchsia-500/20 bg-black/20 p-2 sm:grid-cols-[72px_minmax(0,1fr)_80px]">
+                        <div className="text-[10px] font-semibold uppercase text-fuchsia-200">
+                          cycle {cycle.cycle_index}
+                        </div>
+                        <div className="min-w-0 break-words text-[10px] leading-4 text-fuchsia-100">
+                          {(cycle.result?.stage_types || []).join(' -> ') || cycle.result?.stop_reason || 'pending'}
+                        </div>
+                        <div className={`rounded border px-2 py-0.5 text-center text-[10px] font-semibold uppercase ${cycle.next_action?.requires_operator ? 'border-amber-400/40 bg-amber-400/10 text-amber-100' : 'border-emerald-400/40 bg-emerald-400/10 text-emerald-100'}`}>
+                          {cycle.next_action?.type || 'complete'}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 ) : null}
               </div>

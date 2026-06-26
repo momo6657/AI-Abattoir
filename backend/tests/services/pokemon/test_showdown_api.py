@@ -1636,6 +1636,75 @@ async def test_showdown_training_program_pipeline_recovers_and_resumes(setup_db,
 
 
 @pytest.mark.asyncio
+async def test_showdown_training_program_autopilot_consumes_next_action(setup_db, db, monkeypatch):
+    calls = []
+
+    async def fake_pipeline(payload, pipeline_db):
+        calls.append(payload)
+        if len(calls) == 1:
+            return {
+                "completed_stages": 1,
+                "stage_types": ["program"],
+                "final_result": {"total_completed_rounds": 2},
+                "next_action": {
+                    "type": "run_next_program",
+                    "label": "continue",
+                    "requires_operator": False,
+                    "request": {
+                        "username": payload.username,
+                        "battle_format": "gen9ou",
+                        "formats": ["gen9ou"],
+                        "format_limit": 1,
+                        "chain_limit": 1,
+                        "rounds": 1,
+                        "login_password": "secret",
+                    },
+                },
+            }
+        return {
+            "completed_stages": 2,
+            "stage_types": ["program", "after_recovery"],
+            "final_result": {"total_completed_rounds": 3},
+            "next_action": {
+                "type": "complete",
+                "label": "done",
+                "requires_operator": False,
+                "request": None,
+            },
+        }
+
+    monkeypatch.setattr(pokemon_api, "run_showdown_training_program_pipeline", fake_pipeline)
+
+    data = await pokemon_api.run_showdown_training_program_autopilot(
+        pokemon_api.ShowdownTrainingProgramAutopilotRequest(
+            username="AutopilotBot",
+            battle_format="gen9randombattle",
+            formats=["gen9randombattle", "gen9ou"],
+            format_limit=2,
+            chain_limit=2,
+            rounds=1,
+            stage_limit=3,
+            cycle_limit=3,
+            login_password="secret",
+            send_commands=False,
+        ),
+        db,
+    )
+
+    assert [call.battle_format for call in calls] == ["gen9randombattle", "gen9ou"]
+    assert calls[1].formats == ["gen9ou"]
+    assert calls[1].stage_limit == 3
+    assert data["completed_cycles"] == 2
+    assert data["stop_reason"] == "complete"
+    assert data["autopilot_health"]["status"] == "complete"
+    assert data["autopilot_health"]["total_stages"] == 3
+    assert data["autopilot_health"]["total_completed_rounds"] == 5
+    assert data["autopilot_health"]["stage_types"] == ["program", "program", "after_recovery"]
+    assert "login_password" not in data["cycles"][0]["request"]
+    assert "login_password" not in data["cycles"][1]["request"]
+
+
+@pytest.mark.asyncio
 async def test_showdown_training_program_plan_builds_safe_curriculum(setup_db, db, client):
     await pokemon_showdown_learning_store.record_session(
         db,

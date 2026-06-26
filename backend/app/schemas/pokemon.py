@@ -315,3 +315,14 @@ class ShowdownTrainingProgramPipelineRequest(ShowdownTrainingProgramRequest):
         True,
         description="When true, execute after_recovery_request after the recovery stage completes.",
     )
+
+
+class ShowdownTrainingProgramAutopilotRequest(ShowdownTrainingProgramPipelineRequest):
+    cycle_limit: int = Field(
+        2,
+        description="Maximum autonomous pipeline cycles to execute. Each cycle can run multiple bounded program stages.",
+    )
+    stop_on_manual_review: bool = Field(
+        True,
+        description="Stop the autopilot when the latest next_action requires operator review.",
+    )
