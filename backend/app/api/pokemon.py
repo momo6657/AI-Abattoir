@@ -267,6 +267,27 @@ async def analyze_team(
     )
 
 
+@router.get("/teams/{team_id}/comprehensive-analysis")
+async def comprehensive_team_analysis(
+    team_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Perform comprehensive analysis on a team including all aspects."""
+    from app.services.pokemon.comprehensive_analysis import pokemon_comprehensive_analysis
+
+    result = await db.execute(
+        select(PokemonTeam).where(PokemonTeam.id == team_id)
+    )
+    team = result.scalar_one_or_none()
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+
+    return pokemon_comprehensive_analysis.analyze_team_comprehensive(
+        team.pokemon_list or [],
+        battle_format=team.format or "vgc2024",
+    )
+
+
 @router.get("/teams/{team_id}", response_model=TeamResponse)
 async def get_team(team_id: UUID, db: AsyncSession = Depends(get_db)):
     """Get a specific team"""

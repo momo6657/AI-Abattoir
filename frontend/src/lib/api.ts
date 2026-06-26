@@ -207,6 +207,8 @@ export const pokemonApi = {
     api.get(`/pokemon/stats/species/${encodeURIComponent(speciesName)}`),
   analyzeTeam: (teamId: string) =>
     api.get(`/pokemon/teams/${teamId}/analysis`),
+  comprehensiveTeamAnalysis: (teamId: string) =>
+    api.get(`/pokemon/teams/${teamId}/comprehensive-analysis`),
   predictBattle: (player1AgentId: string, player2AgentId: string, player1TeamId?: string, player2TeamId?: string) =>
     api.post("/pokemon/battles/predict", null, {
       params: {
