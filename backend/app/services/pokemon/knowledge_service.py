@@ -137,15 +137,49 @@ class PokemonKnowledgeService:
             "sources": sources,
         }
 
-    def _build_query(self, query_type: str, query_key: str) -> str:
-        sources = "site:pokechamdb.com OR site:pokedb.tokyo OR site:limitlessvgc.com"
+    def _build_query(self, query_type: str, query_key: str, battle_format: str | None = None) -> str:
+        sources = "site:pokechamdb.com OR site:pokedb.tokyo OR site:limitlessvgc.com OR site:smogon.com"
+        format_hint = battle_format or "VGC"
         if query_type == "species_usage":
-            return f"{query_key} VGC usage moves item tera {sources}"
+            return f"{query_key} {format_hint} usage moves item tera {sources}"
         if query_type == "team_analysis":
-            return f"{query_key} VGC team report rental {sources}"
+            return f"{query_key} {format_hint} team report rental {sources}"
         if query_type == "matchup":
-            return f"{query_key} Pokemon VGC matchup counterplay {sources}"
-        return f"{query_key} Pokemon VGC {sources}"
+            return f"{query_key} Pokemon {format_hint} matchup counterplay {sources}"
+        if query_type == "moveset":
+            return f"{query_key} {format_hint} moveset EV spread nature {sources}"
+        if query_type == "counter":
+            return f"how to counter {query_key} Pokemon {format_hint} {sources}"
+        if query_type == "strategy":
+            return f"{query_key} {format_hint} strategy guide tips {sources}"
+        return f"{query_key} Pokemon {format_hint} {sources}"
+
+    async def search_with_format(
+        self,
+        db: AsyncSession,
+        query_type: str,
+        query_key: str,
+        battle_format: str = "vgc2024",
+        max_results: int = 5,
+    ) -> dict[str, Any]:
+        """Search with format-specific query building."""
+        cache_key = f"{query_key}:{battle_format}"
+        cached = await self.get_cached(db, query_type, cache_key)
+        if cached:
+            return {"cached": True, **cached}
+
+        query = self._build_query(query_type, query_key, battle_format)
+        results = await search_service.search(query, max_results=max_results)
+        content = {
+            "query": query,
+            "query_type": query_type,
+            "query_key": query_key,
+            "battle_format": battle_format,
+            "results": results,
+        }
+        source_url = results[0]["url"] if results else None
+        await self.set_cached(db, query_type, cache_key, content, source_url)
+        return {"cached": False, **content}
 
 
 pokemon_knowledge_service = PokemonKnowledgeService()
