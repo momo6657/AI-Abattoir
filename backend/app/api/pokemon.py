@@ -222,6 +222,27 @@ async def build_team_for_agent(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get("/teams/{team_id}/analysis")
+async def analyze_team(
+    team_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Analyze a team's composition, type coverage, and roles."""
+    from app.services.pokemon.team_analysis import pokemon_team_analysis
+
+    result = await db.execute(
+        select(PokemonTeam).where(PokemonTeam.id == team_id)
+    )
+    team = result.scalar_one_or_none()
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+
+    return pokemon_team_analysis.analyze_team(
+        team.pokemon_list or [],
+        battle_format=team.format or "vgc2024",
+    )
+
+
 @router.get("/teams/{team_id}", response_model=TeamResponse)
 async def get_team(team_id: UUID, db: AsyncSession = Depends(get_db)):
     """Get a specific team"""

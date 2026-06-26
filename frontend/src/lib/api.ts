@@ -202,6 +202,8 @@ export const pokemonApi = {
     }),
   getSpeciesPerformance: (speciesName: string) =>
     api.get(`/pokemon/stats/species/${encodeURIComponent(speciesName)}`),
+  analyzeTeam: (teamId: string) =>
+    api.get(`/pokemon/teams/${teamId}/analysis`),
   listShowdownFormatCapabilities: (username = "PokemonBot", includeLearning = true) =>
     api.get("/pokemon/showdown/formats/capabilities", {
       params: { username, include_learning: includeLearning },
