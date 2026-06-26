@@ -107,12 +107,12 @@ function ActionButton({
 }) {
   const cls =
     variant === 'primary'
-      ? 'btn-primary'
+      ? 'inline-flex items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-accent to-accent-hover px-3 py-2 text-xs font-semibold text-slate-900 shadow-lg shadow-accent/20 transition-all hover:shadow-accent/30 disabled:cursor-not-allowed disabled:opacity-50'
       : variant === 'danger'
-        ? 'bg-red-500/20 hover:bg-red-500/30 text-red-200 border border-red-500/30 rounded-lg px-3 py-2 text-xs font-medium transition'
-        : 'btn-secondary';
+        ? 'inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-200 transition-all hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50'
+        : 'inline-flex items-center justify-center gap-1.5 rounded-lg border border-border bg-surface-overlay/50 px-3 py-2 text-xs font-medium text-gray-300 transition-all hover:border-accent/30 hover:bg-accent/5 hover:text-white disabled:cursor-not-allowed disabled:opacity-50';
   return (
-    <button onClick={onClick} disabled={disabled} className={`${cls} disabled:cursor-not-allowed disabled:opacity-50 text-xs`}>
+    <button onClick={onClick} disabled={disabled} className={cls}>
       {label}
     </button>
   );
@@ -213,15 +213,15 @@ export default function ShowdownConsole(props: ShowdownConsoleProps) {
       <div className="flex border-b border-border bg-surface-overlay/20">
         {TABS.map((tab) => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            className={`relative flex items-center gap-2 px-5 py-3 text-sm font-medium transition ${
+            className={`relative flex items-center gap-2 px-5 py-3.5 text-sm font-medium transition-all ${
               activeTab === tab.id
-                ? 'text-white bg-surface-overlay/50'
+                ? 'text-white'
                 : 'text-gray-500 hover:text-gray-300'
             }`}>
-            <span>{tab.icon}</span>
+            <span className="text-base">{tab.icon}</span>
             {tab.label}
             {activeTab === tab.id && (
-              <span className="absolute inset-x-0 bottom-0 h-0.5 bg-accent" />
+              <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-gradient-to-r from-accent to-violet-500" />
             )}
           </button>
         ))}

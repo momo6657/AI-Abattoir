@@ -1052,13 +1052,23 @@ export default function PokemonBattlePage() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-lg border border-border bg-surface-raised/80 p-5 shadow-lg shadow-black/20">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl">
-            <p className="text-sm font-medium text-accent-hover">Pokemon Showdown Agent Lab</p>
-            <h1 className="mt-2 text-3xl font-semibold text-white">宝可梦智能体训练台</h1>
+      {/* Hero Header */}
+      <section className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-surface-raised via-surface to-surface-raised p-6 shadow-2xl shadow-black/30">
+        {/* Decorative gradient orbs */}
+        <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-accent/10 blur-3xl" />
+        <div className="pointer-events-none absolute -left-10 bottom-0 h-48 w-48 rounded-full bg-violet-500/10 blur-3xl" />
+
+        <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <div className="inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+              Pokemon Showdown Agent Lab
+            </div>
+            <h1 className="mt-3 bg-gradient-to-r from-white via-gray-100 to-gray-300 bg-clip-text text-4xl font-bold text-transparent">
+              宝可梦智能体训练台
+            </h1>
             <p className="mt-3 text-sm leading-6 text-gray-400">
-              从本地 VGC 双打模拟开始，让智能体自动建队、执行回合、记录对战日志，并逐步接入知识库、学习机制和 Pokemon Showdown 实战。
+              让 AI 智能体自主建队、对战、学习、进化，成为宝可梦大师。
             </p>
           </div>
           <div className="flex w-full flex-col gap-3 lg:w-auto lg:min-w-80">
@@ -1099,12 +1109,22 @@ export default function PokemonBattlePage() {
           </div>
         </div>
 
-        <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-5">
-          <Metric label="Species" value={speciesCount} />
-          <Metric label="Moves" value={moveCount} />
-          <Metric label="Battles" value={history.length} />
-          <Metric label="Format" value={selectedFormatInfo?.showdown_format || selectedFormat} />
-          <Metric label="WebSocket" value={battleId ? 'ready' : 'idle'} />
+        <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-5">
+          {[
+            { label: 'Species', value: speciesCount, icon: '🐾' },
+            { label: 'Moves', value: moveCount, icon: '⚔️' },
+            { label: 'Battles', value: history.length, icon: '🏟️' },
+            { label: 'Format', value: selectedFormatInfo?.showdown_format || selectedFormat, icon: '📋' },
+            { label: 'WebSocket', value: battleId ? 'connected' : 'idle', icon: battleId ? '🟢' : '⚪' },
+          ].map((item) => (
+            <div key={item.label} className="group rounded-xl border border-border/50 bg-black/20 p-3 transition-all hover:border-accent/30 hover:bg-accent/5">
+              <div className="flex items-center gap-2">
+                <span className="text-base">{item.icon}</span>
+                <span className="text-[10px] font-medium uppercase tracking-wider text-gray-500">{item.label}</span>
+              </div>
+              <div className="mt-1.5 text-lg font-bold text-white">{item.value}</div>
+            </div>
+          ))}
         </div>
         {selectedFormatInfo && (
           <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-500">
@@ -1190,12 +1210,14 @@ export default function PokemonBattlePage() {
       </section>
 
       {error && (
-        <div className="rounded-lg border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+        <div className="flex items-center gap-3 rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+          <span className="text-lg">⚠️</span>
           {error}
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+      {/* Main Content Grid */}
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="space-y-6">
           <BattleField state={battleState} />
           {battleState && !battleState.winner && (
@@ -1213,33 +1235,45 @@ export default function PokemonBattlePage() {
         </div>
 
         <aside className="space-y-4">
-          <section className="card p-4">
-            <h2 className="text-lg font-semibold text-white">运行日志</h2>
-            <div className="mt-3 max-h-72 space-y-2 overflow-y-auto">
+          {/* Log Panel */}
+          <section className="card overflow-hidden">
+            <div className="border-b border-border bg-surface-overlay/30 px-4 py-3">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
+                <span className="text-base">📝</span> 运行日志
+              </h2>
+            </div>
+            <div className="max-h-72 space-y-1.5 overflow-y-auto p-3">
               {messages.length ? messages.map((message, index) => (
-                <div key={`${message}-${index}`} className="rounded-md border border-border bg-black/20 px-3 py-2 text-sm text-gray-300">
+                <div key={`${message}-${index}`} className="rounded-lg border border-border/50 bg-black/20 px-3 py-2 text-xs text-gray-300 transition-colors hover:bg-surface-overlay/30">
                   {message}
                 </div>
               )) : (
-                <p className="rounded-md border border-dashed border-border p-4 text-sm text-gray-500">
+                <p className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-gray-500">
                   暂无日志，先准备训练环境。
                 </p>
               )}
             </div>
           </section>
 
-          <section className="card p-4">
-            <h2 className="text-lg font-semibold text-white">知识检索</h2>
-            <div className="mt-3 flex gap-2">
-              <input
-                value={knowledgeQuery}
-                onChange={(event) => setKnowledgeQuery(event.target.value)}
-                className="input-field"
-                placeholder="Pokemon name"
-              />
-              <button onClick={runKnowledgeSearch} disabled={busy || !knowledgeQuery.trim()} className="btn-secondary disabled:opacity-50">
-                搜索
-              </button>
+          {/* Knowledge Panel */}
+          <section className="card overflow-hidden">
+            <div className="border-b border-border bg-surface-overlay/30 px-4 py-3">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
+                <span className="text-base">🔍</span> 知识检索
+              </h2>
+            </div>
+            <div className="p-4">
+              <div className="flex gap-2">
+                <input
+                  value={knowledgeQuery}
+                  onChange={(event) => setKnowledgeQuery(event.target.value)}
+                  className="input-field flex-1"
+                  placeholder="输入宝可梦名称..."
+                />
+                <button onClick={runKnowledgeSearch} disabled={busy || !knowledgeQuery.trim()} className="btn-primary disabled:opacity-50">
+                  搜索
+                </button>
+              </div>
             </div>
             <div className="mt-3 rounded-md border border-border bg-black/20 p-3 text-sm text-gray-400">
               {knowledge ? (
@@ -1285,23 +1319,51 @@ export default function PokemonBattlePage() {
             ) : null}
           </section>
 
-          <section className="card p-4">
-            <h2 className="text-lg font-semibold text-white">对战分析</h2>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-              <Metric label="Turns" value={analysis?.turns ?? battleState?.turn ?? 0} compact />
-              <Metric label="Damage" value={analysis?.total_damage ?? 0} compact />
-              <Metric label="Faints" value={analysis?.faints ?? 0} compact />
-              <Metric label="Winner" value={battleState?.winner ?? '-'} compact />
+          {/* Battle Analysis */}
+          <section className="card overflow-hidden">
+            <div className="border-b border-border bg-surface-overlay/30 px-4 py-3">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
+                <span className="text-base">📊</span> 对战分析
+              </h2>
+            </div>
+            <div className="grid grid-cols-2 gap-2 p-3">
+              {[
+                { label: '回合', value: analysis?.turns ?? battleState?.turn ?? 0, icon: '🔄' },
+                { label: '伤害', value: analysis?.total_damage ?? 0, icon: '💥' },
+                { label: '击倒', value: analysis?.faints ?? 0, icon: '💀' },
+                { label: '胜者', value: battleState?.winner ?? '-', icon: '🏆' },
+              ].map((item) => (
+                <div key={item.label} className="rounded-lg border border-border/50 bg-black/20 p-2.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs">{item.icon}</span>
+                    <span className="text-[10px] font-medium uppercase text-gray-500">{item.label}</span>
+                  </div>
+                  <div className="mt-1 text-base font-bold text-white">{item.value}</div>
+                </div>
+              ))}
             </div>
           </section>
 
-          <section className="card p-4">
-            <h2 className="text-lg font-semibold text-white">Phase 进度</h2>
-            <div className="mt-3 space-y-2">
-              {phaseItems.map(([phase, text]) => (
-                <div key={phase} className="rounded-md border border-border bg-black/20 px-3 py-2">
-                  <div className="text-sm font-medium text-gray-100">{phase}</div>
-                  <div className="mt-1 text-xs leading-5 text-gray-500">{text}</div>
+          {/* Phase Progress */}
+          <section className="card overflow-hidden">
+            <div className="border-b border-border bg-surface-overlay/30 px-4 py-3">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
+                <span className="text-base">🎯</span> Phase 进度
+                <span className="ml-auto rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
+                  {phaseItems.length} phases
+                </span>
+              </h2>
+            </div>
+            <div className="max-h-96 space-y-1 overflow-y-auto p-3">
+              {phaseItems.map(([phase, text], index) => (
+                <div key={phase} className="group flex items-start gap-3 rounded-lg border border-transparent px-3 py-2 transition-all hover:border-border/50 hover:bg-surface-overlay/20">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-[10px] font-bold text-emerald-300">
+                    {index + 1}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-xs font-medium text-gray-200">{phase}</div>
+                    <div className="mt-0.5 text-[11px] leading-4 text-gray-500">{text}</div>
+                  </div>
                 </div>
               ))}
             </div>
