@@ -3743,6 +3743,58 @@ async def list_showdown_mastery_ranking(
     )
 
 
+@router.get("/leaderboard")
+async def get_pokemon_leaderboard(
+    battle_format: str | None = None,
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
+):
+    """Pokemon battle Elo rating leaderboard with tier rankings."""
+    from app.services.pokemon.elo_rating import elo_rating_service
+
+    if limit < 1 or limit > 100:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 100.")
+    return await elo_rating_service.get_pokemon_leaderboard(
+        db,
+        format_filter=battle_format,
+        limit=limit,
+    )
+
+
+@router.get("/agent/{agent_id}/rating")
+async def get_agent_pokemon_rating(
+    agent_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get a specific agent's Pokemon battle rating and stats."""
+    from app.services.pokemon.elo_rating import elo_rating_service
+
+    agent = await db.get(Agent, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    rating = agent.pokemon_rating or 1500
+    stats = agent.pokemon_stats or {}
+    tier_en, tier_zh = elo_rating_service.tier_for_rating(rating)
+    return {
+        "agent_id": str(agent.id),
+        "agent_name": agent.name,
+        "rating": rating,
+        "tier": tier_en,
+        "tier_zh": tier_zh,
+        "battles": stats.get("battles", 0),
+        "wins": stats.get("wins", 0),
+        "losses": stats.get("losses", 0),
+        "win_rate": stats.get("win_rate", 0),
+        "peak_rating": stats.get("peak_rating", 1500),
+        "current_streak": stats.get("current_streak", 0),
+        "best_streak": stats.get("best_streak", 0),
+        "favorite_format": agent.pokemon_favorite_format,
+        "playstyle": agent.pokemon_playstyle,
+        "level": agent.level.value if agent.level else "novice",
+    }
+
+
 @router.get("/showdown/formats/capabilities")
 async def list_showdown_format_capabilities(
     username: str = "PokemonBot",

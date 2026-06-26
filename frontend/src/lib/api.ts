@@ -176,6 +176,12 @@ export const pokemonApi = {
     api.get("/pokemon/showdown/learning/mastery", {
       params: battleFormat ? { battle_format: battleFormat, limit } : { limit },
     }),
+  listPokemonLeaderboard: (battleFormat?: string, limit = 20) =>
+    api.get("/pokemon/leaderboard", {
+      params: battleFormat ? { battle_format: battleFormat, limit } : { limit },
+    }),
+  getAgentPokemonRating: (agentId: string) =>
+    api.get(`/pokemon/agent/${agentId}/rating`),
   listShowdownFormatCapabilities: (username = "PokemonBot", includeLearning = true) =>
     api.get("/pokemon/showdown/formats/capabilities", {
       params: { username, include_learning: includeLearning },

@@ -9,10 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.pokemon import PokemonBattle
 from app.services.evolution_service import evolution_service
+from app.services.pokemon.elo_rating import elo_rating_service
 
 
 class PokemonBattleAnalysisService:
-    """Summarizes battle logs and records agent experience."""
+    """Summarizes battle logs, records agent experience, and updates ratings."""
 
     def summarize(self, battle_log: list[dict[str, Any]]) -> dict[str, Any]:
         damage_by_attacker: dict[str, int] = {}
@@ -49,6 +50,7 @@ class PokemonBattleAnalysisService:
         battle.summary = {**(battle.summary or {}), **summary}
         await db.commit()
 
+        # Record evolution experience
         for agent_id, label in [
             (battle.player1_agent_id, "win" if battle.player1_agent_id == winner_agent_id else "loss"),
             (battle.player2_agent_id, "win" if battle.player2_agent_id == winner_agent_id else "loss"),
@@ -63,6 +65,24 @@ class PokemonBattleAnalysisService:
                     outcome=label,
                     xp_override=120 if label == "win" else 60,
                 )
+
+        # Update Elo ratings
+        try:
+            elo_result = await elo_rating_service.update_ratings_after_battle(
+                db=db,
+                battle=battle,
+                winner_agent_id=winner_agent_id,
+            )
+            summary["elo"] = {
+                "player1": {"old": elo_result.player1_old, "new": elo_result.player1_new, "change": elo_result.player1_change},
+                "player2": {"old": elo_result.player2_old, "new": elo_result.player2_new, "change": elo_result.player2_change},
+                "expected": {"player1": elo_result.player1_expected, "player2": elo_result.player2_expected},
+                "k_factor": elo_result.k_factor,
+            }
+            await db.commit()
+        except Exception:
+            pass  # Don't fail battle finalization if Elo update fails
+
         return summary
 
 
