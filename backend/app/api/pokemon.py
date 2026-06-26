@@ -146,6 +146,30 @@ async def get_pokemon_format(format_id: str):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.get("/formats/{format_id}/strategy")
+async def get_format_strategy(format_id: str):
+    """Get strategy information for a battle format."""
+    from app.services.pokemon.format_strategy import pokemon_format_strategy
+
+    return pokemon_format_strategy.get_strategy(format_id)
+
+
+@router.get("/formats/{format_id}/leads")
+async def get_format_leads(format_id: str):
+    """Get lead recommendations for a battle format."""
+    from app.services.pokemon.format_strategy import pokemon_format_strategy
+
+    return pokemon_format_strategy.get_lead_recommendations(format_id)
+
+
+@router.get("/formats/{format_id}/threats")
+async def get_format_threats(format_id: str):
+    """Get threat list for a battle format."""
+    from app.services.pokemon.format_strategy import pokemon_format_strategy
+
+    return pokemon_format_strategy.get_threat_list(format_id)
+
+
 @router.get("/species", response_model=List[SpeciesResponse])
 async def get_species_list(db: AsyncSession = Depends(get_db)):
     """Get list of all Pokemon species"""

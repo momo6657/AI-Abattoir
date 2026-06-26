@@ -139,6 +139,9 @@ export const pokemonApi = {
   dashboard: (username = "PokemonBot") =>
     api.get("/pokemon/dashboard", { params: { username } }),
   listFormats: () => api.get("/pokemon/formats"),
+  getFormatStrategy: (formatId: string) => api.get(`/pokemon/formats/${formatId}/strategy`),
+  getFormatLeads: (formatId: string) => api.get(`/pokemon/formats/${formatId}/leads`),
+  getFormatThreats: (formatId: string) => api.get(`/pokemon/formats/${formatId}/threats`),
   listSpecies: () => api.get("/pokemon/species"),
   listMoves: () => api.get("/pokemon/moves"),
   listTeams: (agentId: string) => api.get("/pokemon/teams", { params: { agent_id: agentId } }),
