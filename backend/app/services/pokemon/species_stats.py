@@ -14,6 +14,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.pokemon import PokemonBattle, PokemonTeam, PokemonSpecies
+from app.services.pokemon.battle_outcome import did_team_win, winner_team_id
 
 
 class PokemonSpeciesStats:
@@ -60,20 +61,18 @@ class PokemonSpeciesStats:
                 continue
 
             # Get winning team
-            winner_team_id = (
-                battle.player1_team_id
-                if str(battle.winner) == str(battle.player1_agent_id)
-                else battle.player2_team_id
-            )
+            resolved_winner_team_id = winner_team_id(battle)
+            if not resolved_winner_team_id:
+                continue
             loser_team_id = (
                 battle.player2_team_id
-                if winner_team_id == battle.player1_team_id
+                if resolved_winner_team_id == battle.player1_team_id
                 else battle.player1_team_id
             )
 
             # Count wins
-            if winner_team_id:
-                winner_team = await db.get(PokemonTeam, winner_team_id)
+            if resolved_winner_team_id:
+                winner_team = await db.get(PokemonTeam, resolved_winner_team_id)
                 if winner_team:
                     for pokemon in (winner_team.pokemon_list or []):
                         species = pokemon.get("species") or pokemon.get("name", "Unknown")
@@ -148,12 +147,7 @@ class PokemonSpeciesStats:
             for battle in battles:
                 if not battle.winner:
                     continue
-                is_p1 = battle.player1_team_id == team_id
-                won = (
-                    (is_p1 and str(battle.winner) == str(battle.player1_agent_id))
-                    or (not is_p1 and str(battle.winner) == str(battle.player2_agent_id))
-                )
-                if won:
+                if did_team_win(battle, team_id):
                     wins += 1
                 else:
                     losses += 1

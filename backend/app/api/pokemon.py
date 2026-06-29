@@ -4,7 +4,7 @@ Pokemon Battle API Routes
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import func, select
 from typing import Any, List
 from uuid import UUID
 
@@ -52,8 +52,43 @@ from app.services.pokemon.showdown_battle_agent import pokemon_showdown_battle_a
 from app.services.pokemon.showdown_session import pokemon_showdown_session_service
 from app.services.pokemon.showdown_learning_store import pokemon_showdown_learning_store
 from app.services.pokemon.showdown_team_factory import pokemon_showdown_team_factory
+from app.services.pokemon.battle_outcome import (
+    side_for_agent,
+    winner_agent_id as resolved_winner_agent_id,
+    winner_side as resolved_winner_side,
+)
 
 router = APIRouter(prefix="/pokemon", tags=["pokemon"])
+
+
+async def _enrich_team_members_for_analysis(
+    db: AsyncSession,
+    members: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    species_keys = {
+        str(member.get("species") or member.get("name") or "").strip().lower()
+        for member in members
+        if member.get("species") or member.get("name")
+    }
+    species_by_name: dict[str, PokemonSpecies] = {}
+    if species_keys:
+        result = await db.execute(
+            select(PokemonSpecies).where(func.lower(PokemonSpecies.name).in_(species_keys))
+        )
+        species_by_name = {str(item.name).lower(): item for item in result.scalars().all()}
+
+    enriched = []
+    for member in members:
+        species_key = str(member.get("species") or member.get("name") or "").strip().lower()
+        species = species_by_name.get(species_key)
+        enriched.append(
+            {
+                **member,
+                "types": member.get("types") or (list(species.types or []) if species else []),
+                "base_stats": member.get("base_stats") or (dict(species.base_stats or {}) if species else {}),
+            }
+        )
+    return enriched
 
 
 # Data initialization endpoint
@@ -96,7 +131,8 @@ async def get_pokemon_dashboard(
             "id": str(b.id),
             "format": b.battle_format,
             "turns": b.turns,
-            "winner": str(b.winner) if b.winner else None,
+            "winner": str(resolved_winner_agent_id(b)) if resolved_winner_agent_id(b) else None,
+            "winner_side": resolved_winner_side(b),
             "created_at": b.created_at.isoformat() if b.created_at else None,
         }
         for b in battles_result.scalars().all()
@@ -117,8 +153,8 @@ async def get_pokemon_dashboard(
             "showdown_format": format_info.showdown_format,
             "battle_type": format_info.battle_type,
             "has_team_template": format_info.template_format is not None,
-            "battles": learning_profile.battles if learning_profile else 0,
-            "wins": learning_profile.wins if learning_profile else 0,
+            "battles": int(learning_profile.get("battles") or 0),
+            "wins": int(learning_profile.get("wins") or 0),
         })
 
     return {
@@ -261,8 +297,9 @@ async def analyze_team(
     if not team:
         raise HTTPException(status_code=404, detail="Team not found")
 
+    members = await _enrich_team_members_for_analysis(db, team.pokemon_list or [])
     return pokemon_team_analysis.analyze_team(
-        team.pokemon_list or [],
+        members,
         battle_format=team.format or "vgc2024",
     )
 
@@ -282,8 +319,9 @@ async def comprehensive_team_analysis(
     if not team:
         raise HTTPException(status_code=404, detail="Team not found")
 
+    members = await _enrich_team_members_for_analysis(db, team.pokemon_list or [])
     return pokemon_comprehensive_analysis.analyze_team_comprehensive(
-        team.pokemon_list or [],
+        members,
         battle_format=team.format or "vgc2024",
     )
 
@@ -547,6 +585,11 @@ async def finalize_battle(
     battle = await db.get(PokemonBattle, battle_id)
     if not battle:
         raise HTTPException(status_code=404, detail="Battle not found")
+    if winner_agent_id is not None:
+        winner_side = side_for_agent(battle, winner_agent_id)
+        if winner_side is None:
+            raise HTTPException(status_code=400, detail="winner_agent_id must belong to this battle")
+        battle.winner = winner_side
     return await pokemon_battle_analysis_service.finalize_battle(db, battle, winner_agent_id)
 
 
@@ -555,9 +598,18 @@ async def search_knowledge(
     query_type: str,
     query_key: str,
     max_results: int = 5,
+    battle_format: str | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     """Search Pokemon knowledge sources with database caching."""
+    if battle_format:
+        return await pokemon_knowledge_service.search_with_format(
+            db,
+            query_type,
+            query_key,
+            battle_format=battle_format,
+            max_results=max_results,
+        )
     return await pokemon_knowledge_service.search(db, query_type, query_key, max_results)
 
 

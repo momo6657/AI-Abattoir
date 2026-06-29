@@ -48,6 +48,12 @@ class TeamPokemon(BaseModel):
     item: str
     moves: List[str]
     stats: Optional[Dict[str, int]] = None
+    types: Optional[List[str]] = None
+    base_stats: Optional[Dict[str, int]] = None
+    nature: Optional[str] = None
+    evs: Optional[Dict[str, int]] = None
+    ivs: Optional[Dict[str, int]] = None
+    tera_type: Optional[str] = None
 
 
 class TeamCreate(BaseModel):

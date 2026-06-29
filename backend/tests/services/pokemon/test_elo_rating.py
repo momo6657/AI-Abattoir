@@ -1,6 +1,7 @@
 """Tests for the Elo rating system."""
 
 import pytest
+from unittest.mock import AsyncMock, MagicMock
 from app.services.pokemon.elo_rating import EloRatingService, EloResult
 
 
@@ -129,3 +130,25 @@ class TestTierForRating:
         assert elo.tier_for_rating(2199)[0] == "Master"
         assert elo.tier_for_rating(2000)[0] == "Master"
         assert elo.tier_for_rating(1999)[0] == "Diamond"
+
+
+@pytest.mark.asyncio
+async def test_leaderboard_format_filter_is_applied_to_query(elo):
+    db = AsyncMock()
+    result = MagicMock()
+    result.scalars().all.return_value = []
+    db.execute.return_value = result
+
+    leaderboard = await elo.get_pokemon_leaderboard(
+        db,
+        format_filter="gen9ou",
+        limit=10,
+    )
+
+    statement = db.execute.await_args.args[0]
+    compiled = str(statement.compile(compile_kwargs={"literal_binds": True}))
+    assert leaderboard == []
+    assert "pokemon_battles" in compiled
+    assert "gen9ou" in compiled
+    assert "player1_agent_id" in compiled
+    assert "player2_agent_id" in compiled

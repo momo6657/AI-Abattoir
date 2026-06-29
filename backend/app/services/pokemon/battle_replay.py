@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.pokemon import PokemonBattle, PokemonTeam
+from app.services.pokemon.battle_outcome import winner_agent_id, winner_side
 
 
 @dataclass
@@ -43,6 +44,7 @@ class BattleReplay:
     turns: list[ReplayTurn] = field(default_factory=list)
     total_turns: int = 0
     winner: str | None = None
+    winner_side: int | None = None
     team1: dict[str, Any] = field(default_factory=dict)
     team2: dict[str, Any] = field(default_factory=dict)
     summary: dict[str, Any] = field(default_factory=dict)
@@ -53,6 +55,7 @@ class BattleReplay:
             "format": self.format,
             "total_turns": self.total_turns,
             "winner": self.winner,
+            "winner_side": self.winner_side,
             "team1": self.team1,
             "team2": self.team2,
             "summary": self.summary,
@@ -142,10 +145,13 @@ class PokemonBattleReplayService:
         team2_data: dict[str, Any] | None = None,
     ) -> BattleReplay:
         """Build a structured replay from a battle record."""
+        resolved_winner_agent = winner_agent_id(battle)
+        resolved_winner_side = winner_side(battle)
         replay = BattleReplay(
             battle_id=str(battle.id),
             format=battle.battle_format or "unknown",
-            winner=str(battle.winner) if battle.winner else None,
+            winner=str(resolved_winner_agent or battle.winner) if battle.winner else None,
+            winner_side=resolved_winner_side,
             team1=team1_data or {},
             team2=team2_data or {},
             summary=battle.summary or {},

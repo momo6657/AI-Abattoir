@@ -10,11 +10,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 import uuid
 
-from sqlalchemy import select, func
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.pokemon import PokemonBattle, PokemonDecision, PokemonTeam
 from app.models.agent import Agent
+from app.services.pokemon.battle_outcome import did_agent_win, winner_agent_id
 
 
 class PokemonStatsTracker:
@@ -41,6 +42,7 @@ class PokemonStatsTracker:
                 (PokemonBattle.player1_agent_id == agent_id)
                 | (PokemonBattle.player2_agent_id == agent_id)
             )
+            .where(PokemonBattle.winner.isnot(None))
         )
         total_battles = battle_count.scalar() or 0
 
@@ -48,7 +50,12 @@ class PokemonStatsTracker:
         win_count = await db.execute(
             select(func.count())
             .select_from(PokemonBattle)
-            .where(PokemonBattle.winner == str(agent_id))
+            .where(
+                or_(
+                    and_(PokemonBattle.player1_agent_id == agent_id, PokemonBattle.winner == 1),
+                    and_(PokemonBattle.player2_agent_id == agent_id, PokemonBattle.winner == 2),
+                )
+            )
         )
         wins = win_count.scalar() or 0
 
@@ -92,8 +99,9 @@ class PokemonStatsTracker:
                 "id": str(b.id),
                 "format": b.battle_format,
                 "turns": b.turns,
-                "winner": str(b.winner) if b.winner else None,
-                "won": str(b.winner) == str(agent_id),
+                "winner": str(winner_agent_id(b)) if winner_agent_id(b) else None,
+                "winner_side": b.winner,
+                "won": did_agent_win(b, agent_id),
                 "created_at": b.created_at.isoformat() if b.created_at else None,
             }
             for b in recent.scalars().all()

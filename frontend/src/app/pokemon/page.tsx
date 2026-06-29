@@ -5,6 +5,8 @@ import BattleField from './components/BattleField';
 import TeamManager from './components/TeamManager';
 import MoveSelector from './components/MoveSelector';
 import ShowdownConsole from './components/ShowdownConsole';
+import Leaderboard from './components/Leaderboard';
+import ReplayViewer from './components/ReplayViewer';
 import { agentsApi, modelsApi, pokemonApi, resolveWebSocketURL } from '@/lib/api';
 
 const MODEL_NAME = 'Pokemon Local Policy';
@@ -75,6 +77,7 @@ export default function PokemonBattlePage() {
   const [speciesCount, setSpeciesCount] = useState(0);
   const [moveCount, setMoveCount] = useState(0);
   const [history, setHistory] = useState<any[]>([]);
+  const [selectedReplayId, setSelectedReplayId] = useState<string | undefined>();
   const [formats, setFormats] = useState<PokemonFormat[]>([]);
   const [formatCapabilities, setFormatCapabilities] = useState<any>(null);
   const [selectedFormat, setSelectedFormat] = useState('vgc2024');
@@ -156,6 +159,12 @@ export default function PokemonBattlePage() {
   useEffect(() => {
     refreshShowdownMastery();
   }, [selectedFormat]);
+
+  useEffect(() => {
+    if (!selectedReplayId && history[0]?.id) {
+      setSelectedReplayId(history[0].id);
+    }
+  }, [history, selectedReplayId]);
 
   function addMessage(message: string) {
     setMessages((prev) => [message, ...prev].slice(0, 14));
@@ -322,7 +331,7 @@ export default function PokemonBattlePage() {
     setBusy(true);
     setError(null);
     try {
-      const result = (await pokemonApi.knowledgeSearch('species_usage', knowledgeQuery, 3)).data;
+      const result = (await pokemonApi.knowledgeSearch('species_usage', knowledgeQuery, 3, selectedFormat)).data;
       setKnowledge(result);
       addMessage(`知识检索完成：${knowledgeQuery}`);
     } catch (err: any) {
@@ -1054,10 +1063,6 @@ export default function PokemonBattlePage() {
     <div className="space-y-6">
       {/* Hero Header */}
       <section className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-surface-raised via-surface to-surface-raised p-6 shadow-2xl shadow-black/30">
-        {/* Decorative gradient orbs */}
-        <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-accent/10 blur-3xl" />
-        <div className="pointer-events-none absolute -left-10 bottom-0 h-48 w-48 rounded-full bg-violet-500/10 blur-3xl" />
-
         <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-2xl">
             <div className="inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
@@ -1231,6 +1236,29 @@ export default function PokemonBattlePage() {
           <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <TeamManager label="Player 1" agent={setup.redAgent} team={setup.redTeam} tone="blue" />
             <TeamManager label="Player 2" agent={setup.blueAgent} team={setup.blueTeam} tone="red" />
+          </section>
+
+          <section className="grid grid-cols-1 gap-6">
+            <Leaderboard format={selectedFormat} />
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold uppercase text-gray-500">近期回放</span>
+                {history.slice(0, 6).map((battle) => (
+                  <button
+                    key={battle.id}
+                    onClick={() => setSelectedReplayId(battle.id)}
+                    className={`rounded-lg border px-2.5 py-1.5 text-xs transition ${
+                      selectedReplayId === battle.id
+                        ? 'border-accent/50 bg-accent/15 text-white'
+                        : 'border-border bg-surface-overlay/40 text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    {battle.battle_format || battle.format || 'battle'} · {battle.turns || 0}T
+                  </button>
+                ))}
+              </div>
+              <ReplayViewer battleId={selectedReplayId} />
+            </div>
           </section>
         </div>
 
@@ -1452,6 +1480,7 @@ export default function PokemonBattlePage() {
           </p>
         </aside>
       </div>
+
     </div>
   );
 }

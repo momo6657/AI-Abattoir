@@ -30,6 +30,7 @@ frontend/.codex-dev-server*.log
 CLAUDE.md
 AGENTS.md
 .cursor/
+.playwright-mcp/
 
 # OS
 .DS_Store

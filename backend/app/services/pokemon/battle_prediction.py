@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.pokemon import PokemonBattle, PokemonTeam
 from app.models.agent import Agent
+from app.services.pokemon.battle_outcome import winner_agent_id
 
 
 class PokemonBattlePrediction:
@@ -39,6 +40,7 @@ class PokemonBattlePrediction:
         p2_win_rate = (player2_stats or {}).get("win_rate", 50)
         p1_streak = (player1_stats or {}).get("current_streak", 0)
         p2_streak = (player2_stats or {}).get("current_streak", 0)
+        form_adjustment = max(-5.0, min(5.0, (p1_win_rate - p2_win_rate) * 0.1))
 
         # Momentum adjustment
         momentum_p1 = 0
@@ -67,7 +69,7 @@ class PokemonBattlePrediction:
             team_adjustment = (len(p1_types) - len(p2_types)) * 0.5
 
         # Final prediction
-        adjusted_p1 = expected_p1 + (momentum_p1 / 100) + (team_adjustment / 100)
+        adjusted_p1 = expected_p1 + (momentum_p1 / 100) + (team_adjustment / 100) + (form_adjustment / 100)
         adjusted_p1 = max(0.05, min(0.95, adjusted_p1))
         adjusted_p2 = 1.0 - adjusted_p1
 
@@ -111,6 +113,7 @@ class PokemonBattlePrediction:
             "adjustments": {
                 "momentum_p1": round(momentum_p1, 1),
                 "momentum_p2": round(momentum_p2, 1),
+                "form_adjustment": round(form_adjustment, 1),
                 "team_adjustment": round(team_adjustment, 1),
             },
         }
@@ -197,9 +200,10 @@ class PokemonBattlePrediction:
         total_turns = 0
 
         for battle in battles:
-            if str(battle.winner) == str(player1_id):
+            resolved_winner = winner_agent_id(battle)
+            if resolved_winner is not None and str(resolved_winner) == str(player1_id):
                 p1_wins += 1
-            elif str(battle.winner) == str(player2_id):
+            elif resolved_winner is not None and str(resolved_winner) == str(player2_id):
                 p2_wins += 1
             total_turns += battle.turns or 0
 

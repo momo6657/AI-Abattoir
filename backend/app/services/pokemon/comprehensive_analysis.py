@@ -28,46 +28,33 @@ class PokemonComprehensiveAnalysis:
     ) -> dict[str, Any]:
         """Perform comprehensive analysis on a single Pokemon."""
         species = pokemon.get("species") or pokemon.get("name", "Unknown")
-        types = pokemon.get("types", ["Normal"])
+        types = pokemon.get("types") or []
         moves = pokemon.get("moves", [])
         ability = pokemon.get("ability", "")
         item = pokemon.get("item", "")
-        nature = pokemon.get("nature", "hardy")
+        nature = pokemon.get("nature")
         evs = pokemon.get("evs", {})
         tera_type = pokemon.get("tera_type")
         base_stats = pokemon.get("base_stats")
 
         # Analyze each aspect
         moveset_analysis = pokemon_move_analysis.analyze_moveset(moves, types)
-        ability_analysis = pokemon_ability_analysis.analyze_ability(ability, types, [m if isinstance(m, str) else m.get("name", "") for m in moves])
-        nature_analysis = pokemon_nature_analysis.analyze_nature(nature, types, base_stats)
-        ev_analysis = pokemon_ev_analysis.analyze_ev_spread(evs, nature, base_stats) if evs else None
+        ability_analysis = pokemon_ability_analysis.analyze_ability(ability, types, [m if isinstance(m, str) else m.get("name", "") for m in moves]) if ability else None
+        nature_analysis = pokemon_nature_analysis.analyze_nature(nature, types, base_stats) if nature else None
+        ev_analysis = pokemon_ev_analysis.analyze_ev_spread(evs, nature or "hardy", base_stats) if evs else None
         tera_analysis = pokemon_tera_analysis.analyze_tera_type(tera_type, types, moves, ability) if tera_type else None
 
-        # Calculate overall score
-        scores = [
-            moveset_analysis.get("score", 0),
-            ability_analysis.get("synergy_score", 0),
-            nature_analysis.get("synergy_score", 0),
-            ev_analysis.get("efficiency", 0) if evs else 0,
-            tera_analysis.get("synergy_score", 0) if tera_type else 0,
-        ]
-        # Normalize scores
-        normalized_scores = []
-        for score in scores:
-            if isinstance(score, str):
-                if score == "excellent":
-                    normalized_scores.append(100)
-                elif score == "good":
-                    normalized_scores.append(75)
-                elif score == "fair":
-                    normalized_scores.append(50)
-                elif score == "neutral":
-                    normalized_scores.append(25)
-                else:
-                    normalized_scores.append(0)
-            else:
-                normalized_scores.append(min(100, score))
+        # Only score dimensions backed by actual input data.
+        scores: list[Any] = [moveset_analysis.get("score", 0)]
+        if ability_analysis:
+            scores.append(ability_analysis.get("synergy_score", 0))
+        if nature_analysis:
+            scores.append(nature_analysis.get("synergy_score", 0))
+        if ev_analysis:
+            scores.append(ev_analysis.get("efficiency", 0))
+        if tera_analysis:
+            scores.append(tera_analysis.get("synergy_score", 0))
+        normalized_scores = [self._normalize_score(score) for score in scores]
 
         overall_score = sum(normalized_scores) / len(normalized_scores) if normalized_scores else 0
 
@@ -75,9 +62,9 @@ class PokemonComprehensiveAnalysis:
         recommendations = []
         if moveset_analysis.get("score", 0) < 50:
             recommendations.append("考虑优化招式搭配以提高属性覆盖")
-        if ability_analysis.get("rating") == "low":
+        if ability_analysis and ability_analysis.get("rating") == "low":
             recommendations.append("考虑更换特性以获得更好的协同效果")
-        if nature_analysis.get("rating") == "neutral":
+        if nature_analysis and nature_analysis.get("rating") == "neutral":
             recommendations.append("考虑调整性格以匹配宝可梦的角色定位")
         if ev_analysis and ev_analysis.get("efficiency") == "suboptimal":
             recommendations.append("优化努力值分配以提高战斗效率")
@@ -98,6 +85,14 @@ class PokemonComprehensiveAnalysis:
             },
             "recommendations": recommendations,
             "battle_format": battle_format,
+            "data_completeness": {
+                "types": bool(types),
+                "ability": bool(ability),
+                "nature": bool(nature),
+                "evs": bool(evs),
+                "tera_type": bool(tera_type),
+                "base_stats": bool(base_stats),
+            },
         }
 
     def analyze_team_comprehensive(
@@ -245,6 +240,21 @@ class PokemonComprehensiveAnalysis:
         elif score >= 20:
             return "poor"
         return "very poor"
+
+    def _normalize_score(self, score: Any) -> float:
+        if isinstance(score, (int, float)):
+            return max(0.0, min(100.0, float(score)))
+        return {
+            "excellent": 100.0,
+            "optimal": 100.0,
+            "good": 75.0,
+            "fair": 50.0,
+            "neutral": 50.0,
+            "suboptimal": 30.0,
+            "poor": 20.0,
+            "low": 20.0,
+            "invalid": 0.0,
+        }.get(str(score).lower(), 0.0)
 
 
 pokemon_comprehensive_analysis = PokemonComprehensiveAnalysis()

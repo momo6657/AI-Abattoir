@@ -11,7 +11,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import select, func
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent import Agent
@@ -187,9 +187,12 @@ class EloRatingService:
 
         # Update pokemon_stats
         for agent, change, is_winner in [(p1, result.player1_change, score1 == 1.0), (p2, result.player2_change, score1 == 0.0)]:
-            stats = agent.pokemon_stats or {}
+            stats = dict(agent.pokemon_stats or {})
             battles = stats.get("battles", 0) + 1
             wins = stats.get("wins", 0) + (1 if is_winner else 0)
+            is_draw = score1 == 0.5
+            losses = stats.get("losses", 0) + (1 if not is_winner and not is_draw else 0)
+            draws = stats.get("draws", 0) + (1 if is_draw else 0)
             peak = max(stats.get("peak_rating", agent.pokemon_rating or DEFAULT_RATING), agent.pokemon_rating or DEFAULT_RATING)
             streak = stats.get("current_streak", 0)
             if is_winner:
@@ -199,7 +202,8 @@ class EloRatingService:
             stats.update({
                 "battles": battles,
                 "wins": wins,
-                "losses": battles - wins,
+                "losses": losses,
+                "draws": draws,
                 "win_rate": round(wins / battles * 100, 1) if battles else 0,
                 "peak_rating": peak,
                 "current_streak": streak,
@@ -222,9 +226,21 @@ class EloRatingService:
             select(Agent)
             .where(Agent.pokemon_rating.isnot(None))
             .where(Agent.pokemon_rating > DEFAULT_RATING - 500)
-            .order_by(Agent.pokemon_rating.desc())
-            .limit(limit)
         )
+        if format_filter:
+            participated_in_format = (
+                select(PokemonBattle.id)
+                .where(PokemonBattle.battle_format == format_filter)
+                .where(
+                    or_(
+                        PokemonBattle.player1_agent_id == Agent.id,
+                        PokemonBattle.player2_agent_id == Agent.id,
+                    )
+                )
+                .exists()
+            )
+            query = query.where(participated_in_format)
+        query = query.order_by(Agent.pokemon_rating.desc()).limit(limit)
         result = await db.execute(query)
         agents = result.scalars().all()
 

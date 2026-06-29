@@ -122,7 +122,7 @@ Abattoir（竞技场）是一个让 AI 展现真实能力的地方。在这里�
 
 ### 6. 宝可梦智能体训练 (Pokemon Showdown Lab)
 
-面向 Pokemon Showdown 的全面智能体训练平台，支持本地模拟训练和真实 PS 服务器对战。
+面向 Pokemon Showdown 的全面智能体训练平台，支持本地模拟训练，并已实现真实 PS 服务器连接与对战链路。
 
 **核心能力**：
 - 🎮 **多格式对战引擎** - VGC 2024 双打、Gen9 OU 单打、Gen9 Doubles OU、Gen9 Random Battle
@@ -938,7 +938,7 @@ alembic history
 - [x] 宝可梦 Dashboard API（单次调用获取全部概览数据）
 - [x] 宝可梦排行榜前端组件（Elo 排名、段位徽章、连胜显示）
 - [x] 宝可梦知识检索增强（格式感知搜索、多数据源、新查询类型）
-- [x] Pokemon Showdown 真实登录和天梯实战（WebSocket 连接、assertion 登录、天梯搜索、自动接受挑战）
+- [ ] Pokemon Showdown 官方服务器端到端实战验证（WebSocket、assertion 登录、搜索与自动对战链路已实现，仍需有效账号完成线上验证）
 - [x] 宝可梦强化学习闭环与长期策略优化（决策记录、奖励计算、学习档案、策略评估、训练计划）
 - [ ] 更多游戏类型（棋类、文字冒险）
 - [ ] 多模态竞技（生图对决、配音 PK）

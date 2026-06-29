@@ -171,9 +171,14 @@ export const pokemonApi = {
     }),
   getBattleReplay: (battleId: string) =>
     api.get(`/pokemon/battles/${battleId}/replay`),
-  knowledgeSearch: (queryType: string, queryKey: string, maxResults = 5) =>
+  knowledgeSearch: (queryType: string, queryKey: string, maxResults = 5, battleFormat?: string) =>
     api.get("/pokemon/knowledge/search", {
-      params: { query_type: queryType, query_key: queryKey, max_results: maxResults },
+      params: {
+        query_type: queryType,
+        query_key: queryKey,
+        max_results: maxResults,
+        ...(battleFormat ? { battle_format: battleFormat } : {}),
+      },
     }),
   teamKnowledge: (species: string[], queryType = "species_usage", maxResults = 3) =>
     api.post("/pokemon/knowledge/team", { species, query_type: queryType, max_results: maxResults }),

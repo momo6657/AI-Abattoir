@@ -2,6 +2,7 @@
 
 import pytest
 from unittest.mock import MagicMock
+from uuid import uuid4
 from app.services.pokemon.battle_replay import (
     PokemonBattleReplayService,
     BattleReplay,
@@ -122,6 +123,23 @@ class TestBuildReplay:
         assert len(replay.turns) == 3
         assert replay.winner == "player1"
 
+    def test_integer_winner_resolves_to_agent_id(self, service):
+        player1_id = uuid4()
+        battle = MagicMock()
+        battle.id = "test-id"
+        battle.battle_format = "gen9ou"
+        battle.player1_agent_id = player1_id
+        battle.player2_agent_id = uuid4()
+        battle.winner = 1
+        battle.turns = 0
+        battle.battle_log = []
+        battle.summary = {}
+
+        replay = service.build_replay(battle)
+
+        assert replay.winner == str(player1_id)
+        assert replay.winner_side == 1
+
     def test_to_dict(self, service):
         battle = MagicMock()
         battle.id = "test-id"
@@ -137,5 +155,6 @@ class TestBuildReplay:
         d = replay.to_dict()
         assert isinstance(d, dict)
         assert d["battle_id"] == "test-id"
+        assert d["winner_side"] is None
         assert len(d["turns"]) == 1
         assert "frames" in d["turns"][0]

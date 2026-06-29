@@ -1,6 +1,7 @@
 """API tests for Pokemon Showdown command and parse helpers."""
 
 import json
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -8,6 +9,46 @@ from app.api import pokemon as pokemon_api
 from app.schemas.pokemon import ShowdownSessionMissionRequest
 from app.services.pokemon.showdown_learning_store import pokemon_showdown_learning_store
 from app.services.pokemon.knowledge_service import pokemon_knowledge_service
+
+
+@pytest.mark.asyncio
+async def test_pokemon_dashboard_handles_mapping_learning_profiles(setup_db, client):
+    response = await client.get("/api/pokemon/dashboard")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["species_count"] == 0
+    assert data["moves_count"] == 0
+    assert data["formats"]
+    assert all(item["battles"] == 0 and item["wins"] == 0 for item in data["formats"])
+
+
+@pytest.mark.asyncio
+async def test_knowledge_search_passes_selected_format(client, monkeypatch):
+    search_with_format = AsyncMock(
+        return_value={
+            "cached": False,
+            "query": "test query",
+            "query_type": "species_usage",
+            "query_key": "Incineroar",
+            "battle_format": "gen9ou",
+            "results": [],
+        }
+    )
+    monkeypatch.setattr(pokemon_knowledge_service, "search_with_format", search_with_format)
+
+    response = await client.get(
+        "/api/pokemon/knowledge/search",
+        params={
+            "query_type": "species_usage",
+            "query_key": "Incineroar",
+            "battle_format": "gen9ou",
+        },
+    )
+
+    assert response.status_code == 200
+    search_with_format.assert_awaited_once()
+    assert search_with_format.await_args.kwargs["battle_format"] == "gen9ou"
 
 
 @pytest.mark.asyncio

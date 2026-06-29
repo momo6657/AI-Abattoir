@@ -22,6 +22,7 @@ interface ReplayData {
   format: string;
   total_turns: number;
   winner: string | null;
+  winner_side?: number | null;
   team1: Record<string, unknown>;
   team2: Record<string, unknown>;
   summary: Record<string, unknown>;
@@ -145,6 +146,15 @@ export default function ReplayViewer({ battleId }: { battleId?: string }) {
   }
 
   if (!replay) return null;
+
+  if (replay.turns.length === 0) {
+    return (
+      <div className="card p-8 text-center">
+        <h2 className="text-base font-semibold text-white">对战回放</h2>
+        <p className="mt-2 text-sm text-gray-500">这场对战还没有可回放的事件。</p>
+      </div>
+    );
+  }
 
   const turn = replay.turns[currentTurn];
 
